@@ -1,0 +1,63 @@
+html[data-tasc-boot-fail-open="true"] .site-preloader {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: opacity 180ms ease-out, visibility 0s linear 180ms !important;
+}
+
+html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-hero-title > span,
+html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .hero-subcopy,
+html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-hero-actions .figma-cta {
+  opacity: 1 !important;
+  transform: translate3d(0, 0, 0) !important;
+}
+
+@media (max-width: 760px) {
+  .datum-motion-media {
+    -webkit-clip-path: none !important;
+    clip-path: none !important;
+  }
+
+  .services-story-section .services-story-video-wrap {
+    top: auto !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: -18% !important;
+    width: 136% !important;
+    height: auto !important;
+    aspect-ratio: 16 / 9 !important;
+    overflow: visible !important;
+    transform: none !important;
+    transform-origin: 50% 100% !important;
+  }
+
+  .services-story-section .services-story-video,
+  .services-story-section .services-story-video-packed,
+  .services-story-section .services-story-video-packed canvas,
+  .services-story-section .services-story-entry-poster,
+  .services-story-section .services-story-stop-poster {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+    background-position: center bottom !important;
+    background-size: contain !important;
+    transform: none !important;
+  }
+
+  .services-story-cta,
+  .services-story-card[data-layout="right"] .services-story-cta,
+  .figma-hero-actions .figma-cta-primary,
+  .figma-hero-actions .figma-cta-services,
+  .mission-story-cta {
+    min-height: 44px !important;
+    height: 44px !important;
+  }
+}
+
+@media (max-width: 760px) and (max-height: 700px) {
+  .services-story-section .services-story-video-wrap {
+    left: -12% !important;
+    width: 124% !important;
+  }
+}

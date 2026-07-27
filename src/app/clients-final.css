@@ -1,0 +1,621 @@
+.figma-clients-section {
+  --clients-curtain-overlap: 100vh;
+  --clients-curtain-overlap: 100svh;
+  position: relative !important;
+  z-index: 4 !important;
+  margin-top: calc(0px - var(--clients-curtain-overlap)) !important;
+  padding-top: var(--clients-curtain-overlap) !important;
+  overflow: clip !important;
+  clip-path: inset(0);
+  background: transparent !important;
+  color: #fff;
+  isolation: isolate;
+}
+
+.first-four-story > .figma-clients-section {
+  z-index: 4 !important;
+}
+
+.figma-clients-inner::before {
+  content: none !important;
+  display: none !important;
+}
+
+.figma-clients-section::before {
+  content: "" !important;
+  position: absolute !important;
+  top: 0 !important;
+  right: 0 !important;
+  left: 0 !important;
+  z-index: 0 !important;
+  display: block !important;
+  width: auto !important;
+  height: calc(var(--clients-curtain-overlap) + clamp(120px, 16svh, 190px)) !important;
+  pointer-events: none !important;
+  background: linear-gradient(
+    180deg,
+    rgba(1, 4, 7, 0) 0%,
+    rgba(2, 8, 14, 0.46) 7%,
+    rgba(3, 12, 20, 0.78) 18%,
+    rgba(4, 16, 27, 0.84) 34%,
+    rgba(5, 22, 36, 0.82) 64%,
+    rgba(7, 29, 47, 0.58) 86%,
+    rgba(7, 29, 47, 0) 100%
+  ) !important;
+  filter: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.figma-clients-section::after {
+  content: "" !important;
+  position: absolute !important;
+  top: var(--clients-curtain-overlap) !important;
+  right: 0 !important;
+  left: 0 !important;
+  z-index: 2 !important;
+  display: block !important;
+  width: auto !important;
+  height: clamp(220px, 28svh, 330px) !important;
+  pointer-events: none !important;
+  background: linear-gradient(
+    180deg,
+    rgba(3, 13, 22, 0) 0%,
+    rgba(3, 14, 23, 0.4) 20%,
+    rgba(3, 15, 25, 0.78) 44%,
+    rgba(4, 18, 30, 0.7) 62%,
+    rgba(5, 22, 36, 0.34) 82%,
+    rgba(5, 22, 36, 0) 100%
+  ) !important;
+  filter: none !important;
+  opacity: 1 !important;
+  transform: translateY(-50%) !important;
+}
+
+.figma-clients-inner {
+  position: relative !important;
+  z-index: auto !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin-inline: 0 !important;
+  overflow: clip;
+}
+
+.figma-clients-inner::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  height: clamp(150px, 20svh, 240px);
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(1, 2, 3, 0) 0%,
+    rgba(1, 2, 3, 0.02) 34%,
+    rgba(1, 2, 3, 0.08) 64%,
+    rgba(1, 2, 3, 0.22) 100%
+  );
+}
+
+.figma-clients-heading,
+.figma-clients-scroll-note {
+  z-index: 4 !important;
+}
+
+.figma-client-card-stage {
+  z-index: 3 !important;
+}
+
+.vision-clients-flare-stage {
+  position: absolute;
+  top: 1000vh;
+  right: 0;
+  left: 0;
+  z-index: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100svh;
+  overflow: visible;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: none;
+  contain: layout style;
+  isolation: isolate;
+}
+
+.clients-scroll-element-wrap {
+  position: absolute !important;
+  top: -28% !important;
+  right: -22% !important;
+  bottom: -28% !important;
+  left: -22% !important;
+  z-index: 1 !important;
+  display: block !important;
+  width: auto !important;
+  height: auto !important;
+  aspect-ratio: auto;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: none;
+  transform-origin: 50% 50% !important;
+  mix-blend-mode: screen;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  -webkit-mask-composite: initial !important;
+  mask-composite: initial !important;
+  will-change: transform;
+  backface-visibility: hidden;
+  contain: paint;
+}
+
+.clients-scroll-element {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  object-fit: cover;
+  object-position: center 64%;
+  opacity: 0.92;
+  filter: none;
+  transform: none;
+  transform-origin: 50% 50%;
+}
+
+.clients-scroll-element-picture {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.clients-scroll-element-wrap::after {
+  content: none;
+  display: none;
+}
+
+.site-header::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: linear-gradient(180deg, rgba(2, 4, 6, 0.18), rgba(2, 4, 6, 0.06));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+.site-shell[data-clients-inrange="true"] .site-header::before {
+  opacity: 0.55;
+}
+
+.figma-client-title-divider,
+.figma-client-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(153, 200, 255, 0.28);
+}
+
+@media (min-width: 901px) {
+  .figma-clients-section {
+    --clients-content-left: max(var(--header-edge), calc((100vw - var(--content-wide)) / 2));
+    --clients-brand-width: clamp(390px, 35.08vw, 758px);
+    --clients-public-width: clamp(360px, 32.46vw, 701px);
+    --clients-card-gap: clamp(22px, 2vw, 40px);
+    min-height: 0 !important;
+  }
+
+  .figma-clients-inner {
+    min-height: 0 !important;
+    padding-bottom: clamp(72px, 7vw, 128px);
+  }
+
+  .figma-clients-heading {
+    position: absolute !important;
+    top: clamp(64px, 6.56svh, 98px) !important;
+    left: var(--clients-content-left) !important;
+    z-index: 4;
+    width: clamp(480px, 32.8vw, 709px) !important;
+    transform: none !important;
+    text-align: left !important;
+  }
+
+  .figma-clients-kicker {
+    margin: 0;
+    font-size: clamp(11px, 0.77vw, 16.6px) !important;
+    line-height: 1.17;
+  }
+
+  .figma-clients-heading h2 {
+    display: grid !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: clamp(15px, 1.05vw, 22.7px) 0 0 !important;
+    font-size: clamp(28px, 2.07vw, 44.7px) !important;
+    font-weight: 450;
+    line-height: 1.15 !important;
+    letter-spacing: 0;
+    text-wrap: initial;
+  }
+
+  .figma-clients-heading h2 > span {
+    display: block;
+    white-space: nowrap;
+  }
+
+  .figma-clients-cta {
+    display: none !important;
+  }
+
+  .figma-client-card-stage {
+    position: relative !important;
+    inset: auto !important;
+    z-index: 3;
+    display: grid !important;
+    grid-template-columns: var(--clients-brand-width) var(--clients-public-width);
+    grid-template-rows: auto auto;
+    width: calc(var(--clients-brand-width) + var(--clients-public-width) + var(--clients-card-gap)) !important;
+    height: auto !important;
+    margin-left: var(--clients-content-left) !important;
+    padding-top: clamp(230px, 29.82svh, 447px);
+    align-items: start;
+    column-gap: var(--clients-card-gap);
+    row-gap: 0;
+    transform: none !important;
+  }
+
+  .figma-client-card {
+    position: relative !important;
+    display: grid;
+    box-sizing: border-box;
+    align-content: start;
+    gap: clamp(11px, min(0.9vw, 1.33svh), 19.4px) !important;
+    min-height: 0 !important;
+    padding: clamp(14px, min(1.04vw, 1.54svh), 22.5px) clamp(14px, 1.04vw, 22.5px) !important;
+    height: auto !important;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.035);
+    border-radius: clamp(17px, 1.29vw, 27.9px) !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .figma-client-card-brand {
+    top: auto !important;
+    right: auto !important;
+    left: 0 !important;
+    z-index: 2;
+    grid-area: 1 / 1;
+    justify-self: start;
+    width: var(--clients-brand-width) !important;
+    background: rgba(27, 27, 27, 0.82) !important;
+  }
+
+  .figma-client-card-public {
+    top: auto !important;
+    right: auto !important;
+    left: 0 !important;
+    z-index: 3;
+    grid-area: 1 / 2;
+    justify-self: start;
+    width: var(--clients-public-width) !important;
+    margin: 0 !important;
+    gap: clamp(10.5px, min(0.87vw, 1.28svh), 18.8px) !important;
+    background: rgba(21, 21, 21, 0.82) !important;
+  }
+
+  .figma-client-card h3 {
+    margin: 0;
+    font-size: clamp(28px, min(2.247vw, 3.33svh), 48.5px) !important;
+    font-weight: 300;
+    line-height: 1.15 !important;
+    letter-spacing: 0;
+  }
+
+  .figma-client-copy-block {
+    display: grid;
+    gap: clamp(7px, min(0.65vw, 0.97svh), 14px) !important;
+  }
+
+  .figma-client-label {
+    margin: 0;
+    font-size: clamp(11.5px, min(0.778vw, 1.153svh), 16.8px) !important;
+    line-height: 1.17 !important;
+  }
+
+  .figma-client-key-text {
+    display: grid;
+    gap: clamp(5px, min(0.4vw, 0.6svh), 8.6px) !important;
+  }
+
+  .figma-client-key-text p {
+    margin: 0;
+    font-size: clamp(10.25px, min(0.69vw, 1.02svh), 14.9px) !important;
+    font-weight: 400;
+    line-height: 1.2 !important;
+  }
+
+  .figma-client-moment-list {
+    display: grid;
+    gap: clamp(6px, min(0.517vw, 0.77svh), 11.2px) !important;
+    margin: 0;
+    padding: 0;
+  }
+
+  .figma-client-moment-list li {
+    display: grid;
+    min-height: clamp(40px, 4.37svh, 65.5px) !important;
+    grid-template-columns: clamp(22px, 1.54vw, 33.3px) minmax(0, 1fr) !important;
+    align-items: center;
+    gap: clamp(10px, 0.84vw, 18.1px) !important;
+    padding: clamp(8px, 1.02svh, 15.3px) clamp(12px, 1.04vw, 22.5px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: clamp(11px, 0.87vw, 18.8px) !important;
+    background: rgba(255, 255, 255, 0.04);
+    font-size: clamp(11.5px, min(0.778vw, 1.153svh), 16.8px) !important;
+    font-weight: 300 !important;
+    line-height: 1.17 !important;
+  }
+
+  .figma-check {
+    width: clamp(22px, min(1.54vw, 2.29svh), 33.3px) !important;
+    height: clamp(22px, min(1.54vw, 2.29svh), 33.3px) !important;
+  }
+
+  .figma-check::after {
+    width: clamp(5px, 0.48vw, 10.4px) !important;
+    height: clamp(8px, 0.7vw, 15.1px) !important;
+  }
+
+  .figma-clients-scroll-note {
+    position: relative !important;
+    grid-area: 2 / 1;
+    top: auto !important;
+    left: auto !important;
+    z-index: 4;
+    display: block;
+    width: auto !important;
+    align-self: start;
+    justify-self: start;
+    margin: clamp(64px, 8svh, 112px) 0 4px 0 !important;
+    color: rgba(255, 255, 255, 0.8) !important;
+    font-size: clamp(11px, 0.778vw, 16.8px) !important;
+    line-height: 1.17 !important;
+    opacity: 1;
+    transform: none !important;
+  }
+}
+
+@media (min-width: 901px) and (max-width: 1120px) {
+  .figma-client-card-brand,
+  .figma-client-card-public {
+    height: auto !important;
+  }
+
+  .figma-client-card-public {
+    left: 0 !important;
+  }
+
+  .clients-scroll-element-wrap {
+    top: -24% !important;
+    right: -24% !important;
+    bottom: -24% !important;
+    left: -24% !important;
+    width: auto !important;
+    height: auto !important;
+  }
+
+  .figma-client-moment-list li {
+    padding-block: 8px !important;
+  }
+}
+
+@media (max-width: 900px) {
+  .figma-clients-section,
+  .figma-clients-inner {
+    min-height: 0 !important;
+  }
+
+  .figma-clients-inner {
+    width: 100% !important;
+    max-width: none !important;
+
+    margin: clamp(-260px, -30svh, -120px) 0 0 !important;
+    padding-bottom: 48px;
+  }
+
+  .clients-scroll-element-wrap {
+    top: -40vw !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: -110vw !important;
+    width: 310vw !important;
+    height: calc(100% + 90vw) !important;
+    transform-origin: 50% 50% !important;
+  }
+
+  .clients-scroll-element {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .figma-clients-heading {
+    position: absolute !important;
+    top: calc(var(--header-h) + 34px) !important;
+    right: var(--header-edge) !important;
+    left: var(--header-edge) !important;
+    width: auto !important;
+    transform: none !important;
+    text-align: left !important;
+  }
+
+  .figma-clients-kicker {
+    font-size: 11px !important;
+  }
+
+  .figma-clients-heading h2 {
+    display: grid !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 16px 0 0 !important;
+    font-size: clamp(16.5px, 5.3vw, 21.2px) !important;
+    line-height: 1.1 !important;
+  }
+
+  .figma-clients-heading h2 > span {
+    display: block;
+    white-space: nowrap !important;
+  }
+
+  .figma-clients-cta {
+    display: none !important;
+  }
+
+  .figma-client-card-stage {
+    position: relative !important;
+    inset: auto !important;
+    display: flex !important;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 var(--header-edge) !important;
+    padding-top: 230px;
+    flex-direction: column;
+    gap: 24px;
+    transform: none !important;
+  }
+
+  .figma-client-card {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    display: grid;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    gap: 12px !important;
+    padding: 18px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 20px !important;
+    background: rgba(21, 23, 26, 0.96) !important;
+    box-shadow: none !important;
+    transform: none;
+  }
+
+  .figma-client-card-public {
+    z-index: 3;
+  }
+
+  .figma-client-card h3 {
+    margin: 0;
+    font-size: clamp(28px, 8vw, 33px) !important;
+    font-weight: 300;
+    line-height: 1.12 !important;
+  }
+
+  .figma-client-copy-block {
+    gap: 8px !important;
+  }
+
+  .figma-client-label {
+    font-size: 11px !important;
+    line-height: 1.2 !important;
+  }
+
+  .figma-client-key-text {
+    gap: 6px !important;
+  }
+
+  .figma-client-key-text p {
+    font-size: 12px !important;
+    line-height: 1.25 !important;
+  }
+
+  .figma-client-moment-list {
+    gap: 8px !important;
+  }
+
+  .figma-client-moment-list li,
+  .figma-client-card-brand .figma-client-moment-list li {
+    min-height: 50px !important;
+    grid-template-columns: 26px minmax(0, 1fr) !important;
+    gap: 12px !important;
+    padding: 9px 12px !important;
+    border-radius: 14px !important;
+    font-size: 12px !important;
+    line-height: 1.18 !important;
+  }
+
+  .figma-check {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  .figma-clients-scroll-note {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    left: auto !important;
+    display: block;
+    width: auto !important;
+    margin: 10px 0 0 !important;
+    font-size: 12px !important;
+    transform: none !important;
+  }
+
+  .figma-client-title-divider {
+    margin-block: 2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-shell .figma-clients-section {
+    --clients-curtain-overlap: 0vh;
+    --clients-curtain-overlap: 0svh;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    overflow: clip !important;
+    clip-path: none !important;
+    background: rgba(1, 5, 9, 0.96) !important;
+    box-shadow: 0 -180px 240px 120px rgba(1, 5, 9, 0.96);
+  }
+
+  .figma-clients-section::before {
+    content: none !important;
+    display: none !important;
+  }
+
+  .figma-clients-section::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .clients-scroll-element-wrap {
+
+    transform: rotate(15deg) scale(1.8) !important;
+    will-change: auto;
+  }
+
+}
+
+@media (max-width: 900px) and (prefers-reduced-motion: reduce) {
+  .clients-scroll-element-wrap {
+    transform: rotate(15deg) scale(1) !important;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .figma-clients-heading,
+  .figma-client-card-stage {
+    transform: translate3d(0, var(--clients-handoff-y, 0px), 0) !important;
+    opacity: var(--clients-handoff-opacity, 1) !important;
+  }
+}

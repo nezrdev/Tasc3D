@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <filter id="wide-halo" x="-45%" y="-45%" width="190%" height="190%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="48"/>
+    </filter>
+    <filter id="warm-halo" x="-35%" y="-35%" width="170%" height="170%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="24"/>
+    </filter>
+    <filter id="white-edge" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+    <linearGradient id="white-plane" gradientUnits="userSpaceOnUse" x1="1233" y1="463" x2="1879" y2="1001">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.14" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.36" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0.58" stop-color="#ffffff" stop-opacity="0.34"/>
+      <stop offset="0.78" stop-color="#ffffff" stop-opacity="0.76"/>
+      <stop offset="1" stop-color="#ffffff"/>
+    </linearGradient>
+  </defs>
+  <path d="M 560 1160 L 2010 -80" stroke="#ffe9c8" stroke-opacity="0.16" stroke-width="210" stroke-linecap="round" filter="url(#wide-halo)"/>
+  <path d="M 580 1150 L 2030 -70" stroke="#fff4df" stroke-opacity="0.42" stroke-width="118" stroke-linecap="round" filter="url(#warm-halo)"/>
+  <path d="M 600 1140 L 2050 -60" stroke="#ffffff" stroke-opacity="1" stroke-width="64" stroke-linecap="round" filter="url(#white-edge)"/>
+  <rect x="-120" y="-220" width="2460" height="1580" fill="url(#white-plane)"/>
+</svg>
