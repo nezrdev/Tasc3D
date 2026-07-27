@@ -12,7 +12,7 @@ coverage/
 .DS_Store
 Thumbs.db
 
-.local-check-logs/
+.codex-logs/
 .next-start-logs/
 .playwright-cli/
 .preview-logs/

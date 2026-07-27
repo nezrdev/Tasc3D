@@ -1,3 +1,7 @@
+
+
+
+
 .figma-clients-section {
   --clients-curtain-overlap: 0px !important;
   position: relative !important;
@@ -9,6 +13,9 @@
   background: transparent !important;
 }
 
+
+
+
 .clients-scroll-element-wrap {
   top: -28% !important;
   right: -22% !important;
@@ -16,6 +23,7 @@
   left: -22% !important;
   opacity: 1 !important;
   mix-blend-mode: normal !important;
+
 
   -webkit-mask-image: linear-gradient(
     to bottom,
@@ -39,6 +47,8 @@
   opacity: 1 !important;
 }
 
+
+
 @media (min-width: 901px) and (min-aspect-ratio: 3/1) {
   .clients-scroll-element-wrap {
     top: -46% !important;
@@ -48,16 +58,21 @@
 
 @media (max-width: 900px) {
 
+
   .clients-scroll-element-wrap {
     top: -40vw !important;
     right: auto !important;
     bottom: auto !important;
+
 
     left: -76vw !important;
     width: 310vw !important;
     height: calc(100% + 90vw) !important;
   }
 }
+
+
+
 
 .site-shell[data-clients-inrange="true"]:not([data-services-pinned="true"])
   > .first-four-galaxy-stage
@@ -66,6 +81,9 @@
   opacity: 0.8 !important;
 }
 
+
+
+
 .site-shell[data-hero-surface-ready="true"]:not(.site-preloader-complete) .figma-hero-title > span,
 .site-shell[data-hero-surface-ready="true"]:not(.site-preloader-complete) .hero-subcopy,
 .site-shell[data-hero-surface-ready="true"]:not(.site-preloader-complete) .figma-hero-actions .figma-cta {
@@ -73,6 +91,9 @@
   transform: translate3d(0, 0, 0) !important;
   transition: none !important;
 }
+
+
+
 
 .first-four-gradient-field {
   background:
@@ -110,6 +131,9 @@
   margin-top: -100svh !important;
 }
 
+
+
+
 .services-story-section,
 .first-four-story .services-story-section,
 .services-story-section .services-story-scene {
@@ -120,6 +144,8 @@
   isolation: isolate;
 }
 
+
+
 .figma-clients-heading,
 .figma-client-card-stage {
   --clients-handoff-y: 0px;
@@ -127,6 +153,9 @@
 }
 
 @media (max-width: 760px) {
+
+
+
 
   .hero-motion,
   .hero-grid.figma-hero-grid,
@@ -144,7 +173,10 @@
   }
 
 
+
 }
+
+
 
 .datum-motion-section,
 .datum-motion-content {
@@ -159,6 +191,9 @@
   bottom: 0 !important;
   height: auto !important;
 }
+
+
+
 
 .datum-motion-state,
 .datum-motion-state-cards,
@@ -246,6 +281,9 @@
   line-height: 1.15 !important;
 }
 
+
+
+
 @media (min-width: 901px) {
   .datum-motion-state-cards {
     width: min(540px, 43vw) !important;
@@ -285,6 +323,8 @@
   }
 }
 
+
+
 @media (min-width: 901px) {
   .figma-clients-inner {
     position: sticky !important;
@@ -306,6 +346,7 @@
   display: block !important;
   white-space: nowrap !important;
 }
+
 
 .preloader-logo {
   width: clamp(210px, 22vw, 300px) !important;
@@ -348,6 +389,8 @@
   box-shadow: 0 0 14px rgba(153, 200, 255, 0.42);
 }
 
+
+
 html[data-tasc-webkit="true"] .datum-glass-card,
 html[data-tasc-webkit="true"] .figma-client-card {
   -webkit-backdrop-filter: none !important;
@@ -357,11 +400,15 @@ html[data-tasc-webkit="true"] .figma-client-card {
 @media (max-width: 900px) {
   .figma-clients-inner {
 
+
+
     margin: 0 !important;
     padding-bottom: 48px;
   }
 
   .figma-clients-heading {
+
+
 
     top: calc(var(--header-h) + 72px) !important;
   }
@@ -373,9 +420,13 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 
 
+
+
   .datum-motion-media {
     top: auto !important;
     right: auto !important;
+
+
 
     bottom: -2svh !important;
     left: -20% !important;
@@ -383,6 +434,8 @@ html[data-tasc-webkit="true"] .figma-client-card {
     height: auto !important;
     aspect-ratio: 16 / 9;
     overflow: hidden !important;
+
+
 
     background:
       #000 url("/media/datum-news-poster-20260714.webp") center bottom / contain no-repeat !important;
@@ -396,6 +449,8 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 
 
+
+
   html[data-tasc-webkit]
     .datum-motion-video:not([data-playback-state="playing"]) {
     opacity: 0 !important;
@@ -406,6 +461,10 @@ html[data-tasc-webkit="true"] .figma-client-card {
     letter-spacing: -0.015em !important;
   }
 }
+
+
+
+
 
 @media (min-width: 371px) and (max-width: 900px) {
   .datum-motion-media {
@@ -514,6 +573,10 @@ html[data-tasc-webkit="true"] .figma-client-card {
 
 }
 
+
+
+
+
 @media (max-width: 600px) and (max-height: 620px) {
   .mission-story-positioner {
     top: calc(var(--header-h) + 12px) !important;
@@ -553,6 +616,8 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 }
 
+
+
 .domino-form-stage {
   min-height: auto !important;
   margin: -145px 0 0 !important;
@@ -578,6 +643,8 @@ html[data-tasc-webkit="true"] .figma-client-card {
     padding-top: 64px !important;
   }
 }
+
+
 
 .site-shell:has(.site-header.is-menu-open) .cookie-consent,
 .site-header.is-menu-open ~ .cookie-consent {
@@ -639,6 +706,7 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 
 
+
   .site-shell:has(.cookie-consent.is-compact) .figma-hero-actions {
     gap: 8px !important;
     margin-top: 20px !important;
@@ -686,7 +754,10 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 }
 
+
+
 @media (max-width: 760px) {
+
 
   .site-shell[data-starfield-mode="pending"] .first-four-gradient-field::after,
   .site-shell[data-starfield-mode="static"] .first-four-gradient-field::after {
@@ -911,11 +982,18 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 }
 
+
+
+
+
+
 @media (max-width: 760px) and (min-height: 701px) {
   .site-shell:not(:has(.cookie-consent)) .mission-main-block {
     margin-top: clamp(259px, calc(123svh - 603px), 460px) !important;
   }
 }
+
+
 
 .site-shell[data-services-media-decoded="true"] .services-story-entry-poster,
 .site-shell[data-services-media-decoded="true"] .services-story-stop-posters,
@@ -931,6 +1009,10 @@ html[data-tasc-webkit="true"] .figma-client-card {
     bottom: 10px !important;
   }
 }
+
+
+
+
 
 .site-shell[data-services-inrange="true"][data-services-media-decoded="true"]:is(
     [data-services-pinned="true"],

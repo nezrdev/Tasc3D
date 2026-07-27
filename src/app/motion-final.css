@@ -1,3 +1,10 @@
+
+
+
+
+
+
+
 .site-shell > .first-four-galaxy-stage {
   position: fixed !important;
   inset: 0 !important;
@@ -80,6 +87,10 @@
   pointer-events: none;
 }
 
+
+
+
+
 .site-shell[data-starfield-mode="pending"] > .first-four-galaxy-stage .static-starfield-fallback,
 .site-shell[data-starfield-mode="static"] > .first-four-galaxy-stage .static-starfield-fallback {
   opacity: 0.82;
@@ -91,6 +102,9 @@
   .static-starfield-fallback {
   display: none;
 }
+
+
+
 
 .site-shell[data-starfield-mode="static"] > .first-four-galaxy-stage .static-starfield-fallback {
   animation: tasc-static-starfield-drift 24s ease-in-out infinite alternate;
@@ -106,6 +120,9 @@
     transform: translate3d(1.2%, 0.8%, 0) scale(1.12);
   }
 }
+
+
+
 
 .site-shell[data-services-galaxy-status="pending"]
   .services-galaxy-stage
@@ -159,6 +176,10 @@
   opacity: 0.36 !important;
 }
 
+
+
+
+
 .site-shell[data-webkit-compatibility="true"] .site-header-glass,
 .site-shell[data-webkit-compatibility="true"] .mobile-menu-glass,
 .site-shell[data-webkit-compatibility="true"] .mobile-menu-toggle,
@@ -178,6 +199,9 @@
   display: none !important;
 }
 
+
+
+
 .site-shell[data-webkit-compatibility="true"] .header-action-cta-light {
   isolation: auto !important;
   overflow: visible !important;
@@ -187,6 +211,11 @@
   backface-visibility: visible !important;
   will-change: auto !important;
 }
+
+
+
+
+
 
 .site-shell[data-webkit-compatibility="true"] .site-header,
 .site-shell[data-webkit-compatibility="true"] .site-header-glass.glass-surface,
@@ -271,6 +300,9 @@
   background: #000 !important;
 }
 
+
+
+
 .site-shell[data-services-sequence="autoplay"] .services-story-section .services-story-video {
   opacity: 0 !important;
   visibility: hidden !important;
@@ -344,6 +376,10 @@
   visibility: visible;
 }
 
+
+
+
+
 .site-shell[data-services-media-fallback="true"] .services-story-section .services-story-video {
   opacity: 0 !important;
   visibility: hidden !important;
@@ -408,14 +444,24 @@
   pointer-events: none !important;
 }
 
+
+
+
+
 .site-shell[data-services-pinned="true"] .pin-spacer-how-work-reversible,
 .site-shell[data-services-pinned="true"] .pin-spacer-how-work-reversible * {
   pointer-events: none !important;
 }
 
+
+
+
 .site-shell[data-how-work-pinned="true"] .services-galaxy-stage {
   display: none !important;
 }
+
+
+
 
 .site-shell[data-how-work-pinned="true"] > .first-four-galaxy-stage {
   opacity: 1 !important;
@@ -480,6 +526,9 @@
   background: #000 !important;
   box-shadow: none;
 }
+
+
+
 
 .site-shell[data-services-pinned="true"] .figma-clients-section {
   pointer-events: none !important;
@@ -574,6 +623,9 @@
   object-fit: contain !important;
   object-position: center bottom !important;
 }
+
+
+
 
 .services-story-accent {
   color: #78b5f6;
@@ -853,6 +905,9 @@
   }
 }
 
+
+
+
 .domino-cta-section,
 .domino-scene,
 .domino-form-stage {
@@ -867,6 +922,8 @@
   background: #000 !important;
   isolation: isolate;
 }
+
+
 
 .figma-hero-actions .figma-cta-services {
 
@@ -917,6 +974,8 @@
   color: #000000 !important;
   transform: translateY(-1px);
 }
+
+
 
 .mission-story-positioner {
   position: absolute;
@@ -1079,6 +1138,8 @@
     width: 46.1cqw !important;
     height: auto !important;
     min-height: 0 !important;
+
+
 
     overflow: visible !important;
   }
@@ -1374,6 +1435,9 @@
   }
 }
 
+
+
+
 .mission-main-copy {
   display: block;
 }
@@ -1588,6 +1652,8 @@
     top: auto !important;
     right: auto !important;
 
+
+
     bottom: -5vw !important;
     left: -10% !important;
     width: 120% !important;
@@ -1765,6 +1831,8 @@
   }
 
   .services-story-section .services-story-video-wrap {
+
+
 
     -webkit-clip-path: inset(max(0px, calc(667px - 100svh)) 0 0);
     clip-path: inset(max(0px, calc(667px - 100svh)) 0 0);

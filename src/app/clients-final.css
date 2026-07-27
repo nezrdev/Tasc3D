@@ -1,3 +1,9 @@
+
+
+
+
+
+
 .figma-clients-section {
   --clients-curtain-overlap: 100vh;
   --clients-curtain-overlap: 100svh;
@@ -20,6 +26,8 @@
   content: none !important;
   display: none !important;
 }
+
+
 
 .figma-clients-section::before {
   content: "" !important;
@@ -46,6 +54,9 @@
   opacity: 1 !important;
   transform: none !important;
 }
+
+
+
 
 .figma-clients-section::after {
   content: "" !important;
@@ -99,6 +110,8 @@
   );
 }
 
+
+
 .figma-clients-heading,
 .figma-clients-scroll-note {
   z-index: 4 !important;
@@ -107,6 +120,9 @@
 .figma-client-card-stage {
   z-index: 3 !important;
 }
+
+
+
 
 .vision-clients-flare-stage {
   position: absolute;
@@ -424,6 +440,8 @@
     width: 100% !important;
     max-width: none !important;
 
+
+
     margin: clamp(-260px, -30svh, -120px) 0 0 !important;
     padding-bottom: 48px;
   }
@@ -599,6 +617,7 @@
   }
 
   .clients-scroll-element-wrap {
+
 
     transform: rotate(15deg) scale(1.8) !important;
     will-change: auto;

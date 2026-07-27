@@ -9,6 +9,10 @@ import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import CookieConsent from "@/components/CookieConsent";
 import { GlassCta } from "@/components/GlassCta";
+import { ClientsSection } from "@/components/sections/ClientsSection";
+import { HowWeWorkSection } from "@/components/sections/HowWeWorkSection";
+import { ProcessSection } from "@/components/sections/ProcessSection";
+import { SiteFooter } from "@/components/sections/SiteFooter";
 import SitePreloader from "@/components/SitePreloader";
 import PackedAlphaVideo from "@/components/PackedAlphaVideo";
 import { ServiceTextLines } from "@/components/ServiceTextLines";
@@ -18,8 +22,7 @@ import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
-import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, figmaMissionLines, finalImpulseCopy, footerNavigation, getFigmaClientKeyParagraphs, getFigmaClientMoments, howWeWorkStoryCopy, journeyCtaLabel, secondRevealCopy, servicesStoryCopy, tascMapsEmbedUrl, tascOfficeAddress, tascStreetAddress, } from "@/data/landing-content";
-import { clientProfiles, processSteps } from "@/data/site-content";
+import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, figmaMissionLines, finalImpulseCopy, journeyCtaLabel, secondRevealCopy, servicesStoryCopy, } from "@/data/landing-content";
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import { isMediaBufferedThrough } from "@/lib/media-buffer";
@@ -3216,7 +3219,7 @@ export function TascLanding() {
             setServicesPhase("waiting");
             flushServicesPendingIntent();
         };
-        const requestServicesDirection = (direction: 1 | -1, gestureMagnitude = 160) => {
+        const requestServicesDirection = (direction: 1 | -1) => {
             if (!servicesActive || servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
                 servicesGestureTotal = 0;
                 return;
@@ -3248,12 +3251,11 @@ export function TascLanding() {
                 if (!servicesActive || servicesPhase !== "waiting" || servicesPendingDirection === 0)
                     return;
                 const direction = servicesPendingDirection;
-                const magnitude = servicesPendingMagnitude || 160;
                 servicesPendingDirection = 0;
                 servicesPendingMagnitude = 0;
                 servicesBlockedDirection = 0;
                 servicesLastBlockedInputAt = 0;
-                requestServicesDirection(direction, magnitude);
+                requestServicesDirection(direction);
             }, delay);
         }
         const isEditableTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
@@ -3313,7 +3315,7 @@ export function TascLanding() {
             servicesLastBlockedInputAt = 0;
             servicesGestureTotal += delta;
             if (Math.abs(servicesGestureTotal) >= gestureThreshold) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1, Math.abs(servicesGestureTotal));
+                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
             }
         };
         const handleTouchStart = (event: TouchEvent) => {
@@ -3379,7 +3381,7 @@ export function TascLanding() {
             servicesLastBlockedInputAt = 0;
             servicesGestureTotal += delta;
             if (Math.abs(servicesGestureTotal) >= 10) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1, Math.abs(servicesGestureTotal));
+                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
             }
         };
         const handleTouchEnd = () => {
@@ -4793,25 +4795,21 @@ export function TascLanding() {
     });
     useReversibleScrollStories({
         rootRef,
-        servicesVideoRef,
-        datumVideoRef,
         dominoVideoRef,
         dominoReverseVideoRef,
         lenisRef,
         transportKey: "how-authored-v1",
         enabled: preloaderRevealStarted && motionAllowed,
-        stories: { services: false, how: true, datum: false, domino: false },
+        story: "how",
     });
     useReversibleScrollStories({
         rootRef,
-        servicesVideoRef,
-        datumVideoRef,
         dominoVideoRef,
         dominoReverseVideoRef,
         lenisRef,
         transportKey: dominoTransportKey,
         enabled: preloaderRevealStarted && motionAllowed,
-        stories: { services: false, how: false, datum: false, domino: true },
+        story: "domino",
     });
     useMobilePortionedScroll({
         rootRef,
@@ -4997,55 +4995,7 @@ export function TascLanding() {
         </div>
         </section>
 
-        <section className="figma-clients-section glass-editorial-section" aria-label="TASC client profiles">
-        <div className="figma-clients-inner" id="clients">
-          <div className="figma-clients-heading">
-            <p className="figma-clients-kicker">Clients</p>
-            <h2>
-              <span>Two different worlds we work with.</span>
-              <span>One standard of execution</span>
-            </h2>
-            <GlassCta className="figma-cta-primary figma-clients-cta" href="#brief" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#brief");
-        }}>
-              <span>{journeyCtaLabel}</span>
-              <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-            </GlassCta>
-          </div>
-
-          <div className="figma-client-card-stage">
-            {clientProfiles.map((profile, index) => (<article className={`figma-client-card ${index === 0 ? "figma-client-card-brand" : "figma-client-card-public"}`} key={profile.title}>
-                <h3>{profile.title}</h3>
-                <div className="figma-client-title-divider" aria-hidden="true"/>
-                <div className="figma-client-copy-block">
-                  <p className="figma-client-label">The Key to Results</p>
-                  <div className="figma-client-key-text">
-                    {getFigmaClientKeyParagraphs(profile).map((paragraph) => (<p key={paragraph}>{paragraph}</p>))}
-                  </div>
-                </div>
-                <div className="figma-client-divider" aria-hidden="true"/>
-                <div className="figma-client-copy-block">
-                  <p className="figma-client-label">The Right Moment</p>
-                  <ul className="figma-client-moment-list">
-                    {getFigmaClientMoments(profile).map((moment) => (<li key={moment}>
-                        <span className="figma-check" aria-hidden="true"/>
-                        <span>{moment}</span>
-                      </li>))}
-                  </ul>
-                </div>
-              </article>))}
-            <a className="figma-clients-scroll-note" href="#services" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#services");
-        }}>
-              Keep scrolling to view the services
-            </a>
-          </div>
-          <span className="clients-card-light-bridge" aria-hidden="true"/>
-        </div>
-        <div className="clients-services-curtain-space" aria-hidden="true"/>
-        </section>
+        <ClientsSection onNavigate={handleAnchorNavigate}/>
 
         <div className="services-story-overlap-shell">
           <section className="services-story-section services-section glass-editorial-section" id="services" aria-label="TASC services scroll story">
@@ -5109,41 +5059,7 @@ export function TascLanding() {
         </div>
       </div>
 
-      <section className="how-work-motion-section glass-editorial-section" id="work" aria-label="How We Work">
-        <div className="how-work-motion-glow" aria-hidden="true"/>
-        <div className="how-work-motion-inner">
-          <div className="how-work-motion-left">
-            <div className="how-work-motion-title">
-              <p className="how-work-motion-kicker">How We Work</p>
-              <h2>
-                <span>Engineered for outcomes,</span>
-                <span>not announcements</span>
-              </h2>
-            </div>
-            <p className="how-work-motion-support">
-              Fully documented process.
-              <br />
-              Rigorous compliance
-            </p>
-          </div>
-
-          <div className="how-work-motion-right" aria-live="polite">
-            <div className="how-work-number-row" aria-hidden="true">
-              {howWeWorkStoryCopy.map((item, index) => (<span className={`how-work-step-number how-work-step-number-${index + 1}`} key={item.number}>
-                  {item.number}
-                </span>))}
-            </div>
-            <span className="how-work-rule how-work-rule-top" aria-hidden="true"/>
-            <div className="how-work-copy-stack">
-              {howWeWorkStoryCopy.map((item, index) => (<article className={`how-work-step-copy how-work-step-copy-${index + 1}`} key={item.number}>
-                  <h3>{item.title}</h3>
-                  <p>{item.body}</p>
-                </article>))}
-            </div>
-            <span className="how-work-rule how-work-rule-bottom" aria-hidden="true"/>
-          </div>
-        </div>
-        </section>
+      <HowWeWorkSection />
 
       <section className="datum-motion-section glass-editorial-section" id="datum" aria-label="The Datum">
         <div className="datum-motion-media" aria-hidden="true">
@@ -5225,66 +5141,7 @@ export function TascLanding() {
         </div>
       </section>
 
-      <section className="process-contact-section glass-editorial-section" id="process" aria-label="The process and contact">
-        <div className="process-contact-bg" aria-hidden="true">
-          <span className="process-gradient process-gradient-top"/>
-          <span className="process-gradient process-gradient-bottom"/>
-        </div>
-
-        <div className="process-contact-inner">
-          <div className="process-contact-header stagger-reveal-group">
-            <h2>
-              <span className="stagger-reveal-item">Five steps from brief</span>
-              <span className="stagger-reveal-item">to final report</span>
-            </h2>
-            <p className="stagger-reveal-item">The Process</p>
-          </div>
-
-          <div className="process-contact-list" aria-label="Process steps">
-            {processSteps.map((step, index) => (<article className="process-contact-row reveal-block" key={step.title}>
-                <div className="process-contact-row-title">
-                  <span>{String(index + 1).padStart(2, "0")}</span>
-                  <h3>{step.title}</h3>
-                </div>
-                <p>{step.body}</p>
-              </article>))}
-          </div>
-
-          <div className="process-contact-footer stagger-reveal-group" id="contact">
-            <div className="process-contact-copy">
-              <p className="process-contact-agency stagger-reveal-item">
-                TASC is a strategic communications agency for those operating at scale: international brands, major
-                corporations, and government entities.
-              </p>
-              <div className="process-contact-actions">
-                <h2 className="stagger-reveal-item">Get in Touch</h2>
-                <a className="stagger-reveal-item" href="tel:+9713670826">
-                  <span>Phone</span>
-                  <strong>+971 367 0826</strong>
-                  <ArrowRight aria-hidden="true" size={26} strokeWidth={1.4}/>
-                </a>
-                <a className="stagger-reveal-item" href="mailto:info@tascagency.com">
-                  <span>Email</span>
-                  <strong>info@tascagency.com</strong>
-                  <ArrowRight aria-hidden="true" size={26} strokeWidth={1.4}/>
-                </a>
-              </div>
-            </div>
-
-            <div className="process-map-card" aria-label="TASC office location map">
-              <iframe title="TASC office location in Google Maps" src={processMapArmed ? tascMapsEmbedUrl : undefined} loading="eager" referrerPolicy="no-referrer-when-downgrade" allowFullScreen/>
-              <div className="process-map-overlay">
-                <p className="process-map-street">King Salman Bin Abdulaziz Al Saud St Al Sufouh - Al Sufouh 2</p>
-                <strong className="process-map-office">{tascOfficeAddress}</strong>
-                <a className="process-map-open" href="https://www.google.com/maps/search/?api=1&query=Office%2015%2C%20Building%204%2C%20Media%20City%2C%20Dubai%2C%20UAE" target="_blank" rel="noreferrer">
-                  Open in Google Maps
-                  <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5}/>
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <ProcessSection mapArmed={processMapArmed}/>
 
       <section className="domino-cta-section glass-editorial-section" id="brief" aria-label="One impulse CTA">
         <div className="domino-scene">
@@ -5376,47 +5233,6 @@ export function TascLanding() {
         </div>
       </section>
 
-      <footer className="site-footer" aria-label="TASC footer">
-        <div className="site-footer-inner">
-          <div className="footer-top stagger-reveal-group">
-            <div className="footer-brand-block">
-              <Image className="stagger-reveal-item" src="/media/tasc-logo-20260710.svg" alt="TASC" width={1271} height={280}/>
-              <a className="stagger-reveal-item" href="mailto:info@tascagency.com">info@tascagency.com</a>
-              <p className="stagger-reveal-item">{tascStreetAddress}</p>
-            </div>
-
-            <nav className="footer-menu" aria-label="Footer navigation">
-              {footerNavigation.map((item) => (<a className="stagger-reveal-item" href={item.href} key={`${item.label}-${item.href}`} onClick={(event) => {
-                event.preventDefault();
-                handleAnchorNavigate(item.href);
-            }}>
-                  {item.label}
-                </a>))}
-            </nav>
-
-            <div className="footer-contact-links">
-              <a className="stagger-reveal-item" href="#services" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#services");
-        }}>
-                Back to Services
-                <ArrowRight aria-hidden="true" size={28} strokeWidth={1.3}/>
-              </a>
-              <a className="stagger-reveal-item" href="tel:+9713670826">
-                +971 367 0826
-                <ArrowRight aria-hidden="true" size={28} strokeWidth={1.3}/>
-              </a>
-            </div>
-          </div>
-
-          <div className="footer-bottom stagger-reveal-group">
-            <p className="stagger-reveal-item">© 2026, Tasci Strategic Communications Agency Fz Llc</p>
-            <div className="footer-legal-links">
-              <a className="stagger-reveal-item" href="/privacy-policy">Privacy Policy</a>
-              <a className="stagger-reveal-item" href="/cookie-policy">Cookie Policy</a>
-            </div>
-          </div>
-        </div>
-      </footer>
+      <SiteFooter onNavigate={handleAnchorNavigate}/>
     </main>);
 }

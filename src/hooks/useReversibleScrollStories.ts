@@ -4,163 +4,27 @@ import type Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { DATUM_DURATION, DOMINO_DURATION, RUNTIME_MEDIA } from "@/data/runtime-media";
+import { DOMINO_DURATION } from "@/data/runtime-media";
 import { revealTime } from "@/lib/tasc-motion-timings";
 import { getVisualViewportHeight } from "@/lib/visibility";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 export type ReversibleScrollStoriesOptions = {
     rootRef: RefObject<HTMLElement | null>;
-    servicesVideoRef: RefObject<HTMLVideoElement | null>;
-    datumVideoRef: RefObject<HTMLVideoElement | null>;
     dominoVideoRef: RefObject<HTMLVideoElement | null>;
     dominoReverseVideoRef: RefObject<HTMLVideoElement | null>;
     lenisRef: RefObject<Lenis | null>;
     transportKey?: string;
     enabled: boolean;
-    stories?: {
-        services?: boolean;
-        how?: boolean;
-        datum?: boolean;
-        domino?: boolean;
-    };
-};
-type ScrollVideoScrubber = {
-    setProgress: (progress: number) => void;
-    destroy: () => void;
-};
-type ScrollVideoScrubberOptions = {
-    loadImmediately?: boolean;
+    story: "how" | "domino";
 };
 const clamp01 = gsap.utils.clamp(0, 1);
-const MIN_SEEK_DELTA = 1 / 30;
 const DOMINO_PLAYBACK_RATE = 1.25;
 const DOMINO_FORWARD_MEANINGFUL_TIME = 0.55;
 const DOMINO_POST_UNLOCK_QUIET_MS = 300;
 const DOMINO_TOUCH_DIRECTION_THRESHOLD = 50;
 const DOMINO_WHEEL_DIRECTION_THRESHOLD = 60;
 const DOMINO_WHEEL_GESTURE_GAP_MS = 180;
-export const createScrollVideoScrubber = (video: HTMLVideoElement | null, durationHint: number, { loadImmediately = true }: ScrollVideoScrubberOptions = {}): ScrollVideoScrubber => {
-    if (!video) {
-        return {
-            setProgress: () => undefined,
-            destroy: () => undefined,
-        };
-    }
-    let disposed = false;
-    let frameId = 0;
-    let targetTime = 0.001;
-    let lastReadyTime = -1;
-    const getDuration = () => {
-        const mediaDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : durationHint;
-        return Math.max(0.05, Math.min(durationHint, mediaDuration) - 0.04);
-    };
-    const markFrameReady = () => {
-        if (disposed)
-            return;
-        lastReadyTime = video.currentTime;
-        video.dataset.segmentState = "ready";
-        video.dataset.playbackState = "playing";
-        video.dataset.scrubTime = video.currentTime.toFixed(3);
-        video.closest<HTMLElement>("section")?.setAttribute("data-datum-playback", "playing");
-    };
-    const revealDecodedFrame = () => {
-        if (disposed)
-            return;
-        if (typeof video.requestVideoFrameCallback === "function") {
-            video.requestVideoFrameCallback(markFrameReady);
-        }
-        else {
-            window.requestAnimationFrame(markFrameReady);
-        }
-    };
-    const commitSeek = () => {
-        frameId = 0;
-        if (disposed || video.readyState < HTMLMediaElement.HAVE_METADATA)
-            return;
-        const clampedTime = Math.min(getDuration(), Math.max(0.001, targetTime));
-        if (Math.abs(video.currentTime - clampedTime) < MIN_SEEK_DELTA) {
-            if (lastReadyTime < 0)
-                revealDecodedFrame();
-            return;
-        }
-        if (lastReadyTime < 0)
-            video.dataset.segmentState = "seeking";
-        video.dataset.scrubState = "seeking";
-        try {
-            video.currentTime = clampedTime;
-        }
-        catch {
-            video.dataset.segmentState = "fallback";
-        }
-    };
-    const scheduleSeek = () => {
-        if (disposed || frameId)
-            return;
-        frameId = window.requestAnimationFrame(commitSeek);
-    };
-    const handleMetadata = () => scheduleSeek();
-    const handleSeeked = () => {
-        video.dataset.scrubState = "settled";
-        revealDecodedFrame();
-        if (Math.abs(video.currentTime - targetTime) >= MIN_SEEK_DELTA)
-            scheduleSeek();
-    };
-    const handleError = () => {
-        video.dataset.segmentState = "fallback";
-        video.dataset.playbackState = "fallback";
-        video.closest<HTMLElement>("section")?.setAttribute("data-datum-playback", "fallback");
-    };
-    video.pause();
-    video.loop = false;
-    video.dataset.playbackState = "waiting";
-    video.dataset.segmentState = "buffering";
-    video.closest<HTMLElement>("section")?.setAttribute("data-datum-playback", "waiting");
-    video.addEventListener("loadedmetadata", handleMetadata);
-    video.addEventListener("seeked", handleSeeked);
-    video.addEventListener("error", handleError);
-    if (loadImmediately) {
-        video.preload = "auto";
-        if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
-            video.load();
-        else
-            scheduleSeek();
-    }
-    else if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-        scheduleSeek();
-    }
-    return {
-        setProgress: (progress) => {
-            targetTime = clamp01(progress) * getDuration();
-            scheduleSeek();
-        },
-        destroy: () => {
-            disposed = true;
-            if (frameId)
-                window.cancelAnimationFrame(frameId);
-            video.removeEventListener("loadedmetadata", handleMetadata);
-            video.removeEventListener("seeked", handleSeeked);
-            video.removeEventListener("error", handleError);
-            video.pause();
-            delete video.dataset.scrubTime;
-            delete video.dataset.scrubState;
-            delete video.dataset.playbackState;
-            video.closest<HTMLElement>("section")?.removeAttribute("data-datum-playback");
-        },
-    };
-};
-const setInteractiveState = (element: HTMLElement, interactive: boolean) => {
-    if (interactive) {
-        element.removeAttribute("inert");
-        element.removeAttribute("aria-hidden");
-        element.style.pointerEvents = "auto";
-    }
-    else {
-        element.setAttribute("inert", "");
-        element.setAttribute("aria-hidden", "true");
-        element.style.pointerEvents = "none";
-    }
-};
-export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVideoRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", enabled, stories = {}, }: ReversibleScrollStoriesOptions) {
+export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", enabled, story, }: ReversibleScrollStoriesOptions) {
     useGSAP(() => {
         const root = rootRef.current;
         if (!root || !enabled)
@@ -169,89 +33,6 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
         const lowPower = root.dataset.mobilePerformance === "true";
         const getViewportHeight = () => Math.max(1, window.visualViewport?.height ?? window.innerHeight);
         const cleanup: Array<() => void> = [];
-        const servicesSection = root.querySelector<HTMLElement>(".services-story-section");
-        const servicesScene = servicesSection?.querySelector<HTMLElement>(".services-story-scene");
-        const servicePanels = servicesSection
-            ? Array.from(servicesSection.querySelectorAll<HTMLElement>(".services-story-panel"))
-            : [];
-        const servicePanelItems = servicePanels.map((panel) => Array.from(panel.querySelectorAll<HTMLElement>(".services-story-heading > p, .services-story-heading h2 > span, .services-story-rule, .services-story-lead, .services-story-body, .services-story-cta")));
-        if (stories.services !== false && servicesSection && servicesScene && servicePanels.length === 3) {
-            const scrubber = createScrollVideoScrubber(servicesVideoRef.current, 11.3);
-            let accessiblePanel = -1;
-            const syncAccessiblePanel = (progress: number) => {
-                const nextPanel = progress < 0.26 ? 0 : progress < 0.56 ? 1 : 2;
-                if (nextPanel === accessiblePanel)
-                    return;
-                accessiblePanel = nextPanel;
-                root.dataset.servicesActive = String(nextPanel + 1);
-                servicePanels.forEach((panel, index) => setInteractiveState(panel, index === nextPanel));
-            };
-            gsap.set(servicePanels, { y: 26, autoAlpha: 0 });
-            gsap.set(servicePanelItems.flat(), { y: 20, autoAlpha: 0 });
-            gsap.set(servicePanels[0], { y: 0, autoAlpha: 1 });
-            gsap.set(servicePanelItems[0], { y: 0, autoAlpha: 1 });
-            syncAccessiblePanel(0);
-            const servicesRange = ScrollTrigger.create({
-                id: "services-visual-range",
-                trigger: servicesSection,
-                start: "top 96%",
-                end: "bottom top",
-                invalidateOnRefresh: true,
-                onToggle: (self) => {
-                    if (self.isActive)
-                        root.dataset.servicesInrange = "true";
-                    else
-                        delete root.dataset.servicesInrange;
-                },
-            });
-            const servicesTimeline = gsap.timeline({
-                defaults: { ease: "none" },
-                scrollTrigger: {
-                    id: "services-reversible",
-                    trigger: servicesSection,
-                    start: "top top",
-                    end: () => `+=${Math.round(getViewportHeight() * (compact ? 2.15 : 2.05))}`,
-                    pin: true,
-                    scrub: 0.32,
-                    anticipatePin: 1,
-                    refreshPriority: 30,
-                    invalidateOnRefresh: true,
-                    onToggle: (self) => {
-                        if (self.isActive)
-                            root.dataset.servicesPinned = "true";
-                        else
-                            delete root.dataset.servicesPinned;
-                    },
-                    onUpdate: (self) => {
-                        scrubber.setProgress(self.progress);
-                        syncAccessiblePanel(self.progress);
-                        root.dataset.servicesProgress = self.progress.toFixed(3);
-                    },
-                },
-            });
-            servicesTimeline
-                .to({}, { duration: 1 }, 0)
-                .to(servicePanelItems[0], { y: -18, duration: 0.09, stagger: 0.006 }, 0.2)
-                .to(servicePanels[0], { y: -18, autoAlpha: 0, duration: 0.08 }, 0.2)
-                .set(servicePanelItems[1], { autoAlpha: 1 }, 0.22)
-                .fromTo(servicePanels[1], { y: 28, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.1, immediateRender: false }, 0.22)
-                .fromTo(servicePanelItems[1], { y: 22 }, { y: 0, duration: 0.13, stagger: 0.008, immediateRender: false }, 0.22)
-                .to(servicePanelItems[1], { y: -18, duration: 0.09, stagger: 0.006 }, 0.5)
-                .to(servicePanels[1], { y: -18, autoAlpha: 0, duration: 0.08 }, 0.5)
-                .set(servicePanelItems[2], { autoAlpha: 1 }, 0.52)
-                .fromTo(servicePanels[2], { y: 28, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.1, immediateRender: false }, 0.52)
-                .fromTo(servicePanelItems[2], { y: 22 }, { y: 0, duration: 0.13, stagger: 0.008, immediateRender: false }, 0.52);
-            cleanup.push(() => {
-                servicesRange.kill();
-                servicesTimeline.scrollTrigger?.kill();
-                servicesTimeline.kill();
-                scrubber.destroy();
-                delete root.dataset.servicesPinned;
-                delete root.dataset.servicesInrange;
-                delete root.dataset.servicesActive;
-                delete root.dataset.servicesProgress;
-            });
-        }
         const howSection = root.querySelector<HTMLElement>(".how-work-motion-section");
         const howInner = howSection?.querySelector<HTMLElement>(".how-work-motion-inner");
         const howNumbers = howSection
@@ -261,7 +42,7 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
             ? Array.from(howSection.querySelectorAll<HTMLElement>(".how-work-step-copy"))
             : [];
         const howCopyItems = howCopies.map((copy) => Array.from(copy.querySelectorAll<HTMLElement>("h3, p")));
-        if (stories.how !== false && howSection && howInner && howNumbers.length === 3 && howCopies.length === 3) {
+        if (story === "how" && howSection && howInner && howNumbers.length === 3 && howCopies.length === 3) {
             const inactiveNumber = { scale: 0.67, autoAlpha: 0.62, color: "rgba(119, 177, 244, 0.7)" };
             const activeNumber = { scale: 1, autoAlpha: 1, color: "#badaff" };
             const howStops = [0.02, 0.4, 0.78] as const;
@@ -695,7 +476,7 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
                     anticipatePin: 1,
                     refreshPriority: 20,
                     invalidateOnRefresh: true,
-                    onEnter: (self) => {
+                    onEnter: () => {
                         inputSuppressed = false;
                         syncInputListeners();
                         if (hasForeignInputOwner())
@@ -706,7 +487,7 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
                             setCurrentStep(0, false);
                         }
                     },
-                    onEnterBack: (self) => {
+                    onEnterBack: () => {
                         inputSuppressed = false;
                         syncInputListeners();
                         if (hasForeignInputOwner())
@@ -825,76 +606,6 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
                 delete root.dataset.howWorkInrange;
             });
         }
-        const datumSection = root.querySelector<HTMLElement>(".datum-motion-section");
-        const datumContent = datumSection?.querySelector<HTMLElement>(".datum-motion-content");
-        const datumCardsState = datumSection?.querySelector<HTMLElement>(".datum-motion-state-cards");
-        const datumWaitlistState = datumSection?.querySelector<HTMLElement>(".datum-motion-state-waitlist");
-        if (stories.datum !== false && datumSection && datumContent && datumCardsState && datumWaitlistState) {
-            const datumCardsItems = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".stagger-reveal-item"));
-            const datumWaitlistItems = Array.from(datumWaitlistState.querySelectorAll<HTMLElement>(".datum-waitlist-segment"));
-            const scrubber = createScrollVideoScrubber(datumVideoRef.current, DATUM_DURATION);
-            let datumAccessibleState: "cards" | "waitlist" | null = null;
-            const syncDatumA11y = (progress: number) => {
-                const nextState = progress < 0.55 ? "cards" : "waitlist";
-                if (nextState === datumAccessibleState)
-                    return;
-                datumAccessibleState = nextState;
-                setInteractiveState(datumCardsState, nextState === "cards");
-                setInteractiveState(datumWaitlistState, nextState === "waitlist");
-            };
-            gsap.set(datumContent, { y: 0, autoAlpha: 1 });
-            gsap.set(datumCardsState, { y: 0, autoAlpha: 1 });
-            gsap.set(datumCardsItems, { y: 0, autoAlpha: 1 });
-            gsap.set(datumWaitlistState, { y: 0, autoAlpha: 0 });
-            gsap.set(datumWaitlistItems, { y: 28, autoAlpha: 0 });
-            syncDatumA11y(0);
-            const datumEntrance = gsap.fromTo(datumContent, { y: 48, autoAlpha: 0 }, {
-                y: 0,
-                autoAlpha: 1,
-                ease: "none",
-                immediateRender: false,
-                scrollTrigger: {
-                    id: "datum-entrance",
-                    trigger: datumSection,
-                    start: "top 92%",
-                    end: "top 16%",
-                    scrub: 0.3,
-                    invalidateOnRefresh: true,
-                },
-            });
-            const datumTimeline = gsap.timeline({
-                defaults: { ease: "none" },
-                scrollTrigger: {
-                    id: "datum-reversible",
-                    trigger: datumSection,
-                    start: "top top",
-                    end: () => `+=${Math.round(getViewportHeight() * (compact ? 1.42 : 1.32))}`,
-                    pin: true,
-                    scrub: 0.32,
-                    anticipatePin: 1,
-                    invalidateOnRefresh: true,
-                    onUpdate: (self) => {
-                        scrubber.setProgress(self.progress);
-                        syncDatumA11y(self.progress);
-                        root.dataset.datumProgress = self.progress.toFixed(3);
-                    },
-                },
-            });
-            datumTimeline
-                .to({}, { duration: 1 }, 0)
-                .to(datumCardsItems, { y: -28, autoAlpha: 0, duration: 0.12, stagger: 0.012 }, 0.46)
-                .to(datumCardsState, { autoAlpha: 0, duration: 0.1 }, 0.5)
-                .fromTo(datumWaitlistState, { y: 28, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.13, immediateRender: false }, 0.5)
-                .fromTo(datumWaitlistItems, { y: 28, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.16, stagger: 0.014, immediateRender: false }, 0.52);
-            cleanup.push(() => {
-                datumEntrance.scrollTrigger?.kill();
-                datumEntrance.kill();
-                datumTimeline.scrollTrigger?.kill();
-                datumTimeline.kill();
-                scrubber.destroy();
-                delete root.dataset.datumProgress;
-            });
-        }
         const dominoSection = root.querySelector<HTMLElement>(".domino-cta-section");
         const dominoScene = dominoSection?.querySelector<HTMLElement>(".domino-scene");
         const dominoMedia = dominoSection?.querySelector<HTMLElement>(".domino-media");
@@ -902,7 +613,7 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
         const dominoFormCopy = dominoSection?.querySelector<HTMLElement>(".domino-form-stage .domino-copy");
         const dominoForwardVideo = dominoVideoRef.current;
         const dominoReverseVideo = dominoReverseVideoRef.current;
-        if (stories.domino !== false &&
+        if (story === "domino" &&
             dominoSection &&
             dominoScene &&
             dominoMedia &&
@@ -2042,18 +1753,15 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
             });
         }
         let viewportWidth = window.innerWidth;
-        let viewportHeight = getViewportHeight();
         let viewportPortrait = window.innerHeight >= window.innerWidth;
         let resizeTimer = 0;
         const refreshForRealViewportChange = () => {
             const nextWidth = window.innerWidth;
-            const nextHeight = getViewportHeight();
             const nextPortrait = window.innerHeight >= window.innerWidth;
             const meaningfulChange = Math.abs(nextWidth - viewportWidth) > 24 || nextPortrait !== viewportPortrait;
             if (!meaningfulChange)
                 return;
             viewportWidth = nextWidth;
-            viewportHeight = nextHeight;
             viewportPortrait = nextPortrait;
             window.clearTimeout(resizeTimer);
             resizeTimer = window.setTimeout(() => {
@@ -2076,14 +1784,7 @@ export function useReversibleScrollStories({ rootRef, servicesVideoRef, datumVid
         };
     }, {
         scope: rootRef,
-        dependencies: [
-            enabled,
-            stories.services,
-            stories.how,
-            stories.datum,
-            stories.domino,
-            transportKey,
-        ],
+        dependencies: [enabled, story, transportKey],
         revertOnUpdate: true,
     });
 }

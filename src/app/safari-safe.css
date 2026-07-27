@@ -1,7 +1,20 @@
+
+
+
+
+
+
+
+
+
+
 html[data-tasc-webkit="true"] {
   scroll-behavior: auto !important;
   background: #000307;
 }
+
+
+
 
 html[data-tasc-webkit="true"] .glass-surface-filter {
   display: none !important;
@@ -24,6 +37,11 @@ html[data-tasc-webkit="true"] .mobile-menu-card {
   background: rgba(4, 7, 10, 0.86) !important;
 }
 
+
+
+
+
+
 html[data-tasc-webkit="true"] .services-story-section,
 html[data-tasc-webkit="true"] .first-four-story .services-story-section,
 html[data-tasc-webkit="true"] .services-story-section .services-story-scene {
@@ -34,6 +52,7 @@ html[data-tasc-webkit="true"] .services-galaxy .galaxy-canvas-element {
   opacity: 0.4 !important;
 }
 
+
 html[data-tasc-webkit="true"] .how-work-motion-glow {
   filter: none !important;
   opacity: 0.58 !important;
@@ -41,10 +60,14 @@ html[data-tasc-webkit="true"] .how-work-motion-glow {
     radial-gradient(ellipse at 60% 50%, rgba(64, 123, 184, 0.46), rgba(17, 47, 78, 0.18) 38%, transparent 72%) !important;
 }
 
+
+
 html[data-tasc-webkit="true"] .clients-scroll-element-wrap,
 html[data-tasc-webkit="true"] .clients-scroll-element {
   mix-blend-mode: normal !important;
 }
+
+
 
 html[data-tasc-webkit="true"] .lens-stage,
 html[data-tasc-webkit="true"] .mission-frame,

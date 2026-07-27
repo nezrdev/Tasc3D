@@ -1,5 +1,6 @@
 @media (max-width: 760px) {
 
+
   .figma-cta.figma-cta-glass .figma-cta-glass-surface {
     background:
       linear-gradient(
@@ -152,6 +153,7 @@
   }
 
 
+
   .process-contact-section .process-contact-header > p,
   .process-contact-section .process-contact-row > p {
     font-size: clamp(0.96rem, 3.9vw, 1.08rem) !important;
@@ -190,6 +192,9 @@
     line-height: 1.24 !important;
   }
 }
+
+
+
 
 @media (max-width: 760px) and (max-height: 700px) {
   .mission-statement,
@@ -237,10 +242,15 @@
   }
 }
 
+
+
+
 @media (max-width: 360px) and (max-height: 620px) {
   .second-copy.vision-reveal-copy {
     top: calc(var(--header-h) + 140px) !important;
   }
+
+
 
 
   .how-work-motion-inner {
@@ -282,6 +292,14 @@
     line-height: 1.14 !important;
   }
 }
+
+
+
+
+
+
+
+
 
 .site-shell {
   font-synthesis: none;
@@ -385,6 +403,7 @@
   }
 
 
+
   .mission-story-positioner,
   .mission-story-positioner .mission-story,
   .mission-statement,
@@ -451,6 +470,7 @@
     font-size: 0.94rem !important;
     font-weight: 300 !important;
   }
+
 
 
   .datum-motion-content {
@@ -520,10 +540,12 @@
 
   .datum-motion-media {
 
+
     bottom: -1svh !important;
     -webkit-clip-path: inset(max(0px, calc(680px - 100svh)) 0 0) !important;
     clip-path: inset(max(0px, calc(680px - 100svh)) 0 0) !important;
   }
+
 
 
   .datum-motion-state-waitlist {
@@ -580,17 +602,24 @@
   }
 
 
+
   .process-contact-section .process-contact-inner {
     padding-top: 82px !important;
   }
 
   .process-contact-section .process-contact-bg::before {
 
+
+
     background-size: 100% 1515px !important;
     background-position: center top !important;
   }
 
   .process-contact-section .process-contact-list {
+
+
+
+
 
     margin-top: 20px !important;
     gap: 4px !important;
@@ -645,6 +674,9 @@
   }
 
   .datum-motion-media {
+
+
+
 
     left: -15% !important;
     width: 130% !important;

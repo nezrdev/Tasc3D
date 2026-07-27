@@ -1,5 +1,11 @@
 @media (max-width: 760px) {
 
+
+
+
+
+
+
   .services-story-panel,
   .services-story-card[data-layout="left"],
   .services-story-card[data-layout="right"] {
@@ -122,6 +128,9 @@
   }
 
 
+
+
+
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
@@ -136,6 +145,10 @@
     transform: none !important;
     transform-origin: 50% 100% !important;
   }
+
+
+
+
 
 
   .mission-story-positioner {
