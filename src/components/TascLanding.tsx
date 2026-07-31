@@ -251,14 +251,9 @@ export function TascLanding() {
     useLayoutEffect(() => {
         const previousRestoration = window.history.scrollRestoration;
         const initialHash = window.location.hash;
-        const initialUrl = `${window.location.pathname}${window.location.search}${initialHash}`;
         window.history.scrollRestoration = "manual";
-        if (initialHash) {
-            window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
-        }
-        resetToTop();
-        if (initialHash) {
-            window.history.replaceState(window.history.state, "", initialUrl);
+        if (!initialHash) {
+            resetToTop();
         }
         return () => {
             window.history.scrollRestoration = previousRestoration;
@@ -1104,7 +1099,8 @@ export function TascLanding() {
             stopChecks();
         };
     }, [heroVideoEligible, motionAllowed]);
-    const handleAnchorNavigate = useCallback((href: string) => {
+    const handleAnchorNavigate = useCallback((href: string, options?: { replaceHistory?: boolean }) => {
+        const replaceHistory = options?.replaceHistory !== false;
         if (href === "#services") {
             setServicesMediaArmed(true);
             setServicesStopPostersArmed(true);
@@ -1126,7 +1122,8 @@ export function TascLanding() {
                 : target
                     ? target.getBoundingClientRect().top + window.scrollY - 72
                     : 0;
-            window.history.replaceState(null, "", href);
+            if (replaceHistory)
+                window.history.replaceState(null, "", href);
             window.scrollTo({
                 top: Math.max(0, top),
                 left: 0,
@@ -1209,7 +1206,7 @@ export function TascLanding() {
                 ScrollTrigger.update();
                 window.dispatchEvent(new CustomEvent("tasc:scroll-position-applied"));
             };
-            if (window.history?.replaceState) {
+            if (replaceHistory && window.history?.replaceState) {
                 window.history.replaceState(null, "", href);
             }
             applyPosition(top);
@@ -4843,7 +4840,7 @@ export function TascLanding() {
         enabled: preloaderRevealStarted && motionAllowed,
     });
     useEffect(() => {
-        if (!preloaderRevealStarted || initialHashHandledRef.current) {
+        if (!preloaderComplete || initialHashHandledRef.current) {
             return;
         }
         const hash = window.location.hash;
@@ -4869,14 +4866,49 @@ export function TascLanding() {
             }
             navigationFrame = window.requestAnimationFrame(() => {
                 initialHashHandledRef.current = true;
-                handleAnchorNavigate(hash);
+                handleAnchorNavigate(hash, { replaceHistory: false });
             });
         });
         return () => {
             window.cancelAnimationFrame(layoutFrame);
             window.cancelAnimationFrame(navigationFrame);
         };
-    }, [handleAnchorNavigate, motionAllowed, preloaderRevealStarted]);
+    }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
+    useEffect(() => {
+        if (!preloaderComplete) {
+            return;
+        }
+        let navigationFrame = 0;
+        const isSupportedHash = (hash: string) => hash === "#top" || VISION_LOGO_DEEP_LINKS.has(hash);
+        const navigateFromHistory = () => {
+            const hash = window.location.hash || "#top";
+            if (!isSupportedHash(hash)) {
+                return;
+            }
+            window.cancelAnimationFrame(navigationFrame);
+            navigationFrame = window.requestAnimationFrame(() => {
+                if (motionAllowed) {
+                    ScrollTrigger.sort();
+                    ScrollTrigger.refresh();
+                }
+                handleAnchorNavigate(hash, { replaceHistory: false });
+            });
+        };
+        const handlePopState = () => {
+            const hash = window.location.hash || "#top";
+            if (!isSupportedHash(hash)) {
+                return;
+            }
+            navigateFromHistory();
+        };
+        window.addEventListener("popstate", handlePopState);
+        window.addEventListener("hashchange", navigateFromHistory);
+        return () => {
+            window.cancelAnimationFrame(navigationFrame);
+            window.removeEventListener("popstate", handlePopState);
+            window.removeEventListener("hashchange", navigateFromHistory);
+        };
+    }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
     return (<main ref={rootRef} className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"
@@ -4892,7 +4924,8 @@ export function TascLanding() {
                         : "pending"} data-services-media-prepared={servicesMediaPrepared ? "true" : undefined} data-datum-media-armed={datumMediaArmed ? "true" : undefined} data-datum-media-prepared={datumMediaPrepared ? "true" : undefined} data-datum-media-fallback={datumMediaFallback ? "true" : undefined} data-domino-media-prepared={dominoForwardPrepared ? "true" : undefined} data-domino-media-fallback={dominoForwardFallback ? "true" : undefined} data-domino-reverse-media-prepared={dominoReversePrepared ? "true" : undefined} data-domino-reverse-media-fallback={dominoReverseFallback ? "true" : undefined} data-hero-surface-ready={preloaderReady || preloaderRevealStarted ? "true" : undefined} data-mobile-performance={mobilePerformanceMode ? "true" : undefined} data-mac-performance={macPerformanceMode ? "true" : undefined} data-webkit-compatibility={webkitCompatibilityMode ? "true" : undefined} data-services-media={servicesPackedTransportMode ? "packed-alpha-video" : "native-alpha-video"} data-vision-logo-armed={visionLogoArmed ? "true" : undefined} data-galaxy-visibility-root>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!preloaderComplete ? (<SitePreloader ready={preloaderReady} onRevealStart={() => {
-                resetToTop();
+                if (!window.location.hash)
+                    resetToTop();
                 setPreloaderRevealStarted(true);
                 setHeroIntroReady(true);
             }} onComplete={() => {

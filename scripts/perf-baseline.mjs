@@ -345,6 +345,8 @@ const installInstrumentation = async (context, network) => {
         heapSamples: [],
         heroSurfaceReadyMs: null,
         preloaderCompleteMs: null,
+        cssFailOpenMs: null,
+        hardFailOpenMs: null,
         firstHarnessInputMs: null,
         journeyActive: false,
         journeyFrames: [],
@@ -465,11 +467,40 @@ const installInstrumentation = async (context, network) => {
 
       const checkReadiness = () => {
         const main = document.querySelector("main[data-hero-surface-ready='true']");
-        if (main && state.heroSurfaceReadyMs == null) state.heroSurfaceReadyMs = performance.now();
         const preloader = document.querySelector(".site-preloader");
+        const preloaderStyle = preloader ? getComputedStyle(preloader) : null;
+        const criticalFailOpenFinished = Boolean(
+          preloader &&
+            typeof preloader.getAnimations === "function" &&
+            preloader.getAnimations().some(
+            (animation) =>
+              "animationName" in animation &&
+              animation.animationName === "tasc-preloader-critical-hide" &&
+              animation.playState === "finished",
+          ),
+        );
+        const preloaderVisible = Boolean(
+          preloader &&
+            preloaderStyle &&
+            !criticalFailOpenFinished &&
+            preloaderStyle.display !== "none" &&
+            preloaderStyle.visibility !== "hidden" &&
+            Number.parseFloat(preloaderStyle.opacity || "1") > 0.01,
+        );
         const completeClass = main?.classList.contains("site-preloader-complete") ?? false;
         const hardFailOpen = document.documentElement.dataset.tascBootFailOpen === "true";
-        if ((!preloader || hardFailOpen) && (completeClass || hardFailOpen) && state.preloaderCompleteMs == null) {
+        if (preloader && !preloaderVisible && state.cssFailOpenMs == null) {
+          state.cssFailOpenMs = performance.now();
+        }
+        if (hardFailOpen && state.hardFailOpenMs == null) {
+          state.hardFailOpenMs = performance.now();
+        }
+        if ((!preloaderVisible && (main || preloader)) || hardFailOpen) {
+          if (state.heroSurfaceReadyMs == null) {
+            state.heroSurfaceReadyMs = performance.now();
+          }
+        }
+        if (main && !preloader && completeClass && state.preloaderCompleteMs == null) {
           state.preloaderCompleteMs = performance.now();
         }
       };
@@ -478,7 +509,7 @@ const installInstrumentation = async (context, network) => {
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ["data-hero-surface-ready", "class"],
+        attributeFilter: ["data-hero-surface-ready", "data-tasc-boot-fail-open", "class"],
       });
       addEventListener("DOMContentLoaded", checkReadiness, { once: true });
 
@@ -493,6 +524,9 @@ const installInstrumentation = async (context, network) => {
       }, 250);
 
       const frame = (timestamp) => {
+        if (state.heroSurfaceReadyMs == null || state.preloaderCompleteMs == null) {
+          checkReadiness();
+        }
         if (state.journeyActive && state.previousFrameAt != null) {
           state.journeyFrames.push(timestamp - state.previousFrameAt);
         }
@@ -564,6 +598,8 @@ const installInstrumentation = async (context, network) => {
           heapPeak: heap.length ? Math.max(...heap) : null,
           heroSurfaceReadyMs: state.heroSurfaceReadyMs,
           preloaderCompleteMs: state.preloaderCompleteMs,
+          cssFailOpenMs: state.cssFailOpenMs,
+          hardFailOpenMs: state.hardFailOpenMs,
           firstHarnessInputMs: state.firstHarnessInputMs,
           journeyFrames: [...state.journeyFrames],
           resources,
@@ -906,8 +942,11 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       round(raw.heroSurfaceReadyMs),
       {
         unit: "ms",
-        definition: "navigation start to main[data-hero-surface-ready=true]",
+        definition:
+          "navigation start to visible Hero surface (main readiness or root CSS fail-open)",
         preloaderCompleteMs: round(raw.preloaderCompleteMs),
+        cssFailOpenMs: round(raw.cssFailOpenMs),
+        hardFailOpenMs: round(raw.hardFailOpenMs),
       },
     ),
     longTasks: raw.capabilities.longtask

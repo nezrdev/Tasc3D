@@ -51,6 +51,25 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             }
             onCompleteRef.current();
         };
+        const handleHardFailOpen = () => finish();
+        const handleCriticalHide = (event: AnimationEvent) => {
+            if (event.animationName === "tasc-preloader-critical-hide") {
+                finish();
+            }
+        };
+        window.addEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
+        root.addEventListener("animationend", handleCriticalHide);
+        const criticalHideFinished = typeof root.getAnimations === "function"
+            && root.getAnimations().some((animation) =>
+                (animation as CSSAnimation).animationName === "tasc-preloader-critical-hide"
+                && animation.playState === "finished");
+        if (document.documentElement.dataset.tascBootFailOpen === "true" || criticalHideFinished) {
+            finish();
+            return () => {
+                root.removeEventListener("animationend", handleCriticalHide);
+                window.removeEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
+            };
+        }
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const compact = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
         const blinds = gsap.utils.toArray<HTMLElement>(".preloader-blind", root);
@@ -96,7 +115,9 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             reveal();
         return () => {
             window.clearTimeout(killSwitch);
+            root.removeEventListener("animationend", handleCriticalHide);
             window.removeEventListener("tasc:preloader-deadline", handleNavigationDeadline);
+            window.removeEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
             revealRef.current = null;
             loadingTween.kill();
             timeline.kill();

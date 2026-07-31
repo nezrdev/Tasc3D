@@ -1438,9 +1438,10 @@ const waitForMediaArming = async (
       armingEvent.sectionRect.bottom >= -margin,
   );
   const eligibleAtMs = armingEvent?.epochMs ?? null;
+  const armingObserverGraceMs = 125;
   const prematureRequests = eligibleAtMs == null
     ? requests
-    : requests.filter((request) => request.startedAtMs + 75 < eligibleAtMs);
+    : requests.filter((request) => request.startedAtMs + armingObserverGraceMs < eligibleAtMs);
   const firstRequest = requests[0] ?? null;
   const source = video?.src || firstRequest?.url || "";
   const transportEvidence = firstRequest
@@ -1456,6 +1457,7 @@ const waitForMediaArming = async (
     trigger,
     armingEvent,
     armingGeometryEligible,
+    armingObserverGraceMs,
     margin,
     video,
     source,
