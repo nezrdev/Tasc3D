@@ -587,8 +587,17 @@ const installInstrumentation = async (context, network) => {
           state.previousFrameAt = null;
           state.journeyActive = true;
         },
+        pauseJourney() {
+          state.journeyActive = false;
+          state.previousFrameAt = null;
+        },
+        resumeJourney() {
+          state.previousFrameAt = null;
+          state.journeyActive = true;
+        },
         stopJourney() {
           state.journeyActive = false;
+          state.previousFrameAt = null;
         },
         hiddenSample(anchor) {
           const intersects = (rect) =>
@@ -725,10 +734,9 @@ const scrollToAnchor = async (page, anchor) => {
     scrollTo({ top, behavior: "smooth" });
     return true;
   }, anchor);
-  if (!found) return { anchor, found: false, hidden: null };
+  if (!found) return { anchor, found: false };
   await page.waitForTimeout(900);
-  const hidden = await page.evaluate((selector) => window.__tascPerfBaseline.hiddenSample(selector), anchor);
-  return { anchor, found: true, hidden };
+  return { anchor, found: true };
 };
 
 const calculateLegacyTti = (fcp, longTasks, boundaryMs) => {
@@ -798,7 +806,12 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
     ...hiddenSamples.map((sample) => sample.hidden?.expected?.length ?? 0),
   );
   const hiddenAllMaximum = Math.max(0, ...hiddenSamples.map((sample) => sample.hidden?.allCount ?? 0));
-  const uniqueVideoRequests = [...new Set(startedRequests.filter((entry) => entry.video).map((entry) => entry.url))];
+  const uniqueVideoRequests = [
+    ...new Set([
+      ...startedRequests.filter((entry) => entry.video).map((entry) => entry.url),
+      ...videoResources.map((entry) => entry.name),
+    ]),
+  ];
   const transferBytes = beforeBoundary.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
   const inflightAtBoundary = startedRequests.filter((entry) => entry.inflightAtBoundary).length;
   const eventualBytesForStartedRequests = startedRequests.reduce((sum, entry) => {
@@ -907,6 +920,16 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
           },
         )
       : metric("unsupported", null, { windowMs: 15_000 }),
+    total: raw.capabilities.longtask
+      ? metric(
+          "measured",
+          round(longTasks15.reduce((sum, entry) => sum + entry.duration, 0)),
+          {
+            unit: "ms",
+            definition: "sum of long-task durations during the first 15 seconds",
+          },
+        )
+      : metric("unsupported", null, { unit: "ms", windowMs: 15_000 }),
     scrollFrameBudget: metric(
       raw.journeyFrames.length ? "measured" : "not-observed",
       summarizeFrames(raw.journeyFrames),
@@ -1068,6 +1091,13 @@ const runCase = async (caseSpec, baseUrl) => {
     const elapsed = Date.now() - navigationStartedAt;
     if (elapsed < holdMs) await page.waitForTimeout(holdMs - elapsed);
     const readiness = await waitForJourneyReadiness(page, Math.max(1_000, readyTimeoutMs - holdMs));
+    const hiddenSamples = [
+      {
+        anchor: "#top",
+        found: true,
+        hidden: await page.evaluate(() => window.__tascPerfBaseline.hiddenSample("#top")),
+      },
+    ];
     for (const record of startedRequests) {
       record.inflightAtBoundary = !record.completedBeforeFirstInput && !record.failed;
     }
@@ -1075,10 +1105,17 @@ const runCase = async (caseSpec, baseUrl) => {
     await page.evaluate(() => window.__tascPerfBaseline.markFirstHarnessInput());
     const startupSnapshot = await page.evaluate(() => window.__tascPerfBaseline.snapshot());
     await page.evaluate(() => window.__tascPerfBaseline.startJourney());
-    const hiddenSamples = [];
-    for (const anchor of ANCHORS) {
+    for (const anchor of ANCHORS.slice(1)) {
       const sample = await scrollToAnchor(page, anchor);
+      await page.evaluate(() => window.__tascPerfBaseline.pauseJourney());
+      sample.hidden = sample.found
+        ? await page.evaluate(
+            (selector) => window.__tascPerfBaseline.hiddenSample(selector),
+            anchor,
+          )
+        : null;
       hiddenSamples.push(sample);
+      await page.evaluate(() => window.__tascPerfBaseline.resumeJourney());
     }
     await page.evaluate(() => window.__tascPerfBaseline.stopJourney());
     await page.waitForTimeout(100);
@@ -1141,6 +1178,7 @@ const requiredMetricNames = [
   "videoRequestsBeforeFirstScroll",
   "preloaderRevealMs",
   "longTasks",
+  "total",
   "scrollFrameBudget",
   "webglContexts",
   "webglContextLost",
