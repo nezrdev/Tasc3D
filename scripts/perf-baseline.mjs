@@ -1080,7 +1080,7 @@ const runCase = async (caseSpec, baseUrl) => {
       : null;
     cdp?.on("Network.dataReceived", (event) => {
       if (beforeFirstInput) {
-        chromiumEncodedBytesBeforeFirstInput += event.encodedDataLength || event.dataLength || 0;
+        chromiumEncodedBytesBeforeFirstInput += event.encodedDataLength || 0;
       }
     });
     await page.exposeBinding("__tascClosePerfBoundary", () => {
