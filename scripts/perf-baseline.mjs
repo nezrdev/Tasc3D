@@ -755,7 +755,7 @@ const calculateLegacyTti = (fcp, longTasks, boundaryMs) => {
 };
 
 const summarizeFrames = (frames) => {
-  const valid = frames.filter((value) => Number.isFinite(value) && value > 0 && value < 1_000);
+  const valid = frames.filter((value) => Number.isFinite(value) && value > 0);
   const cadence = percentile(valid.filter((value) => value <= percentile(valid, 0.5) * 1.25), 0.5);
   const slowThreshold = Number.isFinite(cadence) ? cadence * 1.5 : 25;
   const overBudget = valid.filter((value) => value > 16.7).length;
@@ -1083,6 +1083,13 @@ const runCase = async (caseSpec, baseUrl) => {
         chromiumEncodedBytesBeforeFirstInput += event.encodedDataLength || event.dataLength || 0;
       }
     });
+    await page.exposeBinding("__tascClosePerfBoundary", () => {
+      if (!beforeFirstInput) return;
+      for (const record of startedRequests) {
+        record.inflightAtBoundary = !record.completedBeforeFirstInput && !record.failed;
+      }
+      beforeFirstInput = false;
+    });
     const target = new URL(baseUrl);
     target.searchParams.set("perfBaseline", id);
     target.searchParams.set("cold", runId);
@@ -1091,21 +1098,36 @@ const runCase = async (caseSpec, baseUrl) => {
     const elapsed = Date.now() - navigationStartedAt;
     if (elapsed < holdMs) await page.waitForTimeout(holdMs - elapsed);
     const readiness = await waitForJourneyReadiness(page, Math.max(1_000, readyTimeoutMs - holdMs));
+    const firstAnchor = ANCHORS[1];
+    const firstTransition = await page.evaluate(async (selector) => {
+      const api = window.__tascPerfBaseline;
+      api.markFirstHarnessInput();
+      await window.__tascClosePerfBoundary();
+      const startupSnapshot = api.snapshot();
+      api.startJourney();
+      const element = document.querySelector(selector);
+      if (!element) return { startupSnapshot, found: false };
+      const top = Math.max(0, scrollY + element.getBoundingClientRect().top - 72);
+      scrollTo({ top, behavior: "smooth" });
+      return { startupSnapshot, found: true };
+    }, firstAnchor);
+    const startupSnapshot = firstTransition.startupSnapshot;
+    await page.waitForTimeout(900);
+    await page.evaluate(() => window.__tascPerfBaseline.pauseJourney());
     const hiddenSamples = [
       {
-        anchor: "#top",
-        found: true,
-        hidden: await page.evaluate(() => window.__tascPerfBaseline.hiddenSample("#top")),
+        anchor: firstAnchor,
+        found: firstTransition.found,
+        hidden: firstTransition.found
+          ? await page.evaluate(
+              (selector) => window.__tascPerfBaseline.hiddenSample(selector),
+              firstAnchor,
+            )
+          : null,
       },
     ];
-    for (const record of startedRequests) {
-      record.inflightAtBoundary = !record.completedBeforeFirstInput && !record.failed;
-    }
-    beforeFirstInput = false;
-    await page.evaluate(() => window.__tascPerfBaseline.markFirstHarnessInput());
-    const startupSnapshot = await page.evaluate(() => window.__tascPerfBaseline.snapshot());
-    await page.evaluate(() => window.__tascPerfBaseline.startJourney());
-    for (const anchor of ANCHORS.slice(1)) {
+    await page.evaluate(() => window.__tascPerfBaseline.resumeJourney());
+    for (const anchor of ANCHORS.slice(2)) {
       const sample = await scrollToAnchor(page, anchor);
       await page.evaluate(() => window.__tascPerfBaseline.pauseJourney());
       sample.hidden = sample.found
@@ -1118,6 +1140,13 @@ const runCase = async (caseSpec, baseUrl) => {
       await page.evaluate(() => window.__tascPerfBaseline.resumeJourney());
     }
     await page.evaluate(() => window.__tascPerfBaseline.stopJourney());
+    await page.evaluate(() => scrollTo({ top: 0, behavior: "auto" }));
+    await page.waitForTimeout(100);
+    hiddenSamples.unshift({
+      anchor: "#top",
+      found: true,
+      hidden: await page.evaluate(() => window.__tascPerfBaseline.hiddenSample("#top")),
+    });
     await page.waitForTimeout(100);
     await Promise.allSettled(pendingSizeReads);
     const finalSnapshot = await page.evaluate(() => window.__tascPerfBaseline.snapshot());
