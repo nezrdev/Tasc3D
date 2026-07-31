@@ -90,10 +90,13 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             timeline.play(0);
         };
         revealRef.current = reveal;
-        if (readyRef.current)
+        const handleNavigationDeadline = () => reveal();
+        window.addEventListener("tasc:preloader-deadline", handleNavigationDeadline);
+        if (readyRef.current || document.documentElement.dataset.tascPreloaderDeadline === "true")
             reveal();
         return () => {
             window.clearTimeout(killSwitch);
+            window.removeEventListener("tasc:preloader-deadline", handleNavigationDeadline);
             revealRef.current = null;
             loadingTween.kill();
             timeline.kill();

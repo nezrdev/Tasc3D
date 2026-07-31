@@ -467,8 +467,9 @@ const installInstrumentation = async (context, network) => {
         const main = document.querySelector("main[data-hero-surface-ready='true']");
         if (main && state.heroSurfaceReadyMs == null) state.heroSurfaceReadyMs = performance.now();
         const preloader = document.querySelector(".site-preloader");
-        const completeClass = document.documentElement.classList.contains("site-preloader-complete");
-        if (!preloader && completeClass && state.preloaderCompleteMs == null) {
+        const completeClass = main?.classList.contains("site-preloader-complete") ?? false;
+        const hardFailOpen = document.documentElement.dataset.tascBootFailOpen === "true";
+        if ((!preloader || hardFailOpen) && (completeClass || hardFailOpen) && state.preloaderCompleteMs == null) {
           state.preloaderCompleteMs = performance.now();
         }
       };

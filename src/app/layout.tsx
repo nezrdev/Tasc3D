@@ -87,11 +87,22 @@ const webkitCompatibilityBootstrap = `
 `;
 const preloaderNavigationFailOpen = `
   try {
-    var maxWait = 3800;
-    var remaining = Math.max(0, maxWait - performance.now());
-    setTimeout(function () {
+    var revealWait = 1800;
+    var hardWait = 2400;
+    var scheduleFromNavigation = function (wait, callback) {
+      setTimeout(callback, Math.max(0, wait - performance.now()));
+    };
+    scheduleFromNavigation(revealWait, function () {
+      document.documentElement.setAttribute("data-tasc-preloader-deadline", "true");
+      window.dispatchEvent(new Event("tasc:preloader-deadline"));
+    });
+    scheduleFromNavigation(hardWait, function () {
       document.documentElement.setAttribute("data-tasc-boot-fail-open", "true");
-    }, remaining);
+      var main = document.querySelector("main.site-shell");
+      if (main) {
+        main.setAttribute("data-hero-surface-ready", "true");
+      }
+    });
   } catch (error) {}
 `;
 export const metadata: Metadata = {
