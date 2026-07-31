@@ -54,7 +54,7 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const compact = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
         const blinds = gsap.utils.toArray<HTMLElement>(".preloader-blind", root);
-        const killSwitch = window.setTimeout(() => revealRef.current?.(), 2800);
+        const killSwitch = window.setTimeout(() => revealRef.current?.(), 3200);
         gsap.set(root, { autoAlpha: 1 });
         gsap.set(blinds, { scaleX: 1, transformOrigin: "50% 50%" });
         gsap.set(".preloader-logo", { autoAlpha: 1, y: 0 });

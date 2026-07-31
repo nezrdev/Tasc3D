@@ -6,6 +6,7 @@ const criticalMediaPreloads = [
     { href: "/media/safari-static-starfield-20260713.svg", type: "image/svg+xml" },
     { href: "/media/hero-earth-poster-1080-20260715.webp", type: "image/webp" },
     { href: "/media/hero-mission-transition-20260712.svg", type: "image/svg+xml" },
+    { href: "/media/tasc-logo-20260710.svg", type: "image/svg+xml" },
 ] as const;
 export const metadata: Metadata = {
     alternates: {

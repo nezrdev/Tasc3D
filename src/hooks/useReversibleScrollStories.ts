@@ -1,5 +1,5 @@
 "use client";
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
@@ -14,6 +14,7 @@ export type ReversibleScrollStoriesOptions = {
     dominoReverseVideoRef: RefObject<HTMLVideoElement | null>;
     lenisRef: RefObject<Lenis | null>;
     transportKey?: string;
+    onForwardCompletedOnce?: () => void;
     enabled: boolean;
     story: "how" | "domino";
 };
@@ -24,7 +25,12 @@ const DOMINO_POST_UNLOCK_QUIET_MS = 300;
 const DOMINO_TOUCH_DIRECTION_THRESHOLD = 50;
 const DOMINO_WHEEL_DIRECTION_THRESHOLD = 60;
 const DOMINO_WHEEL_GESTURE_GAP_MS = 180;
-export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", enabled, story, }: ReversibleScrollStoriesOptions) {
+export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", onForwardCompletedOnce, enabled, story, }: ReversibleScrollStoriesOptions) {
+    const onForwardCompletedOnceRef = useRef(onForwardCompletedOnce);
+    const forwardCompletionReportedRef = useRef(false);
+    useEffect(() => {
+        onForwardCompletedOnceRef.current = onForwardCompletedOnce;
+    }, [onForwardCompletedOnce]);
     useGSAP(() => {
         const root = rootRef.current;
         if (!root || !enabled)
@@ -804,6 +810,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const pauseVideos = () => videos.forEach((video) => video.pause());
             const waitForMetadata = (video: HTMLVideoElement, token: number) => new Promise<boolean>((resolve) => {
+                if (video.dataset.armed !== "true") {
+                    resolve(false);
+                    return;
+                }
                 if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
                     resolve(true);
                     return;
@@ -823,7 +833,6 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 const timeout = window.setTimeout(() => finish(false), lowPower ? 3600 : 2400);
                 video.addEventListener("loadedmetadata", handleMetadata, { once: true });
                 video.addEventListener("error", handleError, { once: true });
-                video.preload = "auto";
                 if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
                     video.load();
             });
@@ -967,6 +976,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 resetTransportAttempt();
                 root.dataset.dominoPlayback = completedDirection > 0 ? "complete" : "start";
                 if (completedDirection > 0) {
+                    if (!forwardCompletionReportedRef.current) {
+                        forwardCompletionReportedRef.current = true;
+                        root.dataset.dominoReverseMediaArmed = "true";
+                        onForwardCompletedOnceRef.current?.();
+                    }
                     lenisRef.current?.start();
                     handoffToForm();
                 }
@@ -1193,11 +1207,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 requestedDirection = 0;
                 root.dataset.dominoPlayback = nextDirection > 0 ? "forward" : "reverse";
                 syncVisualState();
-                videos.forEach((video) => {
-                    video.preload = "auto";
-                    if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
-                        video.load();
-                });
+                const incomingVideo = nextDirection > 0 ? dominoForwardVideo : dominoReverseVideo;
+                if (incomingVideo.dataset.armed === "true" &&
+                    incomingVideo.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+                    incomingVideo.load();
+                }
                 requestDirection(nextDirection);
             };
             const startForwardFromApproach = () => {
@@ -1564,12 +1578,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     root.dataset.dominoQuarterReady = "fallback";
                 };
                 removeReadinessListeners = remove;
-                [dominoForwardVideo, dominoReverseVideo].forEach((video) => {
-                    video.preload = "auto";
-                    if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
-                        video.load();
-                    }
-                });
+                if (dominoForwardVideo.dataset.armed === "true" &&
+                    dominoForwardVideo.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+                    dominoForwardVideo.load();
+                }
                 if (hasForwardFrame()) {
                     markReady();
                 }
