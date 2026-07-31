@@ -809,7 +809,7 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
   const uniqueVideoRequests = [
     ...new Set([
       ...startedRequests.filter((entry) => entry.video).map((entry) => entry.url),
-      ...videoResources.map((entry) => entry.name),
+      ...videoResources.filter((entry) => VIDEO_PATTERN.test(entry.name)).map((entry) => entry.name),
     ]),
   ];
   const transferBytes = beforeBoundary.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
