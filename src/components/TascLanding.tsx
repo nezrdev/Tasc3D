@@ -68,6 +68,17 @@ const DATUM_VIDEO_MOBILE_MP4 = RUNTIME_MEDIA.datum.mobile;
 const DATUM_VIDEO_WEBM = RUNTIME_MEDIA.datum.chromium.desktop;
 const DATUM_VIDEO_MOBILE_WEBM = RUNTIME_MEDIA.datum.chromium.mobile;
 const DATUM_VIDEO_POSTER = RUNTIME_MEDIA.datum.poster;
+const VISION_LOGO_PLACEHOLDER =
+    "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+const VISION_LOGO_DEEP_LINKS = new Set([
+    "#clients",
+    "#services",
+    "#work",
+    "#datum",
+    "#brief",
+    "#process",
+    "#contact",
+]);
 const SERVICES_PLAYBACK_RATE = 1;
 const SERVICES_INPUT_QUIET_MS = 140;
 const SERVICES_ENTRY_GATE_MS = 120;
@@ -127,6 +138,7 @@ export function TascLanding() {
     const [dominoReverseFallback, setDominoReverseFallback] = useState(false);
     const [lowerMediaWarmDeadlineReached, setLowerMediaWarmDeadlineReached] = useState(false);
     const [processMapArmed, setProcessMapArmed] = useState(false);
+    const [visionLogoArmed, setVisionLogoArmed] = useState(false);
     const [preloaderComplete, setPreloaderComplete] = useState(false);
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
@@ -225,6 +237,12 @@ export function TascLanding() {
         performanceModeResolved &&
         preloaderComplete &&
         !mobilePerformanceMode;
+    useEffect(() => {
+        if (!motionPreferenceResolved || motionAllowed)
+            return;
+        const armFrame = window.requestAnimationFrame(() => setVisionLogoArmed(true));
+        return () => window.cancelAnimationFrame(armFrame);
+    }, [motionAllowed, motionPreferenceResolved]);
     const resetToTop = useCallback(() => {
         window.scrollTo({ top: 0, left: 0, behavior: "auto" });
         document.documentElement.scrollTop = 0;
@@ -736,6 +754,8 @@ export function TascLanding() {
             return;
         const armDeepLinkedMedia = () => {
             const hash = window.location.hash;
+            if (VISION_LOGO_DEEP_LINKS.has(hash))
+                setVisionLogoArmed(true);
             if (hash === "#services") {
                 setServicesMediaArmed(true);
                 setServicesStopPostersArmed(true);
@@ -761,6 +781,8 @@ export function TascLanding() {
         if (!root)
             return;
         const armFromHash = () => {
+            if (VISION_LOGO_DEEP_LINKS.has(window.location.hash))
+                setVisionLogoArmed(true);
             if (window.location.hash === "#services") {
                 setServicesMediaArmed(true);
                 setServicesStopPostersArmed(true);
@@ -1087,6 +1109,8 @@ export function TascLanding() {
             setServicesMediaArmed(true);
             setServicesStopPostersArmed(true);
         }
+        if (VISION_LOGO_DEEP_LINKS.has(href))
+            setVisionLogoArmed(true);
         if (href === "#datum")
             setDatumMediaArmed(true);
         if (href === "#brief")
@@ -3571,6 +3595,7 @@ export function TascLanding() {
             stagger: revealTime(0.08),
         }, "visionRight+=0.14")
             .to(".lens-stage", { ...lensMotion.vision, duration: 0.92, ease: "power2.inOut" }, "visionRight-=0.04")
+            .call(() => setVisionLogoArmed(true), [], "visionRight")
             .addLabel("mission", 2.18)
             .addLabel("loopExitHidden", 2.34)
             .to(".first-two-transition-art", { autoAlpha: 0, duration: 0.62, ease: "power2.inOut" }, "loopExitHidden-=0.18")
@@ -4864,7 +4889,7 @@ export function TascLanding() {
                     ? "prepared"
                     : lowerMediaWarmDeadlineReached
                         ? "deadline"
-                        : "pending"} data-services-media-prepared={servicesMediaPrepared ? "true" : undefined} data-datum-media-prepared={datumMediaPrepared ? "true" : undefined} data-datum-media-fallback={datumMediaFallback ? "true" : undefined} data-domino-media-prepared={dominoForwardPrepared ? "true" : undefined} data-domino-media-fallback={dominoForwardFallback ? "true" : undefined} data-domino-reverse-media-prepared={dominoReversePrepared ? "true" : undefined} data-domino-reverse-media-fallback={dominoReverseFallback ? "true" : undefined} data-hero-surface-ready={preloaderReady || preloaderRevealStarted ? "true" : undefined} data-mobile-performance={mobilePerformanceMode ? "true" : undefined} data-mac-performance={macPerformanceMode ? "true" : undefined} data-webkit-compatibility={webkitCompatibilityMode ? "true" : undefined} data-services-media={servicesPackedTransportMode ? "packed-alpha-video" : "native-alpha-video"} data-galaxy-visibility-root>
+                        : "pending"} data-services-media-prepared={servicesMediaPrepared ? "true" : undefined} data-datum-media-armed={datumMediaArmed ? "true" : undefined} data-datum-media-prepared={datumMediaPrepared ? "true" : undefined} data-datum-media-fallback={datumMediaFallback ? "true" : undefined} data-domino-media-prepared={dominoForwardPrepared ? "true" : undefined} data-domino-media-fallback={dominoForwardFallback ? "true" : undefined} data-domino-reverse-media-prepared={dominoReversePrepared ? "true" : undefined} data-domino-reverse-media-fallback={dominoReverseFallback ? "true" : undefined} data-hero-surface-ready={preloaderReady || preloaderRevealStarted ? "true" : undefined} data-mobile-performance={mobilePerformanceMode ? "true" : undefined} data-mac-performance={macPerformanceMode ? "true" : undefined} data-webkit-compatibility={webkitCompatibilityMode ? "true" : undefined} data-services-media={servicesPackedTransportMode ? "packed-alpha-video" : "native-alpha-video"} data-vision-logo-armed={visionLogoArmed ? "true" : undefined} data-galaxy-visibility-root>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!preloaderComplete ? (<SitePreloader ready={preloaderReady} onRevealStart={() => {
                 resetToTop();
@@ -4991,7 +5016,7 @@ export function TascLanding() {
             <p className="vision-reveal-body">{secondRevealCopy.body}</p>
           </div>
           <div className="second-media vision-logo-media" aria-label="TASC Strategic Communications Group logo">
-            <Image className="vision-logo-image" src="/media/vision-logo-glass-20260710.webp" alt="TASC Strategic Communications Group" width={3430} height={2160} sizes="(max-width: 760px) 112vw, 78vw" loading="lazy" fetchPriority="low"/>
+            <Image className="vision-logo-image" src={visionLogoArmed ? "/media/vision-logo-glass-20260710.webp" : VISION_LOGO_PLACEHOLDER} alt="TASC Strategic Communications Group" width={3430} height={2160} sizes="(max-width: 760px) 112vw, 78vw" loading={visionLogoArmed ? "eager" : "lazy"} fetchPriority={visionLogoArmed ? "high" : "low"} unoptimized={!visionLogoArmed}/>
           </div>
         </div>
         </section>
