@@ -823,6 +823,7 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
   }, 0);
   const transferMetricApproximate =
     networkMode.approximate && transferBytes === 0 && eventualBytesForCompletedRequests > 0;
+  const transferMetricBoundaryApproximate = transferMetricApproximate || inflightAtBoundary > 0;
 
   return {
     lcp: raw.capabilities.lcp
@@ -858,7 +859,7 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       ? metric("measured", round(raw.cls, 4), { sessionWindow: "1-second gap, 5-second maximum" })
       : metric("unsupported", null),
     bytesBeforeFirstScroll: metric(
-      transferMetricApproximate ? "approximate" : "measured",
+      transferMetricBoundaryApproximate ? "approximate" : "measured",
       transferMetricApproximate ? eventualBytesForCompletedRequests : transferBytes,
       {
         unit: "bytes",
