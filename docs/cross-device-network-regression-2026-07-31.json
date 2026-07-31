@@ -1,0 +1,109 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-31T16:03:58.431Z",
+  "runId": "2026-07-31T15-49-11-330Z-37796",
+  "sourceRevision": "4b42941487d9ef8bdff3a57e43267eb7c5cbde5e",
+  "command": "node scripts/tasc-cross-device-network-qa-20260722.mjs --preset=journey --engines=chromium,webkit --viewports=desktop,mobile --caches=cold --networks=normal --output=work/t0-cross-device-regression",
+  "preset": "journey",
+  "environment": {
+    "operatingSystem": "Windows",
+    "webkitBoundary": "Playwright WebKit on Windows is synthetic coverage and is not physical macOS Safari acceptance",
+    "network": "normal",
+    "cache": "cold"
+  },
+  "caseCount": 4,
+  "passedCount": 1,
+  "failedCount": 3,
+  "advisoryCount": 2,
+  "crossCaseSpeed": [
+    {
+      "key": "wheel|cold|normal",
+      "entries": [
+        {
+          "id": "001-chromium-desktop-wheel-cold-normal-r1",
+          "medianNormalizedStep": 0.19555555555555557
+        },
+        {
+          "id": "003-webkit-desktop-wheel-cold-normal-r1",
+          "medianNormalizedStep": 0.56
+        }
+      ],
+      "ratio": 2.8636363636363638,
+      "comparable": true,
+      "ok": false
+    },
+    {
+      "key": "touch|cold|normal",
+      "entries": [
+        {
+          "id": "002-chromium-mobile-touch-cold-normal-r1",
+          "medianNormalizedStep": 0.8199052132701422
+        },
+        {
+          "id": "004-webkit-mobile-touch-cold-normal-r1",
+          "medianNormalizedStep": 0.8199052132701422
+        }
+      ],
+      "ratio": 1,
+      "comparable": true,
+      "ok": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "001-chromium-desktop-wheel-cold-normal-r1",
+      "engine": "chromium",
+      "browserVersion": "151.0.7922.34",
+      "viewport": "desktop-1440x900",
+      "input": "wheel",
+      "passed": false,
+      "failures": [
+        "datum: loop playback does not jerk the document"
+      ],
+      "advisories": [
+        "journey: decoded-frame drop ratio stays below 25 percent"
+      ]
+    },
+    {
+      "id": "002-chromium-mobile-touch-cold-normal-r1",
+      "engine": "chromium",
+      "browserVersion": "151.0.7922.34",
+      "viewport": "mobile-390x844@3x",
+      "input": "touch",
+      "passed": true,
+      "failures": [],
+      "advisories": [
+        "journey: decoded-frame drop ratio stays below 25 percent"
+      ]
+    },
+    {
+      "id": "003-webkit-desktop-wheel-cold-normal-r1",
+      "engine": "webkit",
+      "browserVersion": "26.5",
+      "viewport": "desktop-1440x900",
+      "input": "wheel",
+      "passed": false,
+      "failures": [
+        "datum: loop playback does not jerk the document"
+      ],
+      "advisories": []
+    },
+    {
+      "id": "004-webkit-mobile-touch-cold-normal-r1",
+      "engine": "webkit",
+      "browserVersion": "26.5",
+      "viewport": "mobile-390x844@3x",
+      "input": "touch",
+      "passed": false,
+      "failures": [
+        "datum: loop playback does not jerk the document"
+      ],
+      "advisories": []
+    }
+  ],
+  "status": "baseline-with-known-runtime-failures",
+  "notes": [
+    "The failures are preserved as the pre-optimization T0 reference and were not weakened or rewritten.",
+    "The full ignored run directory contains per-case results and screenshots; this tracked document retains the durable comparison summary."
+  ]
+}

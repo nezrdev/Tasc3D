@@ -735,7 +735,7 @@ const calculateLegacyTti = (fcp, longTasks, boundaryMs) => {
   if (!Number.isFinite(fcp)) return null;
   const quietWindowMs = 5_000;
   const candidates = [fcp, ...longTasks.map((entry) => entry.start + entry.duration)]
-    .filter((value) => value + quietWindowMs <= boundaryMs)
+    .filter((value) => value >= fcp && value + quietWindowMs <= boundaryMs)
     .sort((left, right) => left - right);
   for (const candidate of candidates) {
     const hasBlockingTask = longTasks.some(
@@ -778,10 +778,20 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
   );
   const longTasks15 = raw.longTasks.filter((entry) => entry.start < 15_000);
   const longTasks7 = raw.longTasks.filter((entry) => entry.start < 7_000);
-  const blocking = (entries) => entries.reduce((sum, entry) => sum + Math.max(0, entry.duration - 50), 0);
+  const blockingInWindow = (entries, startMs, endMs) =>
+    entries.reduce((sum, entry) => {
+      const taskEnd = entry.start + entry.duration;
+      const blockingStart = Math.max(entry.start + 50, startMs);
+      const blockingEnd = Math.min(taskEnd, endMs);
+      return sum + Math.max(0, blockingEnd - blockingStart);
+    }, 0);
   const ttiValue = raw.capabilities.longtask
     ? calculateLegacyTti(raw.fcp, raw.longTasks, boundary)
     : null;
+  const tbtValue =
+    Number.isFinite(raw.fcp) && Number.isFinite(ttiValue)
+      ? blockingInWindow(raw.longTasks, raw.fcp, ttiValue)
+      : null;
   const hiddenSamples = raw.hiddenSamples ?? [];
   const hiddenExpectedMaximum = Math.max(
     0,
@@ -801,6 +811,18 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       entry.sizes.responseHeadersSize
     );
   }, 0);
+  const eventualBytesForCompletedRequests = startedRequests.reduce((sum, entry) => {
+    if (!entry.completedBeforeFirstInput || !entry.sizes) return sum;
+    return (
+      sum +
+      entry.sizes.requestBodySize +
+      entry.sizes.requestHeadersSize +
+      entry.sizes.responseBodySize +
+      entry.sizes.responseHeadersSize
+    );
+  }, 0);
+  const transferMetricApproximate =
+    networkMode.approximate && transferBytes === 0 && eventualBytesForCompletedRequests > 0;
 
   return {
     lcp: raw.capabilities.lcp
@@ -822,10 +844,11 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
           method: "Long Tasks API unavailable",
         }),
     tbt: raw.capabilities.longtask
-      ? metric("approximate", round(blocking(longTasks15)), {
+      ? metric(Number.isFinite(tbtValue) ? "approximate" : "not-observed", round(tbtValue), {
           unit: "ms",
-          window: "FCP/0 to 15 seconds",
-          blockingTime0To7sMs: round(blocking(longTasks7)),
+          window: "FCP to legacy quiet-window TTI",
+          method: "sum of each long task's blocking portion after its first 50 ms, clipped to the FCP-to-TTI window",
+          blockingTime0To7sMs: blockingInWindow(raw.longTasks, 0, 7_000),
         })
       : metric("unsupported", null, {
           unit: "ms",
@@ -835,13 +858,17 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       ? metric("measured", round(raw.cls, 4), { sessionWindow: "1-second gap, 5-second maximum" })
       : metric("unsupported", null),
     bytesBeforeFirstScroll: metric(
-      "measured",
-      transferBytes,
+      transferMetricApproximate ? "approximate" : "measured",
+      transferMetricApproximate ? eventualBytesForCompletedRequests : transferBytes,
       {
         unit: "bytes",
-        definition: "sum of PerformanceResourceTiming.transferSize for completed requests before first harness scroll input",
+        definition: transferMetricApproximate
+          ? "eventual Playwright request sizes for requests completed before first harness scroll input; excludes partial bytes from in-flight requests"
+          : "sum of PerformanceResourceTiming.transferSize for completed requests before first harness scroll input",
+        completedTransferSizeBytes: transferBytes,
         zeroTransferEntries: beforeBoundary.filter((entry) => entry.transferSize === 0).length,
         inflightRequestCountAtBoundary: inflightAtBoundary,
+        eventualBytesForCompletedRequestsBeforeFirstScroll: eventualBytesForCompletedRequests,
         eventualBytesForRequestsStartedBeforeFirstScroll: eventualBytesForStartedRequests,
         chromiumEncodedBytesReceivedBeforeFirstScroll: Number.isFinite(
           raw.chromiumEncodedBytesBeforeFirstInput,
@@ -850,7 +877,7 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
           : metric("unsupported", null, { unit: "bytes" }),
         caveat:
           inflightAtBoundary > 0
-            ? "transferSize excludes requests still in flight at the boundary; use the encoded/eventual fields for coverage"
+            ? "value is a lower-bound approximation because partial bytes from requests still in flight at the boundary are unavailable in Playwright WebKit; the started-request total is an eventual upper-bound diagnostic"
             : null,
       },
     ),
@@ -933,7 +960,10 @@ const runCase = async (caseSpec, baseUrl) => {
   let browser;
   let context;
   try {
-    browser = await engineProfile.browserType.launch({ headless: !args.headed });
+    browser = await engineProfile.browserType.launch({
+      headless: !args.headed,
+      args: engineProfile.cdp ? ["--enable-precise-memory-info"] : [],
+    });
     result.environment = {
       browserVersion: browser.version(),
       operatingSystem: `${os.platform()} ${os.release()}`,
@@ -1065,7 +1095,9 @@ const runCase = async (caseSpec, baseUrl) => {
       resources: startupSnapshot.resources,
       readiness,
       hiddenSamples,
-      chromiumEncodedBytesBeforeFirstInput,
+      chromiumEncodedBytesBeforeFirstInput: engineProfile.cdp
+        ? chromiumEncodedBytesBeforeFirstInput
+        : null,
     };
     result.metrics = summarizeCase(raw, profile, networkMode, startedRequests, diagnostics);
     result.status = "measured";
