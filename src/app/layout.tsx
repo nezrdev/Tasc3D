@@ -118,12 +118,12 @@ const preloaderCriticalFailOpenCss = `
     to { opacity: 1; visibility: visible; transform: translate3d(0, 0, 0); }
   }
   .site-preloader {
-    animation: tasc-preloader-critical-hide 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
+    animation: tasc-preloader-critical-hide 1ms step-start ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
   }
   .site-shell:not(.site-preloader-complete) .figma-hero-title > span,
   .site-shell:not(.site-preloader-complete) .hero-subcopy,
   .site-shell:not(.site-preloader-complete) .figma-hero-actions .figma-cta {
-    animation: tasc-hero-critical-reveal 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
+    animation: tasc-hero-critical-reveal 1ms step-start ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
   }
 `;
 export const metadata: Metadata = {

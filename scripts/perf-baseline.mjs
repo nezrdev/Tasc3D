@@ -11,8 +11,10 @@ const DEFAULT_OUTPUT = path.join(ROOT, "docs", "perf-baseline-2026-07-31.json");
 const VIDEO_PATTERN = /\.(?:mp4|webm|mov|m4v|apng)(?:$|[?#])/i;
 const HERO_VIDEO_PATTERN = /\/media\/hero-earth-(?:alpha|safari-packed)-[^/?#]+\.(?:mp4|webm)(?:$|[?#])/i;
 const PRELOADER_REVEAL_LIMIT_MS = 2500;
-const REVEAL_SELECTORS = ".reveal-block,.stagger-reveal-item,.process-contact-row";
-const ANCHORS = ["#top", "#clients", "#services", "#work", "#datum", "#process", "#contact"];
+const REVEAL_SELECTORS = "[data-reveal-managed='true'],[data-reveal-complete='true']";
+const SPECIALIZED_MOTION_SELECTOR =
+  ".services-story-section,.how-work-motion-section,.datum-motion-section,.domino-cta-section";
+const ANCHORS = ["#top", "#clients", "#services", "#work", "#datum", "#brief", "#process", "#contact"];
 
 const PROFILES = {
   "desktop-1440": {
@@ -329,7 +331,7 @@ const userAgentFor = (engineName, profile) => {
 
 const installInstrumentation = async (context, network) => {
   await context.addInitScript(
-    ({ connection, revealSelectors }) => {
+    ({ connection, revealSelectors, specializedMotionSelector }) => {
       performance.setResourceTimingBufferSize?.(20_000);
       const state = {
         capabilities: {
@@ -646,11 +648,17 @@ const installInstrumentation = async (context, network) => {
             rect.right > 0 &&
             rect.top < innerHeight &&
             rect.left < innerWidth;
-          const describe = (element) => {
+          const intersectsAtOrAbove = (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.right > 0 &&
+            rect.top < innerHeight &&
+            rect.left < innerWidth;
+          const describe = (element, intersectionTest = intersects) => {
             const rect = element.getBoundingClientRect();
             const style = getComputedStyle(element);
             const hidden = style.visibility === "hidden" || Number.parseFloat(style.opacity) <= 0.01;
-            if (!hidden || !intersects(rect)) return null;
+            if (!hidden || !intersectionTest(rect)) return null;
             return {
               selector: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${
                 element.classList.length ? `.${[...element.classList].slice(0, 3).join(".")}` : ""
@@ -665,17 +673,29 @@ const installInstrumentation = async (context, network) => {
               },
             };
           };
-          const expected = [...document.querySelectorAll(revealSelectors)]
+          const contractElements = [...document.querySelectorAll(revealSelectors)];
+          const expected = contractElements
             .filter((element) => !element.closest("[aria-hidden='true'],[inert]"))
-            .map(describe)
+            .map((element) => describe(element))
             .filter(Boolean);
+          const expectedAtOrAbove = contractElements
+            .filter((element) => !element.closest("[aria-hidden='true'],[inert]"))
+            .map((element) => describe(element, intersectsAtOrAbove))
+            .filter(Boolean);
+          const specializedContractCount = contractElements.filter((element) =>
+            element.closest(specializedMotionSelector),
+          ).length;
           const allHidden = [...document.querySelectorAll("body *")]
             .filter((element) => !element.closest("[aria-hidden='true'],[inert]"))
-            .map(describe)
+            .map((element) => describe(element))
             .filter(Boolean);
           return {
             anchor,
             expected,
+            expectedAtOrAbove,
+            contractCount: contractElements.length,
+            specializedContractCount,
+            motionReady: document.querySelector(".site-shell")?.dataset.motionReady === "true",
             allCount: allHidden.length,
             allDiagnostic: allHidden.slice(0, 250),
           };
@@ -697,6 +717,7 @@ const installInstrumentation = async (context, network) => {
               rttMs: network.rttMs,
             },
       revealSelectors: REVEAL_SELECTORS,
+      specializedMotionSelector: SPECIALIZED_MOTION_SELECTOR,
     },
   );
 };
@@ -770,11 +791,30 @@ const scrollToAnchor = async (page, anchor) => {
     const element = document.querySelector(selector);
     if (!element) return false;
     const top = Math.max(0, scrollY + element.getBoundingClientRect().top - 72);
-    scrollTo({ top, behavior: "smooth" });
+    scrollTo({ top, behavior: "auto" });
     return true;
   }, anchor);
   if (!found) return { anchor, found: false };
-  await page.waitForTimeout(900);
+  await page.evaluate(async () => {
+    await new Promise((resolve) => {
+      const deadline = performance.now() + 2_500;
+      let previousY = scrollY;
+      let stableFrames = 0;
+      const observe = () => {
+        const currentY = scrollY;
+        stableFrames = Math.abs(currentY - previousY) < 0.5 ? stableFrames + 1 : 0;
+        previousY = currentY;
+        if (stableFrames >= 3 || performance.now() >= deadline) {
+          resolve();
+          return;
+        }
+        requestAnimationFrame(observe);
+      };
+      requestAnimationFrame(observe);
+    });
+    dispatchEvent(new CustomEvent("tasc:scroll-position-applied"));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
   return { anchor, found: true };
 };
 
@@ -849,6 +889,19 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
     0,
     ...hiddenSamples.map((sample) => sample.hidden?.expected?.length ?? 0),
   );
+  const revealContractElementMaximum = Math.max(
+    0,
+    ...hiddenSamples.map((sample) => sample.hidden?.contractCount ?? 0),
+  );
+  const revealContractAtOrAboveMaximum = Math.max(
+    0,
+    ...hiddenSamples.map((sample) => sample.hidden?.expectedAtOrAbove?.length ?? 0),
+  );
+  const specializedRevealContractMaximum = Math.max(
+    0,
+    ...hiddenSamples.map((sample) => sample.hidden?.specializedContractCount ?? 0),
+  );
+  const motionReadyObserved = hiddenSamples.some((sample) => sample.hidden?.motionReady === true);
   const hiddenAllMaximum = Math.max(0, ...hiddenSamples.map((sample) => sample.hidden?.allCount ?? 0));
   const uniqueVideoRequests = [
     ...new Set([
@@ -1097,7 +1150,12 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
     hiddenInViewport: metric("measured", hiddenAllMaximum, {
       definition: "all hidden or opacity-zero non-aria-hidden elements intersecting the viewport",
       revealContractMaximum: hiddenExpectedMaximum,
+      revealContractAtOrAboveMaximum,
+      revealContractElementMaximum,
+      specializedRevealContractMaximum,
+      motionReadyObserved,
       revealContractSelectors: REVEAL_SELECTORS,
+      specializedMotionSelector: SPECIALIZED_MOTION_SELECTOR,
       samples: hiddenSamples,
     }),
     jsHeapPeak: raw.capabilities.jsHeap
@@ -1266,6 +1324,10 @@ const runCase = async (caseSpec, baseUrl) => {
     }, firstAnchor);
     const startupSnapshot = firstTransition.startupSnapshot;
     await page.waitForTimeout(900);
+    await page.evaluate(async () => {
+      dispatchEvent(new CustomEvent("tasc:scroll-position-applied"));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    });
     await page.evaluate(() => window.__tascPerfBaseline.pauseJourney());
     const hiddenSamples = [
       {
@@ -1292,6 +1354,21 @@ const runCase = async (caseSpec, baseUrl) => {
       hiddenSamples.push(sample);
       await page.evaluate(() => window.__tascPerfBaseline.resumeJourney());
     }
+    await page.evaluate(() => {
+      scrollTo({ top: 0, behavior: "auto" });
+      const scrollHeight = document.documentElement.scrollHeight;
+      const step = Math.max(innerHeight * 0.9, scrollHeight / 10 + 1);
+      for (let index = 0; index < 10; index += 1) {
+        scrollBy({ top: step, behavior: "auto" });
+      }
+    });
+    await page.waitForTimeout(1200);
+    await page.evaluate(() => window.__tascPerfBaseline.pauseJourney());
+    hiddenSamples.push({
+      anchor: "#fast-scroll-10",
+      found: true,
+      hidden: await page.evaluate(() => window.__tascPerfBaseline.hiddenSample("#fast-scroll-10")),
+    });
     await page.evaluate(() => window.__tascPerfBaseline.stopJourney());
     await page.evaluate(() => scrollTo({ top: 0, behavior: "auto" }));
     await page.waitForTimeout(100);
@@ -1372,8 +1449,9 @@ const requiredMetricNames = [
 const structuralFailures = [];
 const acceptanceFailures = [];
 const advisories = [];
-const recordAcceptanceFinding = (result, message) => {
-  const target = result.metrics?.networkMode?.approximate === true &&
+const recordAcceptanceFinding = (result, message, syntheticWebKitAdvisory = false) => {
+  const target = syntheticWebKitAdvisory &&
+    result.metrics?.networkMode?.approximate === true &&
     result.configuration?.engine === "webkit"
     ? advisories
     : acceptanceFailures;
@@ -1397,6 +1475,7 @@ for (const result of results) {
     recordAcceptanceFinding(
       result,
       `non-Hero startup transfer ${nonHeroTransfer.value} B exceeds ${nonHeroTransfer.hardBudgetBytes} B`,
+      true,
     );
   }
   if (
@@ -1406,6 +1485,7 @@ for (const result of results) {
     recordAcceptanceFinding(
       result,
       `non-Hero startup lower bound ${nonHeroTransfer.value} B already exceeds ${nonHeroTransfer.hardBudgetBytes} B`,
+      true,
     );
   }
   if ((nonHeroTransfer?.observedHeroTransportCount ?? 0) > 1) {
@@ -1439,13 +1519,42 @@ for (const result of results) {
     recordAcceptanceFinding(
       result,
       `preloader reveal ${preloaderReveal.value} ms exceeds ${PRELOADER_REVEAL_LIMIT_MS} ms`,
+      true,
+    );
+  }
+  const hiddenInViewport = result.metrics?.hiddenInViewport;
+  if (hiddenInViewport?.status !== "measured") {
+    recordAcceptanceFinding(result, "reveal visibility contract was not measured");
+  }
+  else if ((hiddenInViewport.revealContractElementMaximum ?? 0) === 0) {
+    recordAcceptanceFinding(result, "no scoped reveal-contract elements were initialized");
+  }
+  else if (hiddenInViewport.motionReadyObserved !== true) {
+    recordAcceptanceFinding(result, "data-motion-ready was not observed during reveal traversal");
+  }
+  else if ((hiddenInViewport.specializedRevealContractMaximum ?? 0) > 0) {
+    recordAcceptanceFinding(
+      result,
+      `${hiddenInViewport.specializedRevealContractMaximum} specialized story-state elements leaked into the generic reveal contract`,
+    );
+  }
+  else if ((hiddenInViewport.revealContractMaximum ?? 0) > 0) {
+    recordAcceptanceFinding(
+      result,
+      `${hiddenInViewport.revealContractMaximum} reveal-managed elements remained hidden in the viewport`,
+    );
+  }
+  else if ((hiddenInViewport.revealContractAtOrAboveMaximum ?? 0) > 0) {
+    recordAcceptanceFinding(
+      result,
+      `${hiddenInViewport.revealContractAtOrAboveMaximum} reveal-managed elements remained hidden at or above the viewport`,
     );
   }
 }
 
 const sourceStatus = git("status", "--porcelain") ?? "";
 const report = {
-  schemaVersion: 3,
+  schemaVersion: 4,
   generatedAt: new Date().toISOString(),
   source: {
     revision: git("rev-parse", "HEAD"),
@@ -1465,10 +1574,12 @@ const report = {
     startupObservationMs: holdMs,
     readinessTimeoutMs: readyTimeoutMs,
     firstScrollBoundary: "first scroll input issued by this harness after startup observation and readiness wait",
+    revealContract:
+      "all app anchors plus a coalesced ten-step top-to-bottom fast-scroll sequence; only scoped reveal-managed/completed elements are hard-gated",
     webkitNetworkCaveat:
       "Throttled WebKit uses buffered route fulfillment and is approximate; it is not equivalent to physical Safari streaming.",
     syntheticWebKitPolicy:
-      "Approximate throttled WebKit budget and reveal findings are reported as advisories; physical Safari is the hard external acceptance boundary.",
+      "Approximate throttled WebKit performance budgets are advisory; functional reveal-contract failures remain hard failures. Physical Safari is the final external acceptance boundary.",
     physicalDeviceBoundary:
       "Playwright WebKit on Windows is not iPhone Safari, iPhone Chrome, Android Chrome, or macOS Safari acceptance.",
   },

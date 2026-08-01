@@ -272,7 +272,7 @@ export function TascLanding() {
     useEffect(() => {
         const media = window.matchMedia("(prefers-reduced-motion: reduce)");
         const syncMotionPreference = () => {
-            ScrollTrigger.config({ ignoreMobileResize: true, limitCallbacks: true });
+            ScrollTrigger.config({ ignoreMobileResize: true });
             setMotionAllowed(!media.matches);
             setMotionPreferenceResolved(true);
         };
@@ -1561,6 +1561,35 @@ export function TascLanding() {
         let dominoTimelineWatchdog = 0;
         let heroVideoSuspended = false;
         const cleanupCallbacks: Array<() => void> = [];
+        const managedRevealElements = new Set<HTMLElement>();
+        const managedRevealTriggers = new Set<HTMLElement>();
+        const registerManagedRevealElements = (elements: Iterable<HTMLElement>) => {
+            Array.from(elements).forEach((element) => {
+                managedRevealElements.add(element);
+                element.dataset.revealManaged = "true";
+                delete element.dataset.revealComplete;
+            });
+        };
+        const registerManagedRevealTrigger = (element: HTMLElement) => {
+            managedRevealTriggers.add(element);
+            element.dataset.revealTrigger = "true";
+        };
+        const completeManagedReveal = (elements: Iterable<HTMLElement>) => {
+            Array.from(elements).forEach((element) => {
+                element.dataset.revealComplete = "true";
+            });
+        };
+        cleanupCallbacks.push(() => {
+            delete root.dataset.motionReady;
+            gsap.killTweensOf(Array.from(managedRevealElements));
+            managedRevealElements.forEach((element) => {
+                delete element.dataset.revealManaged;
+                delete element.dataset.revealComplete;
+            });
+            managedRevealTriggers.forEach((element) => {
+                delete element.dataset.revealTrigger;
+            });
+        });
         const mediaRunCancels = new Map<HTMLVideoElement, () => void>();
         heroTimelineRef.current = null;
         const resetServicesMediaRetry = () => {
@@ -4670,11 +4699,19 @@ export function TascLanding() {
         const revealElements = gsap.utils.toArray<HTMLElement>(".reveal-block").filter((element) => !element.closest(".hero-motion") &&
             !element.closest(".domino-cta-section") &&
             !element.closest(".services-section") &&
+            !element.closest(".how-work-motion-section") &&
+            !element.closest(".datum-motion-section") &&
             !element.classList.contains("stagger-reveal-group") &&
             !element.closest(".stagger-reveal-group") &&
             !element.classList.contains("process-contact-row"));
+        registerManagedRevealElements(revealElements);
         revealElements.forEach((element) => {
-            const revealElement = (fromY: number) => {
+            let revealed = false;
+            const revealElement = (fromY: number, trigger: ScrollTrigger) => {
+                if (revealed)
+                    return;
+                revealed = true;
+                trigger.kill(false);
                 gsap.set(element, { y: fromY, autoAlpha: 0, overwrite: true });
                 gsap.to(element, {
                     y: 0,
@@ -4682,30 +4719,36 @@ export function TascLanding() {
                     duration: revealTime(1.34),
                     ease: "power4.out",
                     overwrite: true,
+                    onComplete: () => completeManagedReveal([element]),
                 });
             };
-            gsap.set(element, { y: 18, autoAlpha: 0 });
+            registerManagedRevealTrigger(element);
             ScrollTrigger.create({
                 trigger: element,
                 start: "top 84%",
-                end: "bottom 8%",
-                onEnter: () => revealElement(18),
-                onEnterBack: () => revealElement(-18),
-                onLeave: () => gsap.set(element, { y: -18, autoAlpha: 0, overwrite: true }),
-                onLeaveBack: () => gsap.set(element, { y: 18, autoAlpha: 0, overwrite: true }),
+                onEnter: (trigger) => revealElement(18, trigger),
+                onEnterBack: (trigger) => revealElement(-18, trigger),
             });
         });
         const staggerRevealGroups = gsap.utils.toArray<HTMLElement>(".stagger-reveal-group").filter((group) => !group.closest(".hero-motion") &&
             !group.closest(".services-section") &&
             !group.closest(".how-work-motion-section") &&
-            !group.closest(".datum-motion-section"));
+            !group.closest(".datum-motion-section") &&
+            !group.closest(".domino-cta-section"));
         staggerRevealGroups.forEach((group) => {
             const items = Array.from(group.querySelectorAll<HTMLElement>(".stagger-reveal-item"));
             const isProcessHeader = group.classList.contains("process-contact-header");
             if (items.length === 0) {
                 return;
             }
-            const revealItems = (fromY: number) => {
+            let revealed = false;
+            registerManagedRevealElements(items);
+            registerManagedRevealTrigger(group);
+            const revealItems = (fromY: number, trigger: ScrollTrigger) => {
+                if (revealed)
+                    return;
+                revealed = true;
+                trigger.kill(false);
                 gsap.set(items, { y: fromY, autoAlpha: 0, overwrite: true });
                 gsap.to(items, {
                     y: 0,
@@ -4714,20 +4757,14 @@ export function TascLanding() {
                     ease: "power4.out",
                     stagger: revealTime(0.18),
                     overwrite: true,
+                    onComplete: () => completeManagedReveal(items),
                 });
             };
-            const resetItems = (toY: number) => {
-                gsap.set(items, { y: toY, autoAlpha: 0, overwrite: true });
-            };
-            gsap.set(items, { y: 30, autoAlpha: 0 });
             ScrollTrigger.create({
                 trigger: group,
                 start: isProcessHeader ? "top 96%" : "top 84%",
-                end: "bottom 8%",
-                onEnter: () => revealItems(30),
-                onEnterBack: () => revealItems(-30),
-                onLeave: () => resetItems(-30),
-                onLeaveBack: () => resetItems(30),
+                onEnter: (trigger) => revealItems(30, trigger),
+                onEnterBack: (trigger) => revealItems(-30, trigger),
             });
         });
         const processRows = gsap.utils.toArray<HTMLElement>(".process-contact-row");
@@ -4736,19 +4773,25 @@ export function TascLanding() {
                 row,
                 Array.from(row.querySelectorAll<HTMLElement>(".process-contact-row-title > span, .process-contact-row-title > h3, :scope > p")),
             ]));
-            gsap.set(processRows, { y: 34, autoAlpha: 0 });
-            gsap.set(Array.from(processRowParts.values()).flat(), { y: 16, autoAlpha: 0 });
-            const revealProcessBatch = (batch: Element[], reverse = false) => {
-                gsap.to(batch, {
+            const processParts = Array.from(processRowParts.values()).flat();
+            registerManagedRevealElements([...processRows, ...processParts]);
+            processRows.forEach(registerManagedRevealTrigger);
+            const revealProcessBatch = (batch: Element[], triggers: ScrollTrigger[]) => {
+                const rows = batch.filter((element): element is HTMLElement => element instanceof HTMLElement &&
+                    element.dataset.revealComplete !== "true");
+                triggers.forEach((trigger) => trigger.kill(false));
+                if (rows.length === 0)
+                    return;
+                gsap.to(rows, {
                     y: 0,
                     autoAlpha: 1,
                     duration: revealTime(1.34),
                     ease: "power4.out",
-                    stagger: revealTime(reverse ? 0.14 : 0.18),
+                    stagger: revealTime(0.18),
                     overwrite: true,
+                    onComplete: () => completeManagedReveal(rows),
                 });
-                batch.forEach((element, batchIndex) => {
-                    const row = element as HTMLElement;
+                rows.forEach((row, batchIndex) => {
                     const parts = processRowParts.get(row);
                     if (!parts?.length)
                         return;
@@ -4760,26 +4803,15 @@ export function TascLanding() {
                         ease: "power3.out",
                         stagger: revealTime(0.12),
                         overwrite: true,
+                        onComplete: () => completeManagedReveal(parts),
                     });
-                });
-            };
-            const resetProcessBatch = (batch: Element[], toY: number) => {
-                gsap.set(batch, { y: toY, autoAlpha: 0, overwrite: true });
-                batch.forEach((element) => {
-                    const parts = processRowParts.get(element as HTMLElement);
-                    if (parts?.length)
-                        gsap.set(parts, { y: toY > 0 ? 16 : -16, autoAlpha: 0, overwrite: true });
                 });
             };
             ScrollTrigger.batch(processRows, {
                 start: "top 80%",
-                end: "bottom 8%",
-                once: false,
-                batchMax: 1,
-                onEnter: (batch) => revealProcessBatch(batch),
-                onEnterBack: (batch) => revealProcessBatch(batch, true),
-                onLeave: (batch) => resetProcessBatch(batch, -34),
-                onLeaveBack: (batch) => resetProcessBatch(batch, 34),
+                batchMax: 5,
+                onEnter: revealProcessBatch,
+                onEnterBack: revealProcessBatch,
             });
         }
         gsap.utils.toArray<HTMLElement>(".motion-divider").forEach((element) => {
@@ -4796,6 +4828,7 @@ export function TascLanding() {
                 onLeaveBack: resetDivider,
             });
         });
+        root.dataset.motionReady = "true";
         document.fonts?.ready.then(refreshScroll);
         lensVideo?.addEventListener("loadedmetadata", handleLensMetadata, { once: true });
         return () => {
@@ -4871,6 +4904,71 @@ export function TascLanding() {
         ],
         revertOnUpdate: true,
     });
+    useEffect(() => {
+        if (!preloaderComplete || !motionAllowed)
+            return;
+        const root = rootRef.current;
+        if (!root)
+            return;
+        let watchdogTimer = 0;
+        let watchdogFrame = 0;
+        let scrollIdleTimer = 0;
+        const isAtOrAboveViewport = (element: HTMLElement) => {
+            const rect = element.getBoundingClientRect();
+            const viewportHeight = Math.max(1, window.innerHeight, window.visualViewport?.height ?? 0);
+            const viewportWidth = Math.max(1, window.innerWidth, window.visualViewport?.width ?? 0);
+            return rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth;
+        };
+        const isHidden = (element: HTMLElement) => {
+            const style = window.getComputedStyle(element);
+            return style.visibility === "hidden" || Number.parseFloat(style.opacity || "1") <= 0.01;
+        };
+        const revealStuckElements = () => {
+            watchdogFrame = 0;
+            const stuckElements = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]'))
+                .filter((element) => isAtOrAboveViewport(element) && isHidden(element));
+            const stuckTriggers = new Set(stuckElements.map((element) => element.closest<HTMLElement>('[data-reveal-trigger="true"]'))
+                .filter((element): element is HTMLElement => Boolean(element)));
+            stuckTriggers.forEach((triggerElement) => {
+                const candidates = [
+                    ...(triggerElement.matches('[data-reveal-managed="true"]') ? [triggerElement] : []),
+                    ...Array.from(triggerElement.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]')),
+                ];
+                const hiddenTargets = candidates.filter(isHidden);
+                if (hiddenTargets.length === 0)
+                    return;
+                ScrollTrigger.getAll().forEach((trigger) => {
+                    if (trigger.trigger === triggerElement)
+                        trigger.kill(false);
+                });
+                gsap.killTweensOf(hiddenTargets);
+                gsap.set(hiddenTargets, { y: 0, autoAlpha: 1, overwrite: true });
+                hiddenTargets.forEach((element) => {
+                    element.dataset.revealComplete = "true";
+                });
+            });
+        };
+        const scheduleWatchdog = () => {
+            if (watchdogFrame)
+                return;
+            watchdogFrame = window.requestAnimationFrame(revealStuckElements);
+        };
+        const scheduleScrollIdleWatchdog = () => {
+            window.clearTimeout(scrollIdleTimer);
+            scrollIdleTimer = window.setTimeout(scheduleWatchdog, 900);
+        };
+        watchdogTimer = window.setTimeout(scheduleWatchdog, 3000);
+        window.addEventListener("tasc:scroll-position-applied", scheduleWatchdog);
+        window.addEventListener("scroll", scheduleScrollIdleWatchdog, { passive: true });
+        return () => {
+            window.clearTimeout(watchdogTimer);
+            window.clearTimeout(scrollIdleTimer);
+            if (watchdogFrame)
+                window.cancelAnimationFrame(watchdogFrame);
+            window.removeEventListener("tasc:scroll-position-applied", scheduleWatchdog);
+            window.removeEventListener("scroll", scheduleScrollIdleWatchdog);
+        };
+    }, [motionAllowed, preloaderComplete]);
     useReversibleScrollStories({
         rootRef,
         dominoVideoRef,
@@ -4965,7 +5063,7 @@ export function TascLanding() {
             window.removeEventListener("hashchange", navigateFromHistory);
         };
     }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
-    return (<main ref={rootRef} className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+    return (<main ref={rootRef} className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"
                 ? "galaxy"
