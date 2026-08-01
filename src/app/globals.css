@@ -62,7 +62,6 @@ html {
 body {
   min-height: 100%;
   margin: 0;
-  overflow-x: hidden;
   background:
     radial-gradient(circle at 50% 0%, rgba(82, 151, 190, 0.08), transparent 38rem),
     var(--bg);
@@ -1134,7 +1133,7 @@ h3 {
   filter:
     drop-shadow(0 0 20px rgba(153, 200, 255, 0.42))
     drop-shadow(0 24px 80px rgba(11, 43, 84, 0.52));
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 @media (min-width: 901px) and (max-height: 780px) {
@@ -3588,7 +3587,7 @@ body > div:first-child,
 
 html,
 body {
-  overscroll-behavior: none;
+  overscroll-behavior-y: contain;
 }
 
 body::before {
@@ -4134,7 +4133,7 @@ body::before {
 .service-glass-card {
   position: relative;
   min-width: 0;
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .service-glass-card article {
@@ -4448,7 +4447,7 @@ body::before {
   -webkit-backdrop-filter: blur(13px) saturate(1.18);
   backdrop-filter: blur(13px) saturate(1.18);
   box-shadow: 0 18px 62px rgba(0, 0, 0, 0.38);
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .news-float-card:nth-child(1) {
@@ -4656,7 +4655,7 @@ body::before {
   box-shadow:
     0 26px 84px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
-  will-change: transform, opacity, filter;
+  will-change: transform, opacity;
 }
 
 .service-glass-card article,
@@ -5689,13 +5688,13 @@ body::before {
 
 .how-work-motion-glow {
   position: absolute;
-  left: max(-420px, -28vw);
+  left: calc(50% - 65vw);
   top: clamp(88px, 21vh, 210px);
   z-index: 0;
-  width: 313vw;
+  width: 130vw;
   height: clamp(150px, 17vw, 242px);
   background: linear-gradient(90deg, rgba(103, 174, 255, 0.36) 0%, rgba(134, 190, 255, 0.36) 41.25%, transparent 80%);
-  filter: blur(50px);
+  filter: blur(24px);
   opacity: 0.92;
   transform: rotate(-8.06deg);
   pointer-events: none;
@@ -6815,9 +6814,9 @@ body::before {
   }
 
   .how-work-motion-glow {
-    left: -180px;
+    left: calc(50% - 65vw);
     top: 118px;
-    width: 220vw;
+    width: 130vw;
     height: 150px;
     opacity: 0.68;
   }
@@ -11506,8 +11505,8 @@ body::before {
 .figma-clients-section[data-client-cards-visible="true"] .figma-client-card {
   opacity: 1 !important;
   visibility: visible !important;
-  filter: blur(0px) !important;
-  transform: translate3d(0, 0, 0) !important;
+  filter: none !important;
+  transform: none !important;
 }
 
 @media (max-width: 900px) {

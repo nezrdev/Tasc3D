@@ -11,6 +11,7 @@
     "media:verify": "node scripts/verify-runtime-media.mjs",
     "qa:mobile-portions": "node scripts/verify-mobile-portioned-scroll.mjs",
     "qa:webgl": "node scripts/verify-webgl-lifecycle.mjs",
+    "qa:t5:physical-kit": "node scripts/verify-t5-physical-safari-kit.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm media:verify && pnpm build",
     "db:migrate": "node scripts/migrate.mjs"
   },

@@ -12,6 +12,45 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
   transform: translate3d(0, 0, 0) !important;
 }
 
+.figma-clients-section[data-client-cards-moving="true"] .figma-client-card,
+.datum-motion-state-cards[data-datum-cards-moving="true"] .datum-glass-card,
+.site-shell[data-domino-handoff="form"] .domino-form-stage .domino-impulse-row {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+@media (max-width: 900px) {
+  .figma-client-card {
+    background: rgba(21, 21, 21, 0.94) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .datum-glass-card {
+    background: rgba(28, 28, 28, 0.94) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .domino-form-stage .domino-impulse-row {
+    background: rgba(255, 255, 255, 0.1) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .news-float-card {
+    background: rgba(8, 12, 16, 0.94) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .services-board {
+    background: rgba(4, 6, 7, 0.94) !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
 @media (max-width: 760px) {
   .datum-motion-media {
     -webkit-clip-path: none !important;

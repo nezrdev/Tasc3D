@@ -25,9 +25,16 @@ html[data-tasc-webkit="true"] .mobile-menu-glass,
 html[data-tasc-webkit="true"] .mobile-menu-toggle,
 html[data-tasc-webkit="true"] .mobile-menu-card,
 html[data-tasc-webkit="true"] .cookie-consent-shell,
+html[data-tasc-webkit="true"] .cookie-consent-button,
 html[data-tasc-webkit="true"] .glass-surface {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
+}
+
+html[data-tasc-webkit="true"] .cookie-consent-shell::before,
+html[data-tasc-webkit="true"] .cookie-consent-button::before,
+html[data-tasc-webkit="true"] .cookie-consent-button::after {
+  mix-blend-mode: normal !important;
 }
 
 html[data-tasc-webkit="true"] .site-header-glass,
@@ -35,6 +42,46 @@ html[data-tasc-webkit="true"] .mobile-menu-glass,
 html[data-tasc-webkit="true"] .mobile-menu-toggle,
 html[data-tasc-webkit="true"] .mobile-menu-card {
   background: rgba(4, 7, 10, 0.86) !important;
+}
+
+html[data-tasc-webkit="true"] .site-shell .site-header-glass.glass-surface,
+.site-shell[data-webkit-compatibility="true"] .site-header-glass.glass-surface {
+  border: 0 !important;
+  border-bottom: 1px solid rgba(230, 238, 245, 0.08) !important;
+  background:
+    linear-gradient(180deg, rgba(8, 12, 15, 0.94), rgba(3, 6, 9, 0.88)),
+    radial-gradient(circle at 28% 0%, rgba(153, 200, 255, 0.14), transparent 42%),
+    rgba(2, 4, 6, 0.92) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-tasc-webkit="true"] .site-shell[data-process-inrange="true"] .site-header-glass.glass-surface,
+.site-shell[data-webkit-compatibility="true"][data-process-inrange="true"] .site-header-glass.glass-surface {
+  background:
+    linear-gradient(180deg, rgba(5, 8, 10, 0.88), rgba(4, 6, 8, 0.78)),
+    rgba(3, 5, 7, 0.9) !important;
+}
+
+html[data-tasc-webkit="true"] .site-shell .header-action-glass-surface.glass-surface,
+.site-shell[data-webkit-compatibility="true"] .header-action-glass-surface.glass-surface {
+  border: 1px solid rgba(235, 239, 242, 0.32) !important;
+  background:
+    linear-gradient(180deg, rgba(28, 32, 35, 0.92), rgba(5, 7, 8, 0.88)),
+    radial-gradient(circle at 22% 0%, rgba(255, 255, 255, 0.14), transparent 44%),
+    rgba(8, 10, 11, 0.9) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-tasc-webkit="true"] .site-shell .header-action-cta.header-action-cta-light,
+.site-shell[data-webkit-compatibility="true"] .header-action-cta.header-action-cta-light {
+  border: 1px solid rgba(255, 255, 255, 0.9) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(231, 236, 241, 0.96)),
+    rgba(246, 247, 248, 0.98) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 
@@ -78,6 +125,43 @@ html[data-tasc-webkit="true"] .datum-motion-state,
 html[data-tasc-webkit="true"] .domino-media {
   backface-visibility: hidden;
   transform-style: flat;
+}
+
+html[data-tasc-webkit="true"] .services-story-panel,
+html[data-tasc-webkit="true"] .services-story-video-wrap,
+html[data-tasc-webkit="true"] .services-story-video-packed,
+html[data-tasc-webkit="true"] .services-galaxy-stage,
+html[data-tasc-webkit="true"] .how-work-step-number,
+html[data-tasc-webkit="true"] .how-work-step-copy,
+html[data-tasc-webkit="true"] .datum-motion-state,
+html[data-tasc-webkit="true"] .datum-motion-state-cards .stagger-reveal-item,
+html[data-tasc-webkit="true"] .domino-media,
+html[data-tasc-webkit="true"] .domino-video-title {
+  will-change: auto !important;
+}
+
+html[data-tasc-webkit="true"]
+  .site-shell:is([data-services-inrange="true"], [data-services-pinned="true"])
+  :is(.services-story-panel, .services-story-video-wrap, .services-story-video-packed),
+html[data-tasc-webkit="true"]
+  .site-shell[data-how-work-inrange="true"]
+  :is(.how-work-step-number, .how-work-step-copy),
+html[data-tasc-webkit="true"]
+  .site-shell[data-datum-pinned="true"]
+  :is(.datum-motion-state, .datum-motion-state-cards .stagger-reveal-item),
+html[data-tasc-webkit="true"]
+  .datum-motion-state-cards[data-datum-cards-moving="true"]
+  .stagger-reveal-item,
+html[data-tasc-webkit="true"]
+  .site-shell[data-domino-pinned="true"]
+  :is(.domino-media, .domino-video-title) {
+  will-change: transform, opacity !important;
+}
+
+html[data-tasc-webkit="true"]
+  .site-shell:is([data-services-inrange="true"], [data-services-pinned="true"])
+  .services-galaxy-stage {
+  will-change: opacity !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

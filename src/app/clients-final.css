@@ -126,7 +126,7 @@
 
 .vision-clients-flare-stage {
   position: absolute;
-  top: 1000vh;
+  top: 0;
   right: 0;
   left: 0;
   z-index: 0;
@@ -137,6 +137,7 @@
   opacity: 1;
   visibility: visible;
   pointer-events: none;
+  transform: translate3d(0, -300vh, 0);
   contain: layout style;
   isolation: isolate;
 }
@@ -161,7 +162,7 @@
   mask-image: none !important;
   -webkit-mask-composite: initial !important;
   mask-composite: initial !important;
-  will-change: transform;
+  will-change: auto;
   backface-visibility: hidden;
   contain: paint;
 }
