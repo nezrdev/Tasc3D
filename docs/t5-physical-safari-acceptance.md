@@ -86,7 +86,7 @@ Fill:
 
 Use `t4-baseline-1`, `t4-baseline-2`, `t4-baseline-3` and matching `t5-candidate-1`, `t5-candidate-2`, `t5-candidate-3` labels. Click `Start capture`, perform the journey below, then click `Stop + download`. Keep each JSON with its screen recording, Timeline and HAR.
 
-The probe is external QA instrumentation. It adds no runtime code to the application, does not intercept input, and samples video state only every 250 ms. Web Inspector Timeline remains the primary compositor evidence.
+The probe is external QA instrumentation. It adds no runtime code to the application, does not intercept input, samples video and story state every 250 ms, and minimizes its panel while recording. Web Inspector Timeline remains the primary compositor evidence and overrides probe timing when they disagree.
 
 ## Journey
 
@@ -109,7 +109,7 @@ Repeat one candidate journey on a constrained real network or a physical weak de
 Compare matching baseline and candidate runs:
 
 ```powershell
-node scripts\compare-t5-physical-safari.mjs "C:\evidence\baseline.json" "C:\evidence\candidate.json" "C:\evidence\comparison.json"
+node scripts\compare-t5-physical-safari.mjs "C:\evidence\baseline.json" "C:\evidence\candidate.json" "C:\evidence\comparison.json" --evidence-root "C:\evidence"
 ```
 
 Run the kit self-check before collecting evidence:
@@ -118,7 +118,7 @@ Run the kit self-check before collecting evidence:
 pnpm qa:t5:physical-kit
 ```
 
-The comparator requires the same device, Safari build, viewport and DPR. It enforces the raw `scrollFrameBudget` 2x gate, the `250 ms` Long Tasks gate when Safari exposes it, video progression, empty runtime errors, completed manual checks and named evidence files.
+The comparator requires the same device, Safari build, viewport and DPR. It verifies and hashes the referenced Timeline, HAR and screen recording files for both revisions. It enforces both raw and adaptive `scrollFrameBudget` 2x gates, p95/p99/max-frame regression limits, the `250 ms` Long Tasks gate when Safari exposes it, the exact Process/Footer CSS invariant, full ordered section coverage, all three Services stops in both directions, Datum playback, Domino forward/reverse/replay, section-specific media progression, empty runtime errors and the exact five manual checks.
 
 Safari may not expose `longtask` through `PerformanceObserver`. In that case the comparison is deliberately `needs-web-inspector-review`, never a synthetic pass. Review the Frames, JavaScript & Events, Layout & Rendering and Media & Animations tracks in the saved Timeline before accepting the run.
 
@@ -135,8 +135,13 @@ Safari may not expose `longtask` through `PerformanceObserver`. In that case the
   - `runtimeErrors` is empty;
   - `computedStyles[".process-contact-section"].contentVisibility` is `visible`;
   - `computedStyles[".site-footer"].contentVisibility` is `visible`;
+  - both selectors report exact `containIntrinsicSize: none`;
   - T5 `metrics.raf.over16_7Ratio` is at most half of the matched T4 value;
-  - adaptive cadence, p95 and p99 have no sustained multi-second stalls;
+  - T5 `metrics.raf.adaptiveSlowRatio` is at most half of the matched T4 value;
+  - p95, p99 and maximum frame duration do not regress from T4, and the maximum frame duration stays at or below `1000 ms`;
+  - the ordered journey includes Hero, Clients, Services, How We Work, Datum, Process, Domino and Footer;
+  - Services stages `1`, `2`, `3`, the reverse return through stages `2`, `1`, Datum playback and two Domino forward runs around one reverse run are observed;
+  - Services, Datum, Domino-forward and Domino-reverse video transports each progress without unresolved stalls or media errors;
   - Long Tasks sum is at most `250 ms` when supported;
   - when Long Tasks are unsupported, the saved Web Inspector Timeline must show no sustained blocking cluster during the Clients/Services handoff.
 
@@ -149,6 +154,8 @@ Save these files per device:
 - Safari Timeline recording;
 - HAR or Network export;
 - device/browser/version note.
+
+Keep the filenames written into each probe report relative to the bundle directory passed through `--evidence-root`. A filename alone is not accepted: every file must exist, be non-empty and receive a SHA-256 hash in the comparison result. Baseline and candidate reports must reference separate files; reused paths are rejected.
 
 Name the bundle:
 

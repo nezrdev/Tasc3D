@@ -5,9 +5,20 @@
     prior.destroy();
   }
 
-  const version = "1.0.0";
+  const version = "1.1.0";
   const maxSamples = 12000;
   const videoEventNames = ["loadstart", "loadedmetadata", "loadeddata", "canplay", "play", "playing", "pause", "waiting", "stalled", "suspend", "ended", "error"];
+  const storyDatasetFields = [
+    ["servicesActive", "data-services-active"],
+    ["servicesStaticStop", "data-services-static-stop"],
+    ["servicesPhase", "data-services-phase"],
+    ["servicesEntryDirection", "data-services-entry-direction"],
+    ["servicesVideoDirection", "data-services-video-direction"],
+    ["servicesPortionDirection", "data-services-portion-direction"],
+    ["datumPlayback", "data-datum-playback"],
+    ["dominoPlayback", "data-domino-playback"],
+    ["dominoPinned", "data-domino-pinned"],
+  ];
   const sectionSelectors = [
     ["hero", "#main-content"],
     ["clients", ".figma-clients-section"],
@@ -59,11 +70,13 @@
     lastEventLoopTick: 0,
     observer: null,
     longAnimationObserver: null,
+    storyObserver: null,
     frameDeltas: [],
     eventLoopLags: [],
     longTasks: [],
     longAnimationFrames: [],
     scrollSamples: [],
+    storySamples: [],
     inputEvents: [],
     mediaEvents: [],
     runtimeErrors: [],
@@ -71,6 +84,7 @@
     lastSection: "",
     videos: new Map(),
     videoIds: new WeakMap(),
+    videoKeys: new WeakMap(),
     nextVideoId: 1,
     listeners: [],
     lastScrollSampleAt: 0,
@@ -98,6 +112,12 @@
       #tasc-physical-safari-probe .tasc-probe-status{padding:7px 8px;border-radius:8px;background:#0d1522;color:#9dc3ff;white-space:pre-wrap}
       #tasc-physical-safari-probe .tasc-probe-note{margin:7px 0 0;color:#aebbd0}
       #tasc-physical-safari-probe .tasc-probe-close{position:absolute;right:8px;top:7px;width:28px;height:28px;padding:0;border-radius:50%}
+      #tasc-physical-safari-probe.is-recording{display:flex;flex-direction:column;width:min(220px,calc(100vw - 20px));max-height:none;overflow:hidden;padding:8px}
+      #tasc-physical-safari-probe.is-recording h2,#tasc-physical-safari-probe.is-recording label,#tasc-physical-safari-probe.is-recording .tasc-probe-checks,#tasc-physical-safari-probe.is-recording .tasc-probe-note,#tasc-physical-safari-probe.is-recording .tasc-probe-close{display:none}
+      #tasc-physical-safari-probe.is-recording .tasc-probe-status{order:1;padding:6px 7px;font-size:11px}
+      #tasc-physical-safari-probe.is-recording .tasc-probe-actions{display:block;order:2;margin:6px 0 0}
+      #tasc-physical-safari-probe.is-recording .tasc-probe-start{display:none}
+      #tasc-physical-safari-probe.is-recording .tasc-probe-stop{display:block;width:100%;padding:6px}
     </style>
     <button class="tasc-probe-close" type="button" aria-label="Close probe">×</button>
     <h2>TASC Safari evidence</h2>
@@ -151,12 +171,37 @@
     state.listeners.push(() => target.removeEventListener(eventName, listener, options));
   };
 
-  const videoKey = (video) => {
+  const videoClassification = (video) => {
+    const servicesSurface = video.closest(".services-story-video");
+    let kind = "other";
+    let direction = null;
+    let surface = video;
+    if (servicesSurface) {
+      kind = "services";
+      surface = servicesSurface;
+    } else if (video.matches(".datum-motion-video")) {
+      kind = "datum";
+    } else {
+      direction = video.dataset.dominoDirection || null;
+      if (!direction && video.classList.contains("domino-sequence-reverse")) direction = "reverse";
+      if (!direction && video.classList.contains("domino-sequence-forward")) direction = "forward";
+      if (direction === "reverse") kind = "domino-reverse";
+      if (direction === "forward") kind = "domino-forward";
+    }
+    return {
+      kind,
+      direction,
+      surfaceClassName: typeof surface.className === "string" ? surface.className : surface.getAttribute("class") || "",
+    };
+  };
+
+  const videoKey = (video, classification = videoClassification(video)) => {
+    if (state.videoKeys.has(video)) return state.videoKeys.get(video);
     if (!state.videoIds.has(video)) state.videoIds.set(video, state.nextVideoId++);
     const id = state.videoIds.get(video);
-    const direction = video.dataset.dominoDirection ? `-${video.dataset.dominoDirection}` : "";
-    const className = typeof video.className === "string" ? video.className.trim().split(/\s+/).slice(0, 2).join("-") : "video";
-    return `${id}-${className || "video"}${direction}`;
+    const key = `${id}-${classification.kind}`;
+    state.videoKeys.set(video, key);
+    return key;
   };
 
   const qualitySnapshot = (video) => {
@@ -169,15 +214,23 @@
   };
 
   const ensureVideo = (video) => {
-    const key = videoKey(video);
+    const classification = videoClassification(video);
+    const key = videoKey(video, classification);
     if (state.videos.has(key)) return state.videos.get(key);
+    const initialCurrentTime = video.currentTime || 0;
     const entry = {
       key,
+      kind: classification.kind,
       className: typeof video.className === "string" ? video.className : "",
-      direction: video.dataset.dominoDirection || null,
+      surfaceClassName: classification.surfaceClassName,
+      direction: classification.direction,
       sourceAtStart: video.currentSrc || video.getAttribute("src") || null,
-      firstCurrentTime: round(video.currentTime || 0, 4),
-      lastCurrentTime: round(video.currentTime || 0, 4),
+      firstCurrentTime: round(initialCurrentTime, 4),
+      lastCurrentTime: round(initialCurrentTime, 4),
+      minCurrentTime: round(initialCurrentTime, 4),
+      maxCurrentTime: round(initialCurrentTime, 4),
+      positiveDeltaCount: 0,
+      negativeDeltaCount: 0,
       firstQuality: qualitySnapshot(video),
       lastQuality: null,
       rvfcCallbacks: 0,
@@ -193,7 +246,8 @@
       waitingStartedAt: null,
       callbackId: null,
       lastProgressAt: clock(),
-      lastProgressTime: video.currentTime || 0,
+      lastProgressTime: initialCurrentTime,
+      lastSampledCurrentTime: initialCurrentTime,
     };
     state.videos.set(key, entry);
     if (rvfcSupported && typeof video.requestVideoFrameCallback === "function") {
@@ -221,6 +275,12 @@
     document.querySelectorAll("video").forEach((video) => {
       const entry = ensureVideo(video);
       const currentTime = video.currentTime || 0;
+      const currentTimeDelta = currentTime - entry.lastSampledCurrentTime;
+      if (currentTimeDelta > 0.002) entry.positiveDeltaCount += 1;
+      if (currentTimeDelta < -0.002) entry.negativeDeltaCount += 1;
+      entry.lastSampledCurrentTime = currentTime;
+      entry.minCurrentTime = round(Math.min(entry.minCurrentTime, currentTime), 4);
+      entry.maxCurrentTime = round(Math.max(entry.maxCurrentTime, currentTime), 4);
       const progressing = Math.abs(currentTime - entry.lastProgressTime) > 0.002;
       if (progressing) {
         entry.lastProgressAt = now;
@@ -239,6 +299,7 @@
       boundedPush(entry.currentTimeSamples, {
         t: round(now - state.startedAt),
         currentTime: round(currentTime, 4),
+        currentTimeDelta: round(currentTimeDelta, 4),
         paused: video.paused,
         ended: video.ended,
         readyState: video.readyState,
@@ -264,6 +325,19 @@
       if (rect.top <= innerHeight / 2 && rect.bottom >= innerHeight / 2) return name;
     }
     return "unknown";
+  };
+
+  const sampleStory = (reason, changedAttribute = null) => {
+    const shell = document.querySelector(".site-shell");
+    const values = Object.fromEntries(storyDatasetFields.map(([field]) => [field, shell?.dataset[field] ?? null]));
+    const timestampMs = round(clock() - state.startedAt);
+    boundedPush(state.storySamples, {
+      t: timestampMs,
+      timestampMs,
+      reason,
+      changedAttribute,
+      ...values,
+    });
   };
 
   const sampleScroll = () => {
@@ -360,6 +434,7 @@
       maxProcessingDurationMs: round(entry.maxProcessingDurationMs),
       maxCallbackLatenessMs: round(entry.maxCallbackLatenessMs),
       callbackId: undefined,
+      lastSampledCurrentTime: undefined,
     }));
     const report = {
       schemaVersion: 1,
@@ -434,6 +509,7 @@
       journey: {
         sectionVisits: state.sectionVisits,
         scrollSamples: state.scrollSamples,
+        storySamples: state.storySamples,
         inputEvents: state.inputEvents,
         mediaEvents: state.mediaEvents,
         resizeSamples: state.resizeSamples,
@@ -448,7 +524,7 @@
     if (!state.running) return;
     const elapsed = (clock() - state.startedAt) / 1000;
     const active = activeSection();
-    status.textContent = `Recording ${elapsed.toFixed(1)}s\nSection: ${active}\nrAF: ${state.frameDeltas.length} · videos: ${state.videos.size}\nerrors: ${state.runtimeErrors.length}`;
+    status.textContent = `REC ${elapsed.toFixed(0)}s · ${active}\nrAF ${state.frameDeltas.length} · video ${state.videos.size} · errors ${state.runtimeErrors.length}`;
   };
 
   const resetState = () => {
@@ -457,6 +533,7 @@
     state.longTasks.length = 0;
     state.longAnimationFrames.length = 0;
     state.scrollSamples.length = 0;
+    state.storySamples.length = 0;
     state.inputEvents.length = 0;
     state.mediaEvents.length = 0;
     state.runtimeErrors.length = 0;
@@ -464,24 +541,31 @@
     state.resizeSamples.length = 0;
     state.videos.clear();
     state.videoIds = new WeakMap();
+    state.videoKeys = new WeakMap();
     state.nextVideoId = 1;
     state.lastSection = "";
     state.lastScrollSampleAt = 0;
     state.lastTouchY = null;
     state.lastTouchAt = 0;
+    state.storyObserver?.disconnect();
+    state.storyObserver = null;
   };
 
   const stop = (download = true) => {
     if (!state.running) return null;
     state.running = false;
+    root.classList.remove("is-recording");
     cancelAnimationFrame(state.rafId);
     clearInterval(state.statusTimer);
     clearInterval(state.eventLoopTimer);
     clearInterval(state.videoTimer);
     state.observer?.disconnect();
     state.longAnimationObserver?.disconnect();
+    state.storyObserver?.disconnect();
+    state.storyObserver = null;
     state.listeners.splice(0).forEach((remove) => remove());
     sampleVideos();
+    sampleStory("stop");
     for (const entry of state.videos.values()) {
       const video = [...document.querySelectorAll("video")].find((candidate) => videoKey(candidate) === entry.key);
       if (video && entry.callbackId != null && typeof video.cancelVideoFrameCallback === "function") {
@@ -521,6 +605,7 @@
     state.lastEventLoopTick = state.startedAt;
     startButton.disabled = true;
     stopButton.disabled = false;
+    root.classList.add("is-recording");
     on(window, "error", captureError, true);
     on(window, "unhandledrejection", captureError, true);
     on(window, "scroll", sampleScroll, { passive: true });
@@ -563,22 +648,38 @@
       });
       safe(() => state.longAnimationObserver.observe({ type: "long-animation-frame", buffered: true }));
     }
+    const siteShell = document.querySelector(".site-shell");
+    if (siteShell) {
+      state.storyObserver = new MutationObserver((records) => {
+        if (!state.running) return;
+        [...new Set(records.map((record) => record.attributeName).filter(Boolean))].forEach((attributeName) => sampleStory("mutation", attributeName));
+      });
+      state.storyObserver.observe(siteShell, {
+        attributes: true,
+        attributeFilter: storyDatasetFields.map(([, attribute]) => attribute),
+      });
+    }
     state.eventLoopTimer = setInterval(() => {
       const now = clock();
       const lag = now - state.lastEventLoopTick - 50;
       state.lastEventLoopTick = now;
       boundedPush(state.eventLoopLags, Math.max(0, lag));
     }, 50);
-    state.videoTimer = setInterval(sampleVideos, 250);
-    state.statusTimer = setInterval(updateStatus, 500);
+    state.videoTimer = setInterval(() => {
+      sampleVideos();
+      sampleStory("video-timer");
+    }, 250);
+    state.statusTimer = setInterval(updateStatus, 2000);
     state.rafId = requestAnimationFrame(rafLoop);
     sampleScroll();
     sampleVideos();
+    sampleStory("start");
     updateStatus();
   };
 
   const destroy = () => {
     if (state.running) stop(false);
+    root.classList.remove("is-recording");
     root.remove();
     delete window[probeKey];
   };
