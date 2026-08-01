@@ -11215,15 +11215,6 @@ body::before {
     transform 180ms ease;
 }
 
-.domino-impulse-row button.is-email-valid {
-  border-left-color: rgba(255, 255, 255, 0.62);
-  background: rgba(247, 249, 251, 0.96);
-  color: #030507;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.88),
-    0 0 34px rgba(184, 216, 244, 0.28);
-}
-
 .domino-impulse-row:has(input:valid:not(:placeholder-shown)) button {
   border-left-color: rgba(255, 255, 255, 0.62);
   background: rgba(247, 249, 251, 0.96);
@@ -11231,10 +11222,6 @@ body::before {
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.88),
     0 0 34px rgba(184, 216, 244, 0.28);
-}
-
-.domino-impulse-row button.is-email-valid svg {
-  stroke: #030507;
 }
 
 .domino-impulse-row:has(input:valid:not(:placeholder-shown)) button svg {

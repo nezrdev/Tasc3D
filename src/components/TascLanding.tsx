@@ -131,10 +131,8 @@ export function TascLanding() {
     const [heroVideoEligible, setHeroVideoEligible] = useState(false);
     const [heroFallbackAnimationEligible, setHeroFallbackAnimationEligible] = useState(false);
     const [heroFallbackAnimationReady, setHeroFallbackAnimationReady] = useState(false);
-    const [dominoEmail, setDominoEmail] = useState("");
     const datumLead = useLeadSubmission("datum_waitlist");
     const dominoLead = useLeadSubmission("project_brief");
-    const isDominoEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(dominoEmail.trim());
     const packedAlphaCompatibilityMode = webkitCompatibilityMode || edgeAlphaCompatibilityMode;
     const lightweightMediaMode = mobilePerformanceMode || constrainedConnection;
     const servicesPackedTransportMode = packedH264Supported;
@@ -5114,7 +5112,7 @@ export function TascLanding() {
             <form className="datum-waitlist-form" data-submit-state={datumLead.state.status} onSubmit={datumLead.submit}>
               <div className="datum-email-row">
                 <label className="datum-waitlist-segment" htmlFor="datum-email">Your Email</label>
-                <input className="datum-waitlist-segment" id="datum-email" name="email" type="email" placeholder="EXAMPLE@MAIL.COM" autoComplete="email" maxLength={254} required/>
+                <input className="datum-waitlist-segment" id="datum-email" name="email" type="email" placeholder="EXAMPLE@MAIL.COM" autoComplete="email" maxLength={254} onFocus={datumLead.captureFirstInteraction} required/>
                 <label className="lead-honeypot" aria-hidden="true">
                   Company website
                   <input name="website" type="text" tabIndex={-1} autoComplete="off"/>
@@ -5122,7 +5120,7 @@ export function TascLanding() {
               </div>
               <div className="datum-consent-row">
                 <label className="datum-waitlist-segment">
-                  <input name="privacy" type="checkbox" required/>
+                  <input name="privacy" type="checkbox" onFocus={datumLead.captureFirstInteraction} required/>
                   <span>
                     I agree to the processing of my personal data and accept the{" "}
                     <a href="/privacy-policy">Privacy Policy</a>.
@@ -5197,23 +5195,19 @@ export function TascLanding() {
             <p className="domino-body domino-body-signal stagger-reveal-item">
               {finalImpulseCopy.bodySignal}
             </p>
-            <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={async (event) => {
-            const saved = await dominoLead.submit(event);
-            if (saved)
-                setDominoEmail("");
-        }}>
+            <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={dominoLead.submit}>
               <div className="domino-impulse-row stagger-reveal-item">
                 <label className="sr-only" htmlFor="domino-email">
                   Email
                 </label>
-                <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" value={dominoEmail} required maxLength={254} autoComplete="email" onInput={(event) => setDominoEmail(event.currentTarget.value)} onChange={(event) => setDominoEmail(event.target.value)}/>
-                <button className={isDominoEmailValid ? "is-email-valid" : undefined} type="submit" disabled={dominoLead.state.status === "submitting"}>
+                <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" required maxLength={254} autoComplete="email" onFocus={dominoLead.captureFirstInteraction}/>
+                <button type="submit" disabled={dominoLead.state.status === "submitting"}>
                   {dominoLead.state.status === "submitting" ? "Sending" : finalImpulseCopy.action}
                   <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5}/>
                 </button>
               </div>
               <label className="domino-privacy-row stagger-reveal-item">
-                <input name="privacy" type="checkbox" required/>
+                <input name="privacy" type="checkbox" onFocus={dominoLead.captureFirstInteraction} required/>
                 <span className="domino-privacy-desktop">
                   I agree to the processing of my email under the <a href="/privacy-policy">Privacy Policy</a>.
                 </span>

@@ -1,13 +1,18 @@
 "use client";
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import type { LeadFormType, LeadSubmitState } from "@/lib/lead-contract";
+import { useCallback, useRef, useState, type FormEvent } from "react";
+import {
+    MAX_LEAD_ELAPSED_MS,
+    type LeadFormType,
+    type LeadSubmitState,
+} from "@/lib/lead-contract";
 const IDLE_STATE: LeadSubmitState = { status: "idle", message: "" };
 const REQUEST_TIMEOUT_MS = 10000;
 export function useLeadSubmission(formType: LeadFormType) {
     const [state, setState] = useState<LeadSubmitState>(IDLE_STATE);
-    const startedAt = useRef(0);
-    useEffect(() => {
-        startedAt.current = Date.now();
+    const firstInteractionAt = useRef<number | null>(null);
+    const captureFirstInteraction = useCallback(() => {
+        if (firstInteractionAt.current === null)
+            firstInteractionAt.current = performance.now();
     }, []);
     const submit = useCallback(async (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
@@ -15,6 +20,12 @@ export function useLeadSubmission(formType: LeadFormType) {
         if (!form.reportValidity())
             return false;
         const data = new FormData(form);
+        const rawElapsedMs = firstInteractionAt.current === null
+            ? 0
+            : performance.now() - firstInteractionAt.current;
+        const elapsedMs = Number.isFinite(rawElapsedMs)
+            ? Math.min(MAX_LEAD_ELAPSED_MS, Math.max(0, Math.round(rawElapsedMs)))
+            : 0;
         const controller = new AbortController();
         const timeout = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
         setState({ status: "submitting", message: "Sending..." });
@@ -28,7 +39,7 @@ export function useLeadSubmission(formType: LeadFormType) {
                     email: String(data.get("email") || ""),
                     consent: data.get("privacy") === "on",
                     website: String(data.get("website") || ""),
-                    startedAt: startedAt.current,
+                    elapsedMs,
                 }),
                 signal: controller.signal,
             });
@@ -44,7 +55,7 @@ export function useLeadSubmission(formType: LeadFormType) {
                 return false;
             }
             form.reset();
-            startedAt.current = Date.now();
+            firstInteractionAt.current = null;
             setState({
                 status: "success",
                 message: formType === "datum_waitlist" ? "You're on the waitlist. Thank you." : "Thank you — your enquiry has been received.",
@@ -59,5 +70,5 @@ export function useLeadSubmission(formType: LeadFormType) {
             window.clearTimeout(timeout);
         }
     }, [formType]);
-    return { state, submit };
+    return { state, submit, captureFirstInteraction };
 }

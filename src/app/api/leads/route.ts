@@ -56,8 +56,13 @@ export async function POST(request: Request) {
     const parsed = leadSubmissionSchema.safeParse(body);
     if (!parsed.success)
         return json({ ok: false, error: "Please check the submitted details." }, 400);
-    const elapsed = Date.now() - parsed.data.startedAt;
-    if (parsed.data.website.trim() || elapsed < MIN_SUBMIT_TIME_MS || elapsed < 0) {
+    const filtered = Boolean(parsed.data.website.trim()) ||
+        (parsed.data.elapsedMs !== undefined && parsed.data.elapsedMs < MIN_SUBMIT_TIME_MS);
+    if (filtered) {
+        console.info("[leads] filtered submission", {
+            formType: parsed.data.formType,
+            elapsedMs: parsed.data.elapsedMs ?? null,
+        });
         return json({ ok: true }, 200);
     }
     try {
