@@ -4293,11 +4293,19 @@ export function TascLanding() {
             };
             const handleServicesPortionStart = (event: Event) => {
                 const detail = (event as CustomEvent<{ anchor?: string; direction?: number }>).detail;
+                const portionTargetIds = detail?.anchor?.split("+").filter(Boolean) ?? [];
+                if (!portionTargetIds.includes("services") &&
+                    !servicesActive &&
+                    !servicesReleasing &&
+                    servicesEntryPreparing === 0) {
+                    resetServicesPortionState();
+                    return;
+                }
                 const direction = Math.sign(Number(detail?.direction ?? 0));
                 servicesPortionDirection = direction < 0 ? -1 : direction > 0 ? 1 : 0;
                 servicesLastPortionDirection = servicesPortionDirection;
                 root.dataset.servicesLastPortionDirection = String(servicesLastPortionDirection);
-                servicesPortionTargetIds = detail?.anchor?.split("+").filter(Boolean) ?? [];
+                servicesPortionTargetIds = portionTargetIds;
                 root.dataset.servicesPortionTarget = servicesPortionTargetIds.join("+");
                 if (servicesPortionDirection === 0)
                     delete root.dataset.servicesPortionDirection;
