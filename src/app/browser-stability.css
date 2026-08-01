@@ -12,19 +12,6 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
   transform: translate3d(0, 0, 0) !important;
 }
 
-.process-contact-section,
-.site-footer {
-  content-visibility: auto;
-}
-
-.process-contact-section {
-  contain-intrinsic-size: auto 1437px;
-}
-
-.site-footer {
-  contain-intrinsic-size: auto 410px;
-}
-
 .figma-clients-section[data-client-cards-moving="true"] .figma-client-card,
 .datum-motion-state-cards[data-datum-cards-moving="true"] .datum-glass-card,
 .site-shell[data-domino-handoff="form"] .domino-form-stage .domino-impulse-row {
@@ -32,21 +19,7 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
   backdrop-filter: none !important;
 }
 
-@media (max-width: 1279px) {
-  .process-contact-section {
-    contain-intrinsic-size: auto 1500px;
-  }
-}
-
 @media (max-width: 900px) {
-  .process-contact-section {
-    contain-intrinsic-size: auto 1585px;
-  }
-
-  .site-footer {
-    contain-intrinsic-size: auto 720px;
-  }
-
   .figma-client-card {
     background: rgba(21, 21, 21, 0.94) !important;
     -webkit-backdrop-filter: none !important;
@@ -75,12 +48,6 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
     background: rgba(4, 6, 7, 0.94) !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
-  }
-}
-
-@media (max-width: 430px) {
-  .site-footer {
-    contain-intrinsic-size: auto 760px;
   }
 }
 

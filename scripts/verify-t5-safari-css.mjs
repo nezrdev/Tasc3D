@@ -763,18 +763,16 @@ async function runCase(playwright, profile, settings) {
     const visibility = report.measurements.contentVisibilityInitial;
     addCheck(
       report,
-      "process-footer-content-visibility-auto",
-      visibility.process?.contentVisibility === "auto" && visibility.footer?.contentVisibility === "auto",
+      "process-footer-content-visibility-visible",
+      visibility.process?.contentVisibility === "visible" && visibility.footer?.contentVisibility === "visible",
       visibility,
     );
     addCheck(
       report,
-      "process-footer-intrinsic-size-present",
+      "process-footer-intrinsic-size-disabled",
       Boolean(
-        visibility.process?.containIntrinsicSize &&
-          visibility.process.containIntrinsicSize !== "none" &&
-          visibility.footer?.containIntrinsicSize &&
-          visibility.footer.containIntrinsicSize !== "none",
+        visibility.process?.containIntrinsicSize?.startsWith("none") &&
+          visibility.footer?.containIntrinsicSize?.startsWith("none"),
       ),
       visibility,
     );
