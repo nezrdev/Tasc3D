@@ -38,19 +38,30 @@ const evidenceGate = (report) => {
 
 const videoGate = (report) => {
   const videos = report.metrics?.videos || [];
-  const mediaErrors = (report.journey?.mediaEvents || []).filter((event) => event.event === "error" || event.errorCode != null);
+  const mediaEvents = report.journey?.mediaEvents || [];
+  const mediaErrors = mediaEvents.filter((event) => event.event === "error" || event.errorCode != null);
   const unresolvedStalls = videos.flatMap((video) => (video.stallWindows || [])
     .filter((stall) => stall.resolvedAt == null || stall.durationMs == null)
     .map((stall) => ({ video: video.key, ...stall })));
-  const progressing = videos.filter((video) => {
+  const progressingKeys = new Set(videos.filter((video) => {
     const first = readNumber(video.firstMediaTime) ?? readNumber(video.firstCurrentTime);
     const last = readNumber(video.lastMediaTime) ?? readNumber(video.lastCurrentTime);
     return first != null && last != null && last > first + 0.01;
-  });
+  }).map((video) => video.key));
+  const activeKeys = new Set(mediaEvents
+    .filter((event) => event.event === "play" || event.event === "playing")
+    .map((event) => event.video));
+  const activeWithoutProgress = [...activeKeys].filter((key) => !progressingKeys.has(key));
   return {
-    pass: videos.length > 0 && mediaErrors.length === 0 && unresolvedStalls.length === 0,
+    pass: videos.length > 0
+      && activeKeys.size > 0
+      && activeWithoutProgress.length === 0
+      && mediaErrors.length === 0
+      && unresolvedStalls.length === 0,
     videosObserved: videos.length,
-    videosProgressed: progressing.length,
+    videosActivated: activeKeys.size,
+    videosProgressed: progressingKeys.size,
+    activeWithoutProgress,
     mediaErrors,
     unresolvedStalls,
   };

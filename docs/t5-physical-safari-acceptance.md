@@ -10,27 +10,40 @@ This runbook is the external gate for PR #7. Do not merge, deploy, or start T6 f
 
 Windows Playwright WebKit is useful regression coverage, but it is not physical Safari acceptance.
 
-## Candidate
+## Revisions
 
-- Branch: `task/t5-safari-css-flare`
-- Commit: `8521eccc83b7eabb645fd0d21926a894a205f666`
+- Baseline branch: `task/a3-t4-webgl-transport`
+- Baseline commit: `21a0e00c48b5f32188a6b7274dd6e68aae3e4ebb`
+- Candidate branch: `task/t5-safari-css-flare`
+- Record the candidate commit with `git rev-parse HEAD` immediately before the run.
 - PR: `https://github.com/nezrdev/Tasc3D/pull/7`
 - Production must remain untouched.
 
-## Local Candidate Server
+## Local Servers
 
-From the checked-out T5 worktree:
+Build and run the T4 baseline:
 
 ```powershell
+cd C:\workflow\Freelance\projects\tasc-3d-site\worktrees\a3-t4-webgl-transport
+pnpm install --frozen-lockfile
+pnpm build
+pnpm start --hostname 0.0.0.0 --port 3212
+```
+
+Build and run the T5 candidate in a second terminal:
+
+```powershell
+cd C:\workflow\Freelance\projects\tasc-3d-site\worktrees\t5-safari-css-flare
 pnpm install --frozen-lockfile
 pnpm build
 pnpm start --hostname 0.0.0.0 --port 3213
 ```
 
-Open the candidate on the physical device through the machine LAN IP:
+Open both revisions through the machine LAN IP:
 
 ```text
-http://<host-lan-ip>:3213/?t5_physical=<timestamp>
+http://<host-lan-ip>:3212/?t5_physical=t4-<timestamp>
+http://<host-lan-ip>:3213/?t5_physical=t5-<timestamp>
 ```
 
 Use a fresh timestamp for each pass to avoid browser cache ambiguity.
@@ -55,13 +68,13 @@ For iPhone Safari:
 
 ## Probe
 
-After the page has loaded at the top, paste the full contents of:
+After the page has loaded at the top, paste the full contents of the T5 worktree file into the Safari Web Inspector console for both revisions:
 
 ```text
 scripts/t5-physical-safari-probe.js
 ```
 
-into the Safari Web Inspector console and press Enter. The probe panel appears in the bottom-right corner.
+Press Enter. The probe panel appears in the bottom-right corner.
 
 Fill:
 
@@ -71,11 +84,15 @@ Fill:
 - HAR filename;
 - screen recording filename.
 
-Click `Start capture`, perform the journey below, then click `Stop + download`. Keep the downloaded JSON together with the screen recording, Timeline and HAR.
+Use `t4-baseline-1`, `t4-baseline-2`, `t4-baseline-3` and matching `t5-candidate-1`, `t5-candidate-2`, `t5-candidate-3` labels. Click `Start capture`, perform the journey below, then click `Stop + download`. Keep each JSON with its screen recording, Timeline and HAR.
+
+The probe is external QA instrumentation. It adds no runtime code to the application, does not intercept input, and samples video state only every 250 ms. Web Inspector Timeline remains the primary compositor evidence.
 
 ## Journey
 
-1. Start at the top of the page after a cold reload.
+Run the same journey three times per revision and device. The first run is cold with cache disabled. The next two are warm with identical viewport, orientation and network.
+
+1. Record the cold preloader in Web Inspector Timeline and the screen recording, then inject the probe after the page settles at `scrollY=0`.
 2. Scroll down normally through Hero, Vision, Clients and Services.
 3. Confirm Services reaches all three authored forward stages.
 4. Reverse from Services back through the prior stages.
@@ -84,6 +101,26 @@ Click `Start capture`, perform the journey below, then click `Stop + download`. 
 7. Confirm Domino completes forward, reverse back to Process, then forward replay.
 8. Resize or rotate once where applicable, then continue scrolling.
 9. Check direct links in fresh tabs: `#clients`, `#services`, `#datum`, `#process`, `#brief`.
+
+Repeat one candidate journey on a constrained real network or a physical weak device. Do not use the synthetic Windows WebKit throttle as physical Safari evidence.
+
+## Comparison
+
+Compare matching baseline and candidate runs:
+
+```powershell
+node scripts\compare-t5-physical-safari.mjs "C:\evidence\baseline.json" "C:\evidence\candidate.json" "C:\evidence\comparison.json"
+```
+
+Run the kit self-check before collecting evidence:
+
+```powershell
+pnpm qa:t5:physical-kit
+```
+
+The comparator requires the same device, Safari build, viewport and DPR. It enforces the raw `scrollFrameBudget` 2x gate, the `250 ms` Long Tasks gate when Safari exposes it, video progression, empty runtime errors, completed manual checks and named evidence files.
+
+Safari may not expose `longtask` through `PerformanceObserver`. In that case the comparison is deliberately `needs-web-inspector-review`, never a synthetic pass. Review the Frames, JavaScript & Events, Layout & Rendering and Media & Animations tracks in the saved Timeline before accepting the run.
 
 ## Pass Criteria
 
@@ -98,8 +135,10 @@ Click `Start capture`, perform the journey below, then click `Stop + download`. 
   - `runtimeErrors` is empty;
   - `computedStyles[".process-contact-section"].contentVisibility` is `visible`;
   - `computedStyles[".site-footer"].contentVisibility` is `visible`;
-  - `metrics.raf.p95Ms` is acceptable for the device refresh rate and has no sustained multi-second stalls;
-  - Long Tasks can be `unsupported`; if supported, no sustained blocking cluster appears during Clients/Services handoff.
+  - T5 `metrics.raf.over16_7Ratio` is at most half of the matched T4 value;
+  - adaptive cadence, p95 and p99 have no sustained multi-second stalls;
+  - Long Tasks sum is at most `250 ms` when supported;
+  - when Long Tasks are unsupported, the saved Web Inspector Timeline must show no sustained blocking cluster during the Clients/Services handoff.
 
 ## Evidence Bundle
 
@@ -117,4 +156,14 @@ Name the bundle:
 t5-physical-safari-<device>-<date>-<commit>
 ```
 
-Acceptance can be marked only after the physical evidence is reviewed and explicitly accepted.
+Acceptance can be marked only after all three matched comparisons per device and the physical evidence are reviewed and explicitly accepted.
+
+## Primary References
+
+- Apple Safari developer tools: `https://developer.apple.com/safari/tools/`
+- WebKit remote inspection: `https://webkit.org/web-inspector/enabling-web-inspector/`
+- WebKit Timelines: `https://webkit.org/web-inspector/timelines-tab/`
+- WebKit Network and HAR: `https://webkit.org/web-inspector/network-tab/`
+- MDN requestAnimationFrame: `https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame`
+- MDN requestVideoFrameCallback: `https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestVideoFrameCallback`
+- MDN PerformanceObserver supported entry types: `https://developer.mozilla.org/en-US/docs/Web/API/PerformanceObserver/supportedEntryTypes_static`

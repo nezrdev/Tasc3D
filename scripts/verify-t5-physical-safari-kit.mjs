@@ -39,7 +39,7 @@ const buildReport = ({ label, rawRatio, adaptiveRatio, longTasks, manual = true,
       stallWindows: [],
     }],
   },
-  journey: { mediaEvents: [] },
+  journey: { mediaEvents: [{ event: "playing", video: "fixture-video" }] },
   runtimeErrors: errors,
 });
 

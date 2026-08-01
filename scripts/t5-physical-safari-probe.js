@@ -55,6 +55,7 @@
     lastRaf: 0,
     statusTimer: 0,
     eventLoopTimer: 0,
+    videoTimer: 0,
     lastEventLoopTick: 0,
     observer: null,
     longAnimationObserver: null,
@@ -476,6 +477,7 @@
     cancelAnimationFrame(state.rafId);
     clearInterval(state.statusTimer);
     clearInterval(state.eventLoopTimer);
+    clearInterval(state.videoTimer);
     state.observer?.disconnect();
     state.longAnimationObserver?.disconnect();
     state.listeners.splice(0).forEach((remove) => remove());
@@ -566,8 +568,8 @@
       const lag = now - state.lastEventLoopTick - 50;
       state.lastEventLoopTick = now;
       boundedPush(state.eventLoopLags, Math.max(0, lag));
-      sampleVideos();
     }, 50);
+    state.videoTimer = setInterval(sampleVideos, 250);
     state.statusTimer = setInterval(updateStatus, 500);
     state.rafId = requestAnimationFrame(rafLoop);
     sampleScroll();
