@@ -3615,13 +3615,13 @@ body::before {
   background-color: #020303;
 }
 
-.site-shell:not(.hero-intro-ready) .figma-clients-section,
-.site-shell:not(.hero-intro-ready) .services-story-section,
-.site-shell:not(.hero-intro-ready) .how-work-motion-section,
-.site-shell:not(.hero-intro-ready) .datum-motion-section,
-.site-shell:not(.hero-intro-ready) .process-contact-section,
-.site-shell:not(.hero-intro-ready) .domino-cta-section,
-.site-shell:not(.hero-intro-ready) .site-footer {
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .figma-clients-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .services-story-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .how-work-motion-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .datum-motion-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .process-contact-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .domino-cta-section,
+.site-shell[data-js-runtime="true"]:not(.hero-intro-ready) .site-footer {
   visibility: hidden;
   opacity: 0;
 }
@@ -8710,6 +8710,11 @@ body::before {
 
 .stagger-reveal-item {
   will-change: auto;
+}
+
+.site-shell[data-motion-ready="true"] [data-reveal-managed="true"] {
+  opacity: 0;
+  visibility: hidden;
 }
 
 @media (min-width: 1121px) {
