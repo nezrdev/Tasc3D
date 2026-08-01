@@ -349,6 +349,9 @@ const installInstrumentation = async (context, network) => {
         heapSamples: [],
         heroSurfaceReadyMs: null,
         preloaderCompleteMs: null,
+        preloaderHiddenMs: null,
+        preloaderRevealPath: null,
+        softDeadlineMs: null,
         cssFailOpenMs: null,
         hardFailOpenMs: null,
         firstHarnessInputMs: null,
@@ -504,20 +507,35 @@ const installInstrumentation = async (context, network) => {
             Number.parseFloat(preloaderStyle.opacity || "1") > 0.01,
         );
         const completeClass = main?.classList.contains("site-preloader-complete") ?? false;
+        const softDeadline = document.documentElement.dataset.tascPreloaderDeadline === "true";
         const hardFailOpen = document.documentElement.dataset.tascBootFailOpen === "true";
-        if (preloader && !preloaderVisible && state.cssFailOpenMs == null) {
+        if (softDeadline && state.softDeadlineMs == null) {
+          state.softDeadlineMs = performance.now();
+        }
+        if (preloader && !preloaderVisible && state.preloaderHiddenMs == null) {
+          state.preloaderHiddenMs = performance.now();
+        }
+        if (main && !preloader && completeClass && state.preloaderCompleteMs == null) {
+          state.preloaderCompleteMs = performance.now();
+        }
+        if (criticalFailOpenFinished && state.preloaderCompleteMs == null && state.cssFailOpenMs == null) {
           state.cssFailOpenMs = performance.now();
         }
-        if (hardFailOpen && state.hardFailOpenMs == null) {
+        if (hardFailOpen && state.preloaderCompleteMs == null && state.hardFailOpenMs == null) {
           state.hardFailOpenMs = performance.now();
         }
         if ((!preloaderVisible && (main || preloader)) || hardFailOpen) {
           if (state.heroSurfaceReadyMs == null) {
             state.heroSurfaceReadyMs = performance.now();
+            state.preloaderRevealPath =
+              hardFailOpen && state.preloaderCompleteMs == null
+                ? "hard-fail-open"
+                : criticalFailOpenFinished && state.preloaderCompleteMs == null
+                  ? "parser-css-fail-open"
+                  : softDeadline
+                    ? "soft-deadline-reveal"
+                    : "normal-ready-reveal";
           }
-        }
-        if (main && !preloader && completeClass && state.preloaderCompleteMs == null) {
-          state.preloaderCompleteMs = performance.now();
         }
       };
       const readinessObserver = new MutationObserver(checkReadiness);
@@ -614,6 +632,9 @@ const installInstrumentation = async (context, network) => {
           heapPeak: heap.length ? Math.max(...heap) : null,
           heroSurfaceReadyMs: state.heroSurfaceReadyMs,
           preloaderCompleteMs: state.preloaderCompleteMs,
+          preloaderHiddenMs: state.preloaderHiddenMs,
+          preloaderRevealPath: state.preloaderRevealPath,
+          softDeadlineMs: state.softDeadlineMs,
           cssFailOpenMs: state.cssFailOpenMs,
           hardFailOpenMs: state.hardFailOpenMs,
           firstHarnessInputMs: state.firstHarnessInputMs,
@@ -1123,6 +1144,9 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
         definition:
           "navigation start to visible Hero surface (main readiness or root CSS fail-open)",
         preloaderCompleteMs: round(raw.preloaderCompleteMs),
+        preloaderHiddenMs: round(raw.preloaderHiddenMs),
+        preloaderRevealPath: raw.preloaderRevealPath,
+        softDeadlineMs: round(raw.softDeadlineMs),
         cssFailOpenMs: round(raw.cssFailOpenMs),
         hardFailOpenMs: round(raw.hardFailOpenMs),
       },
