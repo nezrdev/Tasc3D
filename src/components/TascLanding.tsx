@@ -3964,6 +3964,7 @@ export function TascLanding() {
             });
             cleanupCallbacks.push(() => servicesApproachTrigger.kill());
             const shouldBypassServicesMotion = () => !useLegacyServicesFlow ||
+                Boolean(root.dataset.portionedScroll || root.dataset.portionGesture) ||
                 (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
                 (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
             const howWorkBoundary = root.querySelector<HTMLElement>(".how-work-motion-section");

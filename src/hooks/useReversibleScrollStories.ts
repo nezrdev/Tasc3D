@@ -90,7 +90,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             let touchDelta = 0;
             let touchConsumed = false;
             let pendingDirection: -1 | 1 | null = null;
-            const hasForeignInputOwner = () => root.dataset.servicesPinned === "true" ||
+            const hasForeignInputOwner = () => Boolean(root.dataset.portionedScroll || root.dataset.portionGesture) ||
+                root.dataset.servicesPinned === "true" ||
                 root.dataset.dominoPinned === "true" ||
                 root.dataset.motionInputLocked === "true";
             const accumulateDirectionalDelta = (accumulated: number, delta: number) => accumulated === 0 || Math.sign(accumulated) === Math.sign(delta) ? accumulated + delta : delta;
@@ -506,6 +507,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     },
                     onToggle: (self) => {
                         if (self.isActive &&
+                            !root.dataset.portionedScroll &&
+                            !root.dataset.portionGesture &&
                             root.dataset.servicesPinned !== "true" &&
                             root.dataset.dominoPinned !== "true") {
                             root.dataset.howWorkPinned = "true";
@@ -1171,6 +1174,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const startSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
+                if ((root.dataset.portionedScroll || root.dataset.portionGesture) && navigationTarget !== "#brief")
+                    return;
                 if (navigationTarget && navigationTarget !== "#brief")
                     return;
                 if (transportUnavailable.has(nextDirection))
@@ -1215,7 +1220,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 requestDirection(nextDirection);
             };
             const startForwardFromApproach = () => {
-                if (locked)
+                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture)
                     return forwardApproachAlignPending;
                 forwardApproachAlignPending = true;
                 const approachBoundary = Math.max(0, (dominoTrigger?.start ?? window.scrollY) - getVisualViewportHeight() * 0.5);
@@ -1376,7 +1381,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     requestDirection(forward ? 1 : -1);
             };
             const handleEntryWheel = (event: WheelEvent) => {
-                if (locked || event.ctrlKey)
+                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || event.ctrlKey)
                     return;
                 const delta = normalizeWheel(event);
                 if (Math.abs(delta) < 2)
@@ -1411,7 +1416,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 }
             };
             const handleEntryTouchStart = (event: TouchEvent) => {
-                if (locked || performance.now() < postUnlockQuietUntil || !event.touches[0]) {
+                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || performance.now() < postUnlockQuietUntil || !event.touches[0]) {
                     entryTouchY = null;
                     entryTouchDelta = 0;
                     entryTouchEpoch = -1;
@@ -1423,6 +1428,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const handleEntryTouchMove = (event: TouchEvent) => {
                 if (locked ||
+                    root.dataset.portionedScroll ||
+                    root.dataset.portionGesture ||
                     entryTouchY === null ||
                     entryTouchEpoch !== gestureEpoch ||
                     performance.now() < postUnlockQuietUntil ||
@@ -1460,7 +1467,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 entryTouchEpoch = -1;
             };
             const handleEntryKey = (event: KeyboardEvent) => {
-                if (locked || event.target instanceof Element && event.target.closest("input, textarea, select, button")) {
+                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || event.target instanceof Element && event.target.closest("input, textarea, select, button")) {
                     return;
                 }
                 const forward = event.key === "ArrowDown" || event.key === "PageDown" || (event.key === " " && !event.shiftKey);
