@@ -257,6 +257,8 @@ export function useMobilePortionedScroll({
             });
             delete root.dataset.portionedScroll;
             delete root.dataset.portionSettling;
+            delete root.dataset.portionTargetIndex;
+            delete root.dataset.portionTargetY;
             ScrollTrigger.update();
         };
 
@@ -286,6 +288,8 @@ export function useMobilePortionedScroll({
                     targetY: interruptedY,
                 });
             }
+            delete root.dataset.portionTargetIndex;
+            delete root.dataset.portionTargetY;
         };
 
         const resolveTargetIndex = (direction: PortionDirection) => {
