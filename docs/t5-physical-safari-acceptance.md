@@ -161,7 +161,7 @@ Save these files per device:
 - HAR or Network export;
 - device/browser/version note.
 
-Keep the filenames written into each probe report relative to the bundle directory passed through `--evidence-root`. A filename alone is not accepted: every file must exist, be non-empty and receive a SHA-256 hash in the comparison result. Baseline and candidate reports must reference separate files; reused paths are rejected.
+Keep the filenames written into each probe report relative to the bundle directory passed through `--evidence-root`. A filename alone is not accepted: every file must exist, be non-empty and receive a SHA-256 hash in the comparison result. Timeline, HAR and screen recording must be three different canonical files inside each report. Baseline and candidate reports must also reference separate files; reused paths are rejected.
 
 Name the bundle:
 

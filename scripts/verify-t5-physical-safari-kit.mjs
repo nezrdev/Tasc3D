@@ -201,9 +201,20 @@ try {
     ...storySamples.slice(7),
   ];
   const splitMarkerResult = compareReports(baseline, splitMarkerFailure, options);
-  assert.deepEqual(splitMarkerResult.gates.journeys.candidate.services.reverseLifecycle, ["marker", "marker", "wait2", "wait1"]);
+  assert.deepEqual(splitMarkerResult.gates.journeys.candidate.services.reverseLifecycle, ["marker", "unexpected-direction:forward-playback", "marker", "wait2", "wait1"]);
   assert.equal(splitMarkerResult.gates.journeys.candidate.services.pass, false);
   assert.equal(splitMarkerResult.verdict.status, "fail");
+
+  const unexpectedServicesDirection = structuredClone(passing);
+  unexpectedServicesDirection.journey.storySamples = [
+    ...storySamples.slice(0, 4),
+    { story: { servicesPhase: "waiting", servicesActive: "3", servicesVideoDirection: "forward-playback" } },
+    ...storySamples.slice(4),
+  ];
+  const unexpectedServicesResult = compareReports(baseline, unexpectedServicesDirection, options);
+  assert.ok(unexpectedServicesResult.gates.journeys.candidate.services.reverseDetailedLifecycle.includes("unexpected-direction:forward-playback"));
+  assert.equal(unexpectedServicesResult.gates.journeys.candidate.services.pass, false);
+  assert.equal(unexpectedServicesResult.verdict.status, "fail");
 
   const dominoOrderFailure = structuredClone(passing);
   dominoOrderFailure.journey.storySamples = [
@@ -235,6 +246,17 @@ try {
   assert.equal(extraDominoCycleResult.gates.journeys.candidate.domino.pass, false);
   assert.equal(extraDominoCycleResult.verdict.status, "fail");
 
+  const unexpectedDominoState = structuredClone(passing);
+  unexpectedDominoState.journey.storySamples = [
+    ...storySamples.slice(0, 9),
+    { story: { dominoPlayback: "fault" } },
+    ...storySamples.slice(9),
+  ];
+  const unexpectedDominoResult = compareReports(baseline, unexpectedDominoState, options);
+  assert.deepEqual(unexpectedDominoResult.gates.journeys.candidate.domino.unexpected, ["fault"]);
+  assert.equal(unexpectedDominoResult.gates.journeys.candidate.domino.pass, false);
+  assert.equal(unexpectedDominoResult.verdict.status, "fail");
+
   const oneVideoFailure = structuredClone(passing);
   oneVideoFailure.metrics.videos = oneVideoFailure.metrics.videos.slice(0, 1);
   oneVideoFailure.journey.mediaEvents = oneVideoFailure.journey.mediaEvents.slice(0, 1);
@@ -260,6 +282,13 @@ try {
   assert.equal(reusedEvidenceResult.gates.evidence.pass, false);
   assert.equal(reusedEvidenceResult.gates.evidence.reusedPaths.length, 3);
   assert.equal(reusedEvidenceResult.verdict.status, "fail");
+
+  const internallyReusedEvidence = structuredClone(passing);
+  internallyReusedEvidence.evidenceFiles.har = internallyReusedEvidence.evidenceFiles.timeline;
+  const internallyReusedEvidenceResult = compareReports(baseline, internallyReusedEvidence, options);
+  assert.equal(internallyReusedEvidenceResult.gates.evidence.candidate.pass, false);
+  assert.deepEqual(internallyReusedEvidenceResult.gates.evidence.candidate.duplicates[0].keys, ["timeline", "har"]);
+  assert.equal(internallyReusedEvidenceResult.verdict.status, "fail");
 
   const outsideRoot = mkdtempSync(join(tmpdir(), "tasc-t5-safari-outside-"));
   try {
