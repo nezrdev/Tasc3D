@@ -179,6 +179,32 @@ try {
   assert.equal(reverseOrderResult.gates.journeys.candidate.services.pass, false);
   assert.equal(reverseOrderResult.verdict.status, "fail");
 
+  const extraReverseStopFailure = structuredClone(passing);
+  extraReverseStopFailure.journey.storySamples = [
+    ...storySamples.slice(0, 5),
+    { story: { servicesPhase: "waiting", servicesActive: "3" } },
+    ...storySamples.slice(5),
+  ];
+  const extraReverseStopResult = compareReports(baseline, extraReverseStopFailure, options);
+  assert.deepEqual(extraReverseStopResult.gates.journeys.candidate.services.reverseWaitingStops, [2, 3, 1]);
+  assert.equal(extraReverseStopResult.gates.journeys.candidate.services.pass, false);
+  assert.equal(extraReverseStopResult.verdict.status, "fail");
+
+  const splitMarkerFailure = structuredClone(passing);
+  splitMarkerFailure.journey.storySamples = [
+    ...storySamples.slice(0, 3),
+    { story: { servicesPhase: "playing", servicesActive: "3", servicesVideoDirection: "reverse-playback" } },
+    { story: { servicesPhase: "playing", servicesActive: "3", servicesVideoDirection: "forward-playback" } },
+    { story: { servicesPhase: "playing", servicesActive: "3", servicesVideoDirection: "reverse-playback" } },
+    { story: { servicesPhase: "waiting", servicesActive: "2" } },
+    { story: { servicesPhase: "waiting", servicesActive: "1" } },
+    ...storySamples.slice(7),
+  ];
+  const splitMarkerResult = compareReports(baseline, splitMarkerFailure, options);
+  assert.deepEqual(splitMarkerResult.gates.journeys.candidate.services.reverseLifecycle, ["marker", "marker", "wait2", "wait1"]);
+  assert.equal(splitMarkerResult.gates.journeys.candidate.services.pass, false);
+  assert.equal(splitMarkerResult.verdict.status, "fail");
+
   const dominoOrderFailure = structuredClone(passing);
   dominoOrderFailure.journey.storySamples = [
     ...storySamples.slice(0, 8),
@@ -192,6 +218,22 @@ try {
   const dominoOrderResult = compareReports(baseline, dominoOrderFailure, options);
   assert.equal(dominoOrderResult.gates.journeys.candidate.domino.pass, false);
   assert.equal(dominoOrderResult.verdict.status, "fail");
+
+  const extraDominoCycleFailure = structuredClone(passing);
+  extraDominoCycleFailure.journey.storySamples = [
+    ...storySamples.slice(0, 8),
+    { story: { dominoPlayback: "forward" } },
+    { story: { dominoPlayback: "complete" } },
+    { story: { dominoPlayback: "reverse" } },
+    { story: { dominoPlayback: "start" } },
+    { story: { dominoPlayback: "reverse" } },
+    { story: { dominoPlayback: "start" } },
+    { story: { dominoPlayback: "forward" } },
+    { story: { dominoPlayback: "complete" } },
+  ];
+  const extraDominoCycleResult = compareReports(baseline, extraDominoCycleFailure, options);
+  assert.equal(extraDominoCycleResult.gates.journeys.candidate.domino.pass, false);
+  assert.equal(extraDominoCycleResult.verdict.status, "fail");
 
   const oneVideoFailure = structuredClone(passing);
   oneVideoFailure.metrics.videos = oneVideoFailure.metrics.videos.slice(0, 1);
@@ -270,6 +312,7 @@ try {
   assert.match(probeSource, /PerformanceObserver/);
   assert.match(probeSource, /storySamples/);
   assert.match(probeSource, /is-recording/);
+  assert.match(probeSource, /display:none!important/);
   assert.match(probeSource, /videoClassification/);
   assert.match(probeSource, /window\.__tascSafariEvidence/);
 

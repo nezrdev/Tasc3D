@@ -64,7 +64,6 @@
     startedIso: "",
     rafId: 0,
     lastRaf: 0,
-    statusTimer: 0,
     eventLoopTimer: 0,
     videoTimer: 0,
     lastEventLoopTick: 0,
@@ -112,12 +111,7 @@
       #tasc-physical-safari-probe .tasc-probe-status{padding:7px 8px;border-radius:8px;background:#0d1522;color:#9dc3ff;white-space:pre-wrap}
       #tasc-physical-safari-probe .tasc-probe-note{margin:7px 0 0;color:#aebbd0}
       #tasc-physical-safari-probe .tasc-probe-close{position:absolute;right:8px;top:7px;width:28px;height:28px;padding:0;border-radius:50%}
-      #tasc-physical-safari-probe.is-recording{display:flex;flex-direction:column;width:min(220px,calc(100vw - 20px));max-height:none;overflow:hidden;padding:8px}
-      #tasc-physical-safari-probe.is-recording h2,#tasc-physical-safari-probe.is-recording label,#tasc-physical-safari-probe.is-recording .tasc-probe-checks,#tasc-physical-safari-probe.is-recording .tasc-probe-note,#tasc-physical-safari-probe.is-recording .tasc-probe-close{display:none}
-      #tasc-physical-safari-probe.is-recording .tasc-probe-status{order:1;padding:6px 7px;font-size:11px}
-      #tasc-physical-safari-probe.is-recording .tasc-probe-actions{display:block;order:2;margin:6px 0 0}
-      #tasc-physical-safari-probe.is-recording .tasc-probe-start{display:none}
-      #tasc-physical-safari-probe.is-recording .tasc-probe-stop{display:block;width:100%;padding:6px}
+      #tasc-physical-safari-probe.is-recording{display:none!important}
     </style>
     <button class="tasc-probe-close" type="button" aria-label="Close probe">×</button>
     <h2>TASC Safari evidence</h2>
@@ -152,7 +146,7 @@
       <button class="tasc-probe-stop" type="button" disabled>Stop + download</button>
     </div>
     <div class="tasc-probe-status">Ready</div>
-    <p class="tasc-probe-note">Start before cold load journey. Traverse the full site down, reverse to the top, then replay Services and Domino.</p>
+    <p class="tasc-probe-note">The panel hides during capture. Stop and download from Web Inspector with window.__tascPhysicalSafariProbe.stop(true).</p>
   `;
   document.documentElement.append(root);
 
@@ -520,13 +514,6 @@
     return report;
   };
 
-  const updateStatus = () => {
-    if (!state.running) return;
-    const elapsed = (clock() - state.startedAt) / 1000;
-    const active = activeSection();
-    status.textContent = `REC ${elapsed.toFixed(0)}s · ${active}\nrAF ${state.frameDeltas.length} · video ${state.videos.size} · errors ${state.runtimeErrors.length}`;
-  };
-
   const resetState = () => {
     state.frameDeltas.length = 0;
     state.eventLoopLags.length = 0;
@@ -556,7 +543,6 @@
     state.running = false;
     root.classList.remove("is-recording");
     cancelAnimationFrame(state.rafId);
-    clearInterval(state.statusTimer);
     clearInterval(state.eventLoopTimer);
     clearInterval(state.videoTimer);
     state.observer?.disconnect();
@@ -669,12 +655,10 @@
       sampleVideos();
       sampleStory("video-timer");
     }, 250);
-    state.statusTimer = setInterval(updateStatus, 2000);
     state.rafId = requestAnimationFrame(rafLoop);
     sampleScroll();
     sampleVideos();
     sampleStory("start");
-    updateStatus();
   };
 
   const destroy = () => {

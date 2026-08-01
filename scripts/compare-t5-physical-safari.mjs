@@ -156,27 +156,10 @@ const orderedVisits = (visits, required) => {
 
 const storyValue = (sample, key) => sample?.story?.[key] ?? sample?.[key] ?? null;
 
-const orderedSampleIndices = (samples, predicates, fromIndex = 0) => {
-  const indices = [];
-  let cursor = Math.max(0, fromIndex);
-  for (const predicate of predicates) {
-    const relativeIndex = samples.slice(cursor).findIndex(predicate);
-    if (relativeIndex < 0) return [];
-    const index = cursor + relativeIndex;
-    indices.push(index);
-    cursor = index + 1;
-  }
-  return indices;
-};
+const sameSequence = (actual, expected) => actual.length === expected.length
+  && actual.every((value, index) => value === expected[index]);
 
-const hasOrderedSubsequence = (values, expected) => {
-  let cursor = 0;
-  for (const value of values) {
-    if (value === expected[cursor]) cursor += 1;
-    if (cursor === expected.length) return true;
-  }
-  return false;
-};
+const collapseValues = (values) => values.filter((value, index) => value != null && value !== values[index - 1]);
 
 const journeyGate = (report) => {
   const visits = (report.journey?.sectionVisits || []).map((visit) => visit.section).filter(Boolean);
@@ -184,37 +167,35 @@ const journeyGate = (report) => {
   const sectionsInOrder = orderedVisits(visits, requiredSections);
   const storySamples = report.journey?.storySamples || [];
   const firstReverseMarkerIndex = storySamples.findIndex((sample) => storyValue(sample, "servicesVideoDirection") === "reverse-playback");
-  const forwardStopIndices = orderedSampleIndices(
-    storySamples,
-    [1, 2, 3].map((stage) => (sample) => (
-      storyValue(sample, "servicesPhase") === "waiting"
-        && Number(storyValue(sample, "servicesActive")) === stage
-    )),
-  );
-  const reverseStopIndices = orderedSampleIndices(
-    storySamples,
-    [2, 1].flatMap((stage) => [
-      (sample) => storyValue(sample, "servicesVideoDirection") === "reverse-playback",
-      (sample) => (
-        storyValue(sample, "servicesPhase") === "waiting"
-          && Number(storyValue(sample, "servicesActive")) === stage
-          && [null, "reverse-playback"].includes(storyValue(sample, "servicesVideoDirection"))
-      ),
-    ]),
-    firstReverseMarkerIndex < 0 ? storySamples.length : firstReverseMarkerIndex,
-  );
-  const forwardStopsPass = forwardStopIndices.length === 3
-    && (firstReverseMarkerIndex < 0 || forwardStopIndices[2] < firstReverseMarkerIndex);
-  const reverseStopsPass = reverseStopIndices.length === 4;
+  const forwardWaitingStops = collapseValues(storySamples
+    .slice(0, firstReverseMarkerIndex < 0 ? storySamples.length : firstReverseMarkerIndex)
+    .filter((sample) => storyValue(sample, "servicesPhase") === "waiting")
+    .map((sample) => Number(storyValue(sample, "servicesActive")))
+    .filter((value) => [1, 2, 3].includes(value)));
+  const reverseSamples = storySamples.slice(firstReverseMarkerIndex < 0 ? storySamples.length : firstReverseMarkerIndex);
+  const reverseLifecycle = collapseValues(reverseSamples.map((sample) => {
+    const direction = storyValue(sample, "servicesVideoDirection");
+    if (direction === "reverse-playback") return "marker";
+    if (storyValue(sample, "servicesPhase") !== "waiting" || direction != null) return null;
+    const active = Number(storyValue(sample, "servicesActive"));
+    return [1, 2, 3].includes(active) ? `wait${active}` : null;
+  }));
+  const reverseWaitingStops = reverseLifecycle
+    .filter((value) => /^wait[123]$/.test(value))
+    .map((value) => Number(value.slice(-1)));
+  const reverseMarkerRuns = reverseLifecycle.filter((value) => value === "marker").length;
+  const forwardStopsPass = sameSequence(forwardWaitingStops, [1, 2, 3]);
+  const reverseStopsPass = sameSequence(reverseLifecycle, ["marker", "wait2", "marker", "wait1"]);
   const datumPlaying = storySamples.some((sample) => storyValue(sample, "datumPlayback") === "playing");
   const dominoTransitions = [];
   storySamples.forEach((sample) => {
     const value = storyValue(sample, "dominoPlayback");
     if (value && dominoTransitions[dominoTransitions.length - 1] !== value) dominoTransitions.push(value);
   });
-  const dominoForwardRuns = dominoTransitions.filter((value) => value === "forward").length;
-  const dominoReverseRuns = dominoTransitions.filter((value) => value === "reverse").length;
-  const dominoReplayPass = hasOrderedSubsequence(dominoTransitions, ["forward", "complete", "reverse", "start", "forward", "complete"]);
+  const dominoLifecycle = dominoTransitions.filter((value) => ["forward", "complete", "reverse", "start"].includes(value));
+  const dominoForwardRuns = dominoLifecycle.filter((value) => value === "forward").length;
+  const dominoReverseRuns = dominoLifecycle.filter((value) => value === "reverse").length;
+  const dominoReplayPass = sameSequence(dominoLifecycle, ["forward", "complete", "reverse", "start", "forward", "complete"]);
   return {
     pass: missingSections.length === 0
       && sectionsInOrder
@@ -227,13 +208,15 @@ const journeyGate = (report) => {
     sectionsInOrder,
     storySamplesObserved: storySamples.length,
     services: {
-      forwardStopIndices,
-      reverseStopIndices,
+      forwardWaitingStops,
+      reverseWaitingStops,
+      reverseMarkerRuns,
+      reverseLifecycle,
       reverseMarkerObserved: firstReverseMarkerIndex >= 0,
       pass: forwardStopsPass && reverseStopsPass,
     },
     datum: { playingObserved: datumPlaying, pass: datumPlaying },
-    domino: { transitions: dominoTransitions, forwardRuns: dominoForwardRuns, reverseRuns: dominoReverseRuns, pass: dominoReplayPass },
+    domino: { transitions: dominoTransitions, lifecycle: dominoLifecycle, forwardRuns: dominoForwardRuns, reverseRuns: dominoReverseRuns, pass: dominoReplayPass },
   };
 };
 

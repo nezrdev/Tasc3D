@@ -84,9 +84,15 @@ Fill:
 - HAR filename;
 - screen recording filename.
 
-Use `t4-baseline-1`, `t4-baseline-2`, `t4-baseline-3` and matching `t5-candidate-1`, `t5-candidate-2`, `t5-candidate-3` labels. Click `Start capture`, perform the journey below, then click `Stop + download`. Keep each JSON with its screen recording, Timeline and HAR.
+Use `t4-baseline-1`, `t4-baseline-2`, `t4-baseline-3` and matching `t5-candidate-1`, `t5-candidate-2`, `t5-candidate-3` labels. Click `Start capture`; the probe panel disappears completely so it cannot repaint over the measured page. Perform the journey below, then run this in Web Inspector:
 
-The probe is external QA instrumentation. It adds no runtime code to the application, does not intercept input, samples video and story state every 250 ms, and minimizes its panel while recording. Web Inspector Timeline remains the primary compositor evidence and overrides probe timing when they disagree.
+```js
+window.__tascPhysicalSafariProbe.stop(true)
+```
+
+The panel returns with the summary and the probe JSON downloads. Keep each JSON with its screen recording, Timeline and HAR.
+
+The probe is external QA instrumentation. It adds no runtime code to the application, does not intercept input, samples video and story state every 250 ms, and removes its panel from layout and paint while recording. Web Inspector Timeline remains the primary compositor evidence and overrides probe timing when they disagree.
 
 ## Journey
 
