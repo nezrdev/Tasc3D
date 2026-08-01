@@ -32,11 +32,26 @@ export default function TascHeader({ onNavigate }: TascHeaderProps) {
     const headerRef = useRef<HTMLElement | null>(null);
     const toggleRef = useRef<HTMLButtonElement | null>(null);
     const initializedRef = useRef(false);
+    const closeMenuImmediately = useCallback(() => {
+        const panel = headerRef.current?.querySelector<HTMLElement>(".mobile-menu-panel");
+        const cards = gsap.utils.toArray<HTMLElement>(".mobile-menu-card", headerRef.current ?? undefined);
+        if (panel) {
+            gsap.killTweensOf([panel, ...cards]);
+            gsap.set(panel, {
+                autoAlpha: 0,
+                y: -10,
+                scale: 0.985,
+                pointerEvents: "none",
+            });
+            gsap.set(cards, { autoAlpha: 0, y: 12 });
+        }
+        setOpen(false);
+    }, []);
     const navigate = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string) => {
         event.preventDefault();
+        closeMenuImmediately();
         onNavigate(href);
-        setOpen(false);
-    }, [onNavigate]);
+    }, [closeMenuImmediately, onNavigate]);
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") {

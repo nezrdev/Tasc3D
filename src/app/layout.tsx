@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import {
+    PRELOADER_HARD_FAIL_OPEN_MS,
+    PRELOADER_SOFT_REVEAL_MS,
+} from "@/lib/preloader-timing";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_OG_IMAGE, SITE_TITLE, SITE_URL } from "@/lib/site-seo";
 import "./globals.css";
 import "./clients-final.css";
@@ -87,12 +91,40 @@ const webkitCompatibilityBootstrap = `
 `;
 const preloaderNavigationFailOpen = `
   try {
-    var maxWait = 3800;
-    var remaining = Math.max(0, maxWait - performance.now());
-    setTimeout(function () {
+    var revealWait = ${PRELOADER_SOFT_REVEAL_MS};
+    var hardWait = ${PRELOADER_HARD_FAIL_OPEN_MS};
+    var scheduleFromNavigation = function (wait, callback) {
+      setTimeout(callback, Math.max(0, wait - performance.now()));
+    };
+    scheduleFromNavigation(revealWait, function () {
+      document.documentElement.setAttribute("data-tasc-preloader-deadline", "true");
+      window.dispatchEvent(new Event("tasc:preloader-deadline"));
+    });
+    scheduleFromNavigation(hardWait, function () {
       document.documentElement.setAttribute("data-tasc-boot-fail-open", "true");
-    }, remaining);
+      window.dispatchEvent(new Event("tasc:preloader-hard-fail-open"));
+      var main = document.querySelector("main.site-shell");
+      if (main) {
+        main.setAttribute("data-hero-surface-ready", "true");
+      }
+    });
   } catch (error) {}
+`;
+const preloaderCriticalFailOpenCss = `
+  @keyframes tasc-preloader-critical-hide {
+    to { opacity: 0; visibility: hidden; pointer-events: none; }
+  }
+  @keyframes tasc-hero-critical-reveal {
+    to { opacity: 1; visibility: visible; transform: translate3d(0, 0, 0); }
+  }
+  .site-preloader {
+    animation: tasc-preloader-critical-hide 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
+  }
+  .site-shell:not(.site-preloader-complete) .figma-hero-title > span,
+  .site-shell:not(.site-preloader-complete) .hero-subcopy,
+  .site-shell:not(.site-preloader-complete) .figma-hero-actions .figma-cta {
+    animation: tasc-hero-critical-reveal 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
+  }
 `;
 export const metadata: Metadata = {
     metadataBase: new URL(SITE_URL),
@@ -159,12 +191,13 @@ export default function RootLayout({ children }: Readonly<{
 }>) {
     return (<html lang="en" className={`${roboto.variable} ${suisse.variable}`} suppressHydrationWarning>
       <head>
+        <style id="tasc-preloader-critical-fail-open" dangerouslySetInnerHTML={{ __html: preloaderCriticalFailOpenCss }}/>
         <script id="tasc-webkit-compatibility-bootstrap" dangerouslySetInnerHTML={{ __html: webkitCompatibilityBootstrap }}/>
         <script id="tasc-preloader-navigation-fail-open" dangerouslySetInnerHTML={{ __html: preloaderNavigationFailOpen }}/>
       </head>
       <body>
         <script id="tasc-demo-scroll-reset" dangerouslySetInnerHTML={{
-            __html: "try{history.scrollRestoration='manual';window.scrollTo(0,0);document.documentElement.scrollTop=0;document.body&&(document.body.scrollTop=0);}catch(e){}",
+            __html: "try{history.scrollRestoration='manual';if(!location.hash){window.scrollTo(0,0);document.documentElement.scrollTop=0;document.body&&(document.body.scrollTop=0);}}catch(e){}",
         }}/>
         {children}
       </body>

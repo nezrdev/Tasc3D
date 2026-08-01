@@ -382,6 +382,56 @@ const percentile = (values, fraction) => {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * fraction)))];
 };
 
+const mediaRequestKind = (url) => {
+  if (!/\.(?:mp4|webm|mov|apng)(?:\?|$)/i.test(url)) return null;
+  if (/services-keyframes/i.test(url)) return "services";
+  if (/datum-news-loop/i.test(url)) return "datum";
+  if (/domino-cta-forward/i.test(url)) return "domino-forward";
+  if (/domino-cta-reverse/i.test(url)) return "domino-reverse";
+  return null;
+};
+
+const mediaVideoForKind = (state, kind) => {
+  if (kind === "services") return visibleVideo(state, "services-story-video");
+  if (kind === "datum") return visibleVideo(state, "datum-motion-video");
+  const direction = kind === "domino-forward" ? "forward" : "reverse";
+  return (
+    state.videos.find(
+      (video) => video.className.includes("domino-sequence") && video.direction === direction,
+    ) ?? null
+  );
+};
+
+const readPerformanceMediaRequests = async (page, kind) => {
+  const resources = await page.evaluate(() =>
+    performance
+      .getEntriesByType("resource")
+      .filter((entry) => /\.(?:mp4|webm|mov|apng)(?:\?|$)/i.test(entry.name))
+      .map((entry) => ({
+        url: entry.name,
+        initiatorType: entry.initiatorType,
+        startedAtMs: performance.timeOrigin + entry.startTime,
+        durationMs: entry.duration,
+        transferSize: entry.transferSize,
+      })),
+  );
+  return resources
+    .map((request) => ({ ...request, kind: mediaRequestKind(request.url), source: "performance" }))
+    .filter((request) => request.kind === kind);
+};
+
+const observedMediaRequests = async (page, caseResult, kind) => {
+  const playwrightRequests = caseResult.diagnostics.mediaRequests.filter(
+    (request) => request.kind === kind,
+  );
+  if (playwrightRequests.length > 0) return playwrightRequests;
+  const routedRequests = (caseResult.emulation?.network?.mediaRequests ?? []).filter(
+    (request) => request.kind === kind,
+  );
+  if (routedRequests.length > 0) return routedRequests;
+  return readPerformanceMediaRequests(page, kind);
+};
+
 const userAgentFor = (engine, viewport) => {
   if (viewport.mobile) {
     return engine === "webkit"
@@ -424,11 +474,14 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
         }
       }
 
+      const recordedArmingKinds = new Set();
       const qa = {
         startedAt: performance.now(),
         scroll: [],
         media: [],
         mediaEvents: [],
+        mediaArming: [],
+        lifecycle: [],
         longTasks: [],
         rejections: [],
       };
@@ -451,6 +504,7 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
               dominoPlayback: root.dataset.dominoPlayback ?? null,
               dominoProgress: root.dataset.dominoProgress ?? null,
               dominoPinned: root.dataset.dominoPinned ?? null,
+              dominoReverseMediaArmed: root.dataset.dominoReverseMediaArmed ?? null,
               motionInputLocked: root.dataset.motionInputLocked ?? null,
               programmaticAnchor: root.dataset.programmaticAnchor ?? null,
               starfieldMode: root.dataset.starfieldMode ?? null,
@@ -479,6 +533,7 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
           active: video.dataset.dominoActive ?? null,
           segmentState: video.dataset.segmentState ?? null,
           playbackState: video.dataset.playbackState ?? null,
+          armed: video.dataset.armed ?? null,
           src: video.currentSrc || video.getAttribute("src") || "",
           currentTime: video.currentTime,
           duration: video.duration,
@@ -510,11 +565,102 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
         qa.scroll.length = 0;
         qa.media.length = 0;
         qa.mediaEvents.length = 0;
+        qa.mediaArming.length = 0;
+        recordedArmingKinds.clear();
+        qa.lifecycle.length = 0;
         qa.longTasks.length = 0;
         qa.rejections.length = 0;
         sampleMedia("reset");
       };
       window.__tascCrossDeviceQa = qa;
+
+      const mediaKindForVideo = (video) => {
+        if (video.closest(".services-story-video")) return "services";
+        if (video.matches(".datum-motion-video")) return "datum";
+        if (video.matches(".domino-sequence")) {
+          return video.dataset.dominoDirection === "reverse"
+            ? "domino-reverse"
+            : "domino-forward";
+        }
+        return null;
+      };
+      const sampleMediaArming = (video, reason) => {
+        if (!(video instanceof HTMLVideoElement) || video.dataset.armed !== "true") return;
+        const kind = mediaKindForVideo(video);
+        if (!kind || recordedArmingKinds.has(kind)) return;
+        const sectionSelector =
+          kind === "services"
+            ? ".services-story-section"
+            : kind === "datum"
+              ? ".datum-motion-section"
+              : ".domino-cta-section";
+        const section = document.querySelector(sectionSelector);
+        const rect = section?.getBoundingClientRect();
+        recordedArmingKinds.add(kind);
+        qa.mediaArming.push({
+          t: performance.now(),
+          epochMs: performance.timeOrigin + performance.now(),
+          kind,
+          reason,
+          source:
+            video.currentSrc ||
+            video.getAttribute("src") ||
+            video.querySelector("source")?.src ||
+            "",
+          viewportHeight: visualViewport?.height ?? innerHeight,
+          sectionRect: rect
+            ? { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left }
+            : null,
+        });
+        cap(qa.mediaArming, 32);
+      };
+      const mediaArmingObserver = new MutationObserver((records) => {
+        for (const record of records) {
+          const target =
+            record.target instanceof HTMLVideoElement
+              ? record.target
+              : record.target instanceof HTMLSourceElement
+                ? record.target.parentElement
+                : null;
+          sampleMediaArming(target, record.attributeName ?? record.type);
+          for (const node of record.addedNodes) {
+            if (node instanceof HTMLSourceElement) sampleMediaArming(node.parentElement, "source-added");
+            if (node instanceof HTMLVideoElement) sampleMediaArming(node, "video-added");
+          }
+        }
+      });
+      mediaArmingObserver.observe(document, {
+        attributes: true,
+        childList: true,
+        subtree: true,
+        attributeFilter: ["data-armed", "src"],
+      });
+
+      const sampleLifecycle = (reason) => {
+        qa.lifecycle.push({
+          t: performance.now(),
+          epochMs: performance.timeOrigin + performance.now(),
+          reason,
+          root: rootState(),
+        });
+        cap(qa.lifecycle, 4_000);
+      };
+      const lifecycleObserver = new MutationObserver((records) => {
+        for (const record of records) {
+          if (!(record.target instanceof HTMLElement) || !record.target.matches(".site-shell")) {
+            continue;
+          }
+          sampleLifecycle(record.attributeName ?? "attribute");
+        }
+      });
+      lifecycleObserver.observe(document, {
+        attributes: true,
+        subtree: true,
+        attributeFilter: ["data-domino-playback", "data-domino-reverse-media-armed"],
+      });
+      addEventListener("DOMContentLoaded", () => sampleLifecycle("dom-content-loaded"), {
+        once: true,
+      });
 
       addEventListener(
         "scroll",
@@ -580,20 +726,36 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
 };
 
 const installWebKitNetworkThrottle = async (context, networkProfile, baseOrigin) => {
-  if (networkProfile.name === "normal") {
-    return { mode: "none", approximated: false, bytes: 0, requestCount: 0 };
-  }
   const telemetry = {
-    mode: "route-whole-response-aggregate-bandwidth",
-    approximated: true,
+    mode:
+      networkProfile.name === "normal"
+        ? "route-observer"
+        : "route-whole-response-aggregate-bandwidth",
+    approximated: networkProfile.name !== "normal",
     bytes: 0,
     requestCount: 0,
     totalScheduledDelayMs: 0,
+    mediaRequests: [],
   };
   let transferAvailableAt = Date.now();
   await context.route("**/*", async (route) => {
     const request = route.request();
     const target = new URL(request.url());
+    const kind = mediaRequestKind(request.url());
+    if (kind) {
+      telemetry.mediaRequests.push({
+        url: request.url(),
+        method: request.method(),
+        resourceType: request.resourceType(),
+        kind,
+        startedAtMs: Date.now(),
+        source: "webkit-route",
+      });
+    }
+    if (networkProfile.name === "normal") {
+      await route.continue();
+      return;
+    }
     if (
       target.origin !== baseOrigin ||
       request.method() !== "GET" ||
@@ -719,6 +881,8 @@ const readPageState = (page) =>
         active: video.dataset.dominoActive ?? null,
         direction: video.dataset.dominoDirection ?? null,
         segmentState: video.dataset.segmentState ?? null,
+        armed: video.dataset.armed ?? null,
+        playbackState: video.dataset.playbackState ?? null,
         display: style.display,
         visibility: style.visibility,
         opacity: Number.parseFloat(style.opacity),
@@ -788,31 +952,37 @@ const addCheck = (caseResult, ok, message, details = {}, severity = "failure") =
 };
 
 const runBaseline = async (page, caseResult, directory) => {
-  if (caseResult.configuration.network.name !== "normal") {
-    /* Lower-story <source> nodes are deliberately mounted after the Hero and
-       first Services segment settle. On a cold constrained run the old
-       baseline sampled that short deferred window and reported an empty Datum
-       or Domino source as the wrong transport. Wait for the actual transport
-       decision so this assertion proves selection instead of render timing. */
-    await page
-      .waitForFunction(
-        () => {
-          const sources = Array.from(document.querySelectorAll("video")).map(
-            (video) => video.currentSrc || video.querySelector("source")?.src || "",
-          );
-          return (
-            sources.some((src) => src.includes("services-keyframes")) &&
-            sources.some((src) => src.includes("datum-news-loop")) &&
-            sources.filter((src) => src.includes("domino-cta-")).length >= 2
-          );
-        },
-        null,
-        { timeout: 15_000 },
-      )
-      .catch(() => undefined);
-  }
-
   const state = await readPageState(page);
+  const beforeFirstInputAtMs = Date.now();
+  const lowerStoryRequests = (
+    await Promise.all(
+      ["services", "datum", "domino-forward", "domino-reverse"].map((kind) =>
+        observedMediaRequests(page, caseResult, kind),
+      ),
+    )
+  ).flat();
+  const lowerStorySources = ["services", "datum", "domino-forward", "domino-reverse"]
+    .map((kind) => ({ kind, video: mediaVideoForKind(state, kind) }))
+    .filter((entry) => Boolean(entry.video?.src));
+  addCheck(
+    caseResult,
+    lowerStoryRequests.length === 0,
+    "baseline: no lower-story video request begins before input",
+    { beforeFirstInputAtMs, lowerStoryRequests },
+  );
+  addCheck(
+    caseResult,
+    lowerStorySources.length === 0,
+    "baseline: no lower-story video source exists before input",
+    { lowerStorySources },
+  );
+  const reverseVideo = mediaVideoForKind(state, "domino-reverse");
+  addCheck(
+    caseResult,
+    !reverseVideo?.src,
+    "baseline: Domino reverse source is absent before first forward completion",
+    { reverseVideo },
+  );
   const proof = await screenshot(page, directory, "baseline");
   caseResult.proofFiles.push(proof);
   caseResult.baseline = state;
@@ -827,26 +997,6 @@ const runBaseline = async (page, caseResult, directory) => {
   addCheck(caseResult, Boolean(state.root), "baseline: site shell is hydrated");
   const mediaErrors = state.videos.filter((video) => video.errorCode != null);
   addCheck(caseResult, mediaErrors.length === 0, "baseline: no media element errors", { mediaErrors });
-  if (caseResult.configuration.network.name !== "normal") {
-    const selectedSources = {
-      services: state.videos.find((video) => video.src.includes("services-keyframes"))?.src ?? "",
-      datum: state.videos.find((video) => video.src.includes("datum-news-loop"))?.src ?? "",
-      domino: state.videos
-        .filter((video) => video.src.includes("domino-cta-"))
-        .map((video) => video.src),
-    };
-    const compactSourcesSelected =
-      selectedSources.services.includes("services-keyframes-packed-960-lean-20260721.mp4") &&
-      selectedSources.datum.includes("datum-news-loop-mobile-lowbit-20260722.mp4") &&
-      selectedSources.domino.length >= 2 &&
-      selectedSources.domino.every((src) => /domino-cta-(?:forward|reverse)-mobile-/.test(src));
-    addCheck(
-      caseResult,
-      compactSourcesSelected,
-      "baseline: constrained networks select compact media transports",
-      { selectedSources },
-    );
-  }
 };
 
 const runGalaxy = async (page, caseResult, directory, networkName) => {
@@ -1216,8 +1366,155 @@ const captureServicesStop = async (page, pass, direction) => {
   };
 };
 
-const monitorDatumLoop = async (page, caseResult, directory, networkName) => {
-  const initialY = await page.evaluate(() => scrollY);
+const MEDIA_ARMING_TARGETS = [
+  { kind: "services", section: "services" },
+  { kind: "datum", section: "datum" },
+  { kind: "domino-forward", section: "domino" },
+];
+
+const isMediaArmingEligible = (state, sectionName, caseSpec) => {
+  const section = state.sections?.[sectionName];
+  if (!section) return false;
+  const viewportHeight = state.viewport.visualHeight ?? state.viewport.height;
+  const compactMargin = caseSpec.viewport.mobile || caseSpec.network !== "normal";
+  const margin = compactMargin
+    ? Math.round(viewportHeight * 0.75)
+    : Math.max(600, Math.round(viewportHeight));
+  return section.rect.top <= viewportHeight + margin && section.rect.bottom >= -margin;
+};
+
+const expectedCompactMedia = (kind, source) => {
+  if (kind === "services") {
+    return source.includes("services-keyframes-packed-960-lean-20260721.mp4");
+  }
+  if (kind === "datum") {
+    return source.includes("datum-news-loop-mobile-lowbit-20260722.mp4");
+  }
+  return /domino-cta-forward-mobile-.*\.mp4(?:\?|$)/i.test(source);
+};
+
+const waitForMediaArming = async (
+  page,
+  caseResult,
+  caseSpec,
+  target,
+  trigger,
+) => {
+  const timeoutMs = caseSpec.network === "normal" ? 15_000 : 45_000;
+  const startedAt = Date.now();
+  let state = await readPageState(page);
+  let video = mediaVideoForKind(state, target.kind);
+  let requests = await observedMediaRequests(page, caseResult, target.kind);
+  let armingEvent = await page.evaluate(
+    (kind) => window.__tascCrossDeviceQa?.mediaArming?.find((entry) => entry.kind === kind) ?? null,
+    target.kind,
+  );
+  const hasTransportEvidence = () =>
+    requests.length > 0 ||
+    (caseResult.configuration.browserFamily === "webkit" &&
+      Boolean(video?.src) &&
+      (video?.readyState ?? 0) >= 2);
+  while (
+    Date.now() - startedAt < timeoutMs &&
+    !(video?.armed === "true" && video.src && hasTransportEvidence() && armingEvent)
+  ) {
+    await page.waitForTimeout(80);
+    state = await readPageState(page);
+    video = mediaVideoForKind(state, target.kind);
+    requests = await observedMediaRequests(page, caseResult, target.kind);
+    armingEvent = await page.evaluate(
+      (kind) => window.__tascCrossDeviceQa?.mediaArming?.find((entry) => entry.kind === kind) ?? null,
+      target.kind,
+    );
+  }
+  const viewportHeight = armingEvent?.viewportHeight ?? state.viewport.visualHeight ?? state.viewport.height;
+  const compactMargin = caseSpec.viewport.mobile || caseSpec.network !== "normal";
+  const margin = compactMargin
+    ? Math.round(viewportHeight * 0.75)
+    : Math.max(600, Math.round(viewportHeight));
+  const armingGeometryEligible = Boolean(
+    armingEvent?.sectionRect &&
+      armingEvent.sectionRect.top <= viewportHeight + margin &&
+      armingEvent.sectionRect.bottom >= -margin,
+  );
+  const eligibleAtMs = armingEvent?.epochMs ?? null;
+  const armingObserverGraceMs = 125;
+  const prematureRequests = eligibleAtMs == null
+    ? requests
+    : requests.filter((request) => request.startedAtMs + armingObserverGraceMs < eligibleAtMs);
+  const firstRequest = requests[0] ?? null;
+  const source = video?.src || firstRequest?.url || "";
+  const transportEvidence = firstRequest
+    ? { mode: "request", request: firstRequest }
+    : video?.readyState >= 2
+      ? { mode: "decoded-webkit-media", readyState: video.readyState, source: video.src }
+      : null;
+  const evidence = {
+    kind: target.kind,
+    section: target.section,
+    eligibleAtMs,
+    observedAtMs: Date.now(),
+    trigger,
+    armingEvent,
+    armingGeometryEligible,
+    armingObserverGraceMs,
+    margin,
+    video,
+    source,
+    firstRequest,
+    transportEvidence,
+    requests,
+    prematureRequests,
+  };
+  addCheck(
+    caseResult,
+    Boolean(armingEvent) && armingGeometryEligible && prematureRequests.length === 0,
+    `${target.kind}: request does not begin before arming eligibility`,
+    evidence,
+  );
+  addCheck(
+    caseResult,
+    video?.armed === "true" && Boolean(source) && Boolean(transportEvidence),
+    `${target.kind}: source and transport evidence appear at arming eligibility`,
+    evidence,
+  );
+  if (caseSpec.network !== "normal") {
+    addCheck(
+      caseResult,
+      expectedCompactMedia(target.kind, source),
+      `${target.kind}: constrained network selects compact transport when armed`,
+      evidence,
+    );
+  }
+  return evidence;
+};
+
+const waitForScrollQuiet = async (page, stableMs = 260, timeoutMs = 1_800) => {
+  const startedAt = Date.now();
+  let stableSince = startedAt;
+  let lastY = await page.evaluate(() => scrollY);
+  const trace = [{ t: 0, y: lastY }];
+  while (Date.now() - startedAt < timeoutMs) {
+    await page.waitForTimeout(50);
+    const y = await page.evaluate(() => scrollY);
+    trace.push({ t: Date.now() - startedAt, y });
+    if (Math.abs(y - lastY) > 0.75) stableSince = Date.now();
+    lastY = y;
+    if (Date.now() - stableSince >= stableMs) {
+      return { settled: true, y, elapsedMs: Date.now() - startedAt, trace };
+    }
+  }
+  return { settled: false, y: lastY, elapsedMs: Date.now() - startedAt, trace };
+};
+
+const monitorDatumLoop = async (
+  page,
+  caseResult,
+  directory,
+  networkName,
+  triggerVisibility,
+) => {
+  const entryY = await page.evaluate(() => scrollY);
   const ready = await page
     .waitForFunction(
       () => {
@@ -1229,6 +1526,10 @@ const monitorDatumLoop = async (page, caseResult, directory, networkName) => {
     )
     .then(() => true)
     .catch(() => false);
+  const quietWindow = ready
+    ? await waitForScrollQuiet(page)
+    : { settled: false, y: entryY, elapsedMs: 0, trace: [] };
+  const autonomousBaselineY = quietWindow.y;
   const samples = [];
   if (ready) {
     /* The authored Datum loop runs at 0.85x, so the 6.7 s asset needs about
@@ -1270,24 +1571,44 @@ const monitorDatumLoop = async (page, caseResult, directory, networkName) => {
   const wrapped = usable.some(
     (sample, index) => index > 0 && usable[index - 1].currentTime - sample.currentTime > 1,
   );
-  const scrollDrift = usable.length
-    ? Math.max(...usable.map((sample) => Math.abs(sample.y - initialY)))
+  const entryDrift = Math.abs(autonomousBaselineY - entryY);
+  const autonomousScrollDrift = usable.length
+    ? Math.max(...usable.map((sample) => Math.abs(sample.y - autonomousBaselineY)))
     : Number.POSITIVE_INFINITY;
   const proof = await screenshot(page, directory, "datum-loop");
   caseResult.proofFiles.push(proof);
-  const result = { ready, samples: usable, movement, wrapped, scrollDrift, proof };
+  const result = {
+    ready,
+    triggerVisibility,
+    entryY,
+    entryDrift,
+    quietWindow,
+    autonomousBaselineY,
+    autonomousScrollDrift,
+    samples: usable,
+    movement,
+    wrapped,
+    proof,
+  };
   addCheck(caseResult, ready, "datum: loop video becomes decoded and playing", result);
+  addCheck(
+    caseResult,
+    triggerVisibility >= 0.25,
+    "datum: loop playback is observed from the 25 percent visibility threshold",
+    result,
+  );
   addCheck(caseResult, movement >= 1.5, "datum: decoded currentTime moves continuously", result);
   addCheck(caseResult, wrapped, "datum: autonomous playback completes a real loop", result);
-  /* Native wheel momentum can settle by a few CSS pixels after the 25%
-     threshold fires. Treat that sub-frame tail as normal, while still
-     failing the section jumps (dozens/hundreds of pixels) reported by the
-     client. */
-  addCheck(caseResult, scrollDrift <= 12, "datum: loop playback does not jerk the document", result);
+  addCheck(
+    caseResult,
+    quietWindow.settled && autonomousScrollDrift <= 12,
+    "datum: loop playback does not jerk the document after entry settles",
+    result,
+  );
   return result;
 };
 
-const traverse = async (session, caseResult, directory, direction, pass) => {
+const traverse = async (session, caseResult, directory, direction, pass, mediaArming) => {
   const { page, caseSpec } = session;
   const steps = [];
   const servicesStops = [];
@@ -1299,8 +1620,34 @@ const traverse = async (session, caseResult, directory, direction, pass) => {
   const magnitude = Math.round(caseSpec.viewport.height * 0.56);
   const startTime = Date.now();
 
+  const captureArmingForState = async (state, trigger) => {
+    if (pass !== "forward-1" || direction <= 0) return;
+    for (const target of MEDIA_ARMING_TARGETS) {
+      if (mediaArming[target.kind]) continue;
+      if (!isMediaArmingEligible(state, target.section, caseSpec)) continue;
+      mediaArming[target.kind] = await waitForMediaArming(
+        page,
+        caseResult,
+        caseSpec,
+        target,
+        trigger,
+      );
+    }
+  };
+
+  const recordDatumPreThresholdPlayback = (state, position) => {
+    if (pass !== "forward-1" || direction <= 0 || mediaArming.datumResultStarted) return;
+    const visibility = state.sections.datum?.viewportVisibility ?? 0;
+    if (visibility <= 0 || visibility >= 0.25) return;
+    const video = mediaVideoForKind(state, "datum");
+    if (!video || (video.paused && video.playbackState !== "playing")) return;
+    mediaArming.datumPreThresholdPlayback.push({ position, visibility, video, y: state.y });
+  };
+
   for (let index = 0; index < maximumInputs; index += 1) {
     const before = await readPageState(page);
+    await captureArmingForState(before, `before-input-${index}`);
+    recordDatumPreThresholdPlayback(before, `before-input-${index}`);
     const atTarget = direction > 0 ? before.y >= before.maxY - 3 : before.y <= 3;
     if (atTarget) {
       reached = true;
@@ -1310,6 +1657,8 @@ const traverse = async (session, caseResult, directory, direction, pass) => {
     const transport = await waitForTransport(page, caseSpec.network);
     await page.waitForTimeout(caseSpec.input === "touch" ? 90 : 130);
     const after = await readPageState(page);
+    await captureArmingForState(after, `after-input-${index}`);
+    recordDatumPreThresholdPlayback(after, `after-input-${index}`);
     const deltaY = after.y - before.y;
     const expectedDelta = direction * deltaY;
     const locked =
@@ -1386,7 +1735,14 @@ const traverse = async (session, caseResult, directory, direction, pass) => {
       direction > 0 &&
       after.sections.datum?.viewportVisibility >= 0.25
     ) {
-      datumResult = await monitorDatumLoop(page, caseResult, directory, caseSpec.network);
+      mediaArming.datumResultStarted = true;
+      datumResult = await monitorDatumLoop(
+        page,
+        caseResult,
+        directory,
+        caseSpec.network,
+        after.sections.datum.viewportVisibility,
+      );
     }
 
     const intentionalHandoff =
@@ -1646,11 +2002,32 @@ const runJourney = async (session, caseResult, directory) => {
     window.__tascCrossDeviceQa?.reset?.();
   });
   await page.waitForTimeout(600);
+  const mediaArming = {
+    services: null,
+    datum: null,
+    "domino-forward": null,
+    datumPreThresholdPlayback: [],
+    datumResultStarted: false,
+  };
   const traversals = [];
-  traversals.push(await traverse(session, caseResult, directory, 1, "forward-1"));
-  traversals.push(await traverse(session, caseResult, directory, -1, "reverse"));
-  traversals.push(await traverse(session, caseResult, directory, 1, "forward-2"));
+  traversals.push(await traverse(session, caseResult, directory, 1, "forward-1", mediaArming));
+  traversals.push(await traverse(session, caseResult, directory, -1, "reverse", mediaArming));
+  traversals.push(await traverse(session, caseResult, directory, 1, "forward-2", mediaArming));
   validateServicesStops(caseResult, traversals);
+  for (const target of MEDIA_ARMING_TARGETS) {
+    addCheck(
+      caseResult,
+      Boolean(mediaArming[target.kind]),
+      `${target.kind}: forward journey reaches arming eligibility`,
+      { evidence: mediaArming[target.kind] },
+    );
+  }
+  addCheck(
+    caseResult,
+    mediaArming.datumPreThresholdPlayback.length === 0,
+    "datum: video remains paused below the 25 percent visibility threshold",
+    { samples: mediaArming.datumPreThresholdPlayback },
+  );
 
   const servicesJourneyStates = traversals.flatMap((traversal) =>
     traversal.steps.flatMap((step) => [
@@ -1721,6 +2098,32 @@ const runJourney = async (session, caseResult, directory) => {
   const dominoSessions = groupDominoSessions(telemetry?.media ?? []);
   const forwardDomino = dominoSessions.filter((session) => session.direction === "forward");
   const reverseDomino = dominoSessions.filter((session) => session.direction === "reverse");
+  const firstForwardCompletion = (telemetry?.lifecycle ?? []).find(
+    (entry) => entry.root?.dominoPlayback === "complete",
+  );
+  const reverseArmedLifecycle = (telemetry?.lifecycle ?? []).find(
+    (entry) => entry.root?.dominoReverseMediaArmed === "true",
+  );
+  const reverseArmingEvent = (telemetry?.mediaArming ?? []).find(
+    (entry) => entry.kind === "domino-reverse",
+  );
+  const reverseRequests = await observedMediaRequests(page, caseResult, "domino-reverse");
+  const reverseSourceBeforeCompletion = (telemetry?.media ?? []).flatMap((sample) => {
+    if (!firstForwardCompletion || sample.t >= firstForwardCompletion.t) return [];
+    const reverseVideo = sample.videos.find(
+      (video) =>
+        video.className.includes("domino-sequence") && video.direction === "reverse" && video.src,
+    );
+    return reverseVideo ? [{ t: sample.t, video: reverseVideo }] : [];
+  });
+  const reverseRequestBeforeCompletion = firstForwardCompletion
+    ? reverseRequests.filter(
+        (request) => request.startedAtMs + 1 < firstForwardCompletion.epochMs,
+      )
+    : reverseRequests;
+  const decodedReverseAfterCompletion = reverseDomino.some(
+    (session) => session.movement >= 2.6 && session.maxReadyState >= 2,
+  );
 
   addCheck(caseResult, scrollAnalysis.jumps.length === 0, "journey: no unexplained viewport-sized scroll jumps", {
     scrollAnalysis,
@@ -1749,6 +2152,27 @@ const runJourney = async (session, caseResult, directory) => {
     reverseDomino.length >= 1 && reverseDomino.some((session) => session.movement >= 2.6),
     "domino: reverse animation is decoded and played",
     { dominoSessions },
+  );
+  addCheck(
+    caseResult,
+      Boolean(firstForwardCompletion) &&
+      Boolean(reverseArmedLifecycle) &&
+      Boolean(reverseArmingEvent) &&
+      reverseArmedLifecycle.t >= firstForwardCompletion.t &&
+      reverseArmingEvent.t >= firstForwardCompletion.t &&
+      (reverseRequests.length > 0 || decodedReverseAfterCompletion) &&
+      reverseSourceBeforeCompletion.length === 0 &&
+      reverseRequestBeforeCompletion.length === 0,
+    "domino: reverse source remains absent until the first real forward completion",
+    {
+      firstForwardCompletion,
+      reverseArmedLifecycle,
+      reverseArmingEvent,
+      reverseRequests,
+      decodedReverseAfterCompletion,
+      reverseSourceBeforeCompletion,
+      reverseRequestBeforeCompletion,
+    },
   );
 
   const passMedians = Object.fromEntries(
@@ -1788,10 +2212,12 @@ const runJourney = async (session, caseResult, directory) => {
     scrollAnalysis,
     mediaStalls,
     dominoSessions,
+    mediaArming,
     passMedians,
     ratios,
     telemetry: {
       mediaEvents: telemetry?.mediaEvents ?? [],
+      lifecycle: telemetry?.lifecycle ?? [],
       longTasks: telemetry?.longTasks ?? [],
       rejections: telemetry?.rejections ?? [],
       scrollSampleCount: telemetry?.scroll?.length ?? 0,
@@ -1870,6 +2296,7 @@ const runCase = async (caseSpec) => {
       pageErrors: [],
       requestFailures: [],
       badResponses: [],
+      mediaRequests: [],
       mediaResponses: [],
     },
   };
@@ -1905,6 +2332,22 @@ const runCase = async (caseSpec) => {
       if (message.type() === "warning") caseResult.diagnostics.consoleWarnings.push(message.text());
     });
     page.on("pageerror", (error) => caseResult.diagnostics.pageErrors.push(error.message));
+    page.on("request", (request) => {
+      const url = request.url();
+      if (
+        request.resourceType() !== "media" &&
+        !/\.(?:mp4|webm|mov|apng)(?:\?|$)/i.test(url)
+      ) {
+        return;
+      }
+      caseResult.diagnostics.mediaRequests.push({
+        url,
+        method: request.method(),
+        resourceType: request.resourceType(),
+        kind: mediaRequestKind(url),
+        startedAtMs: Date.now(),
+      });
+    });
     page.on("requestfailed", (request) => {
       caseResult.diagnostics.requestFailures.push({
         url: request.url(),

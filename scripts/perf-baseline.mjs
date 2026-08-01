@@ -9,6 +9,8 @@ import { chromium, webkit } from "playwright";
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DEFAULT_OUTPUT = path.join(ROOT, "docs", "perf-baseline-2026-07-31.json");
 const VIDEO_PATTERN = /\.(?:mp4|webm|mov|m4v|apng)(?:$|[?#])/i;
+const HERO_VIDEO_PATTERN = /\/media\/hero-earth-(?:alpha|safari-packed)-[^/?#]+\.(?:mp4|webm)(?:$|[?#])/i;
+const PRELOADER_REVEAL_LIMIT_MS = 2500;
 const REVEAL_SELECTORS = ".reveal-block,.stagger-reveal-item,.process-contact-row";
 const ANCHORS = ["#top", "#clients", "#services", "#work", "#datum", "#process", "#contact"];
 
@@ -345,6 +347,8 @@ const installInstrumentation = async (context, network) => {
         heapSamples: [],
         heroSurfaceReadyMs: null,
         preloaderCompleteMs: null,
+        cssFailOpenMs: null,
+        hardFailOpenMs: null,
         firstHarnessInputMs: null,
         journeyActive: false,
         journeyFrames: [],
@@ -465,10 +469,40 @@ const installInstrumentation = async (context, network) => {
 
       const checkReadiness = () => {
         const main = document.querySelector("main[data-hero-surface-ready='true']");
-        if (main && state.heroSurfaceReadyMs == null) state.heroSurfaceReadyMs = performance.now();
         const preloader = document.querySelector(".site-preloader");
-        const completeClass = document.documentElement.classList.contains("site-preloader-complete");
-        if (!preloader && completeClass && state.preloaderCompleteMs == null) {
+        const preloaderStyle = preloader ? getComputedStyle(preloader) : null;
+        const criticalFailOpenFinished = Boolean(
+          preloader &&
+            typeof preloader.getAnimations === "function" &&
+            preloader.getAnimations().some(
+            (animation) =>
+              "animationName" in animation &&
+              animation.animationName === "tasc-preloader-critical-hide" &&
+              animation.playState === "finished",
+          ),
+        );
+        const preloaderVisible = Boolean(
+          preloader &&
+            preloaderStyle &&
+            !criticalFailOpenFinished &&
+            preloaderStyle.display !== "none" &&
+            preloaderStyle.visibility !== "hidden" &&
+            Number.parseFloat(preloaderStyle.opacity || "1") > 0.01,
+        );
+        const completeClass = main?.classList.contains("site-preloader-complete") ?? false;
+        const hardFailOpen = document.documentElement.dataset.tascBootFailOpen === "true";
+        if (preloader && !preloaderVisible && state.cssFailOpenMs == null) {
+          state.cssFailOpenMs = performance.now();
+        }
+        if (hardFailOpen && state.hardFailOpenMs == null) {
+          state.hardFailOpenMs = performance.now();
+        }
+        if ((!preloaderVisible && (main || preloader)) || hardFailOpen) {
+          if (state.heroSurfaceReadyMs == null) {
+            state.heroSurfaceReadyMs = performance.now();
+          }
+        }
+        if (main && !preloader && completeClass && state.preloaderCompleteMs == null) {
           state.preloaderCompleteMs = performance.now();
         }
       };
@@ -477,7 +511,7 @@ const installInstrumentation = async (context, network) => {
         subtree: true,
         childList: true,
         attributes: true,
-        attributeFilter: ["data-hero-surface-ready", "class"],
+        attributeFilter: ["data-hero-surface-ready", "data-tasc-boot-fail-open", "class"],
       });
       addEventListener("DOMContentLoaded", checkReadiness, { once: true });
 
@@ -492,6 +526,9 @@ const installInstrumentation = async (context, network) => {
       }, 250);
 
       const frame = (timestamp) => {
+        if (state.heroSurfaceReadyMs == null || state.preloaderCompleteMs == null) {
+          checkReadiness();
+        }
         if (state.journeyActive && state.previousFrameAt != null) {
           state.journeyFrames.push(timestamp - state.previousFrameAt);
         }
@@ -563,6 +600,8 @@ const installInstrumentation = async (context, network) => {
           heapPeak: heap.length ? Math.max(...heap) : null,
           heroSurfaceReadyMs: state.heroSurfaceReadyMs,
           preloaderCompleteMs: state.preloaderCompleteMs,
+          cssFailOpenMs: state.cssFailOpenMs,
+          hardFailOpenMs: state.hardFailOpenMs,
           firstHarnessInputMs: state.firstHarnessInputMs,
           journeyFrames: [...state.journeyFrames],
           resources,
@@ -778,12 +817,17 @@ const summarizeFrames = (frames) => {
 
 const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) => {
   const boundary = raw.firstHarnessInputMs ?? raw.now;
+  const requestsStartedBeforeBoundary = startedRequests.filter(
+    (entry) => entry.startedBeforeFirstInput,
+  );
   const beforeBoundary = raw.resources.filter(
     (entry) => entry.startTime <= boundary && entry.responseEnd > 0 && entry.responseEnd <= boundary,
   );
   const videoResources = beforeBoundary.filter(
     (entry) => entry.initiatorType === "video" || VIDEO_PATTERN.test(entry.name),
   );
+  const heroVideoResources = beforeBoundary.filter((entry) => HERO_VIDEO_PATTERN.test(entry.name));
+  const nonHeroResources = beforeBoundary.filter((entry) => !HERO_VIDEO_PATTERN.test(entry.name));
   const longTasks15 = raw.longTasks.filter((entry) => entry.start < 15_000);
   const longTasks7 = raw.longTasks.filter((entry) => entry.start < 7_000);
   const blockingInWindow = (entries, startMs, endMs) =>
@@ -808,13 +852,42 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
   const hiddenAllMaximum = Math.max(0, ...hiddenSamples.map((sample) => sample.hidden?.allCount ?? 0));
   const uniqueVideoRequests = [
     ...new Set([
-      ...startedRequests.filter((entry) => entry.video).map((entry) => entry.url),
+      ...requestsStartedBeforeBoundary.filter((entry) => entry.video).map((entry) => entry.url),
       ...videoResources.filter((entry) => VIDEO_PATTERN.test(entry.name)).map((entry) => entry.name),
     ]),
   ];
+  const observedHeroVideoUrls = [
+    ...new Set([
+      ...heroVideoResources.map((entry) => entry.name),
+      ...requestsStartedBeforeBoundary
+        .filter((entry) => HERO_VIDEO_PATTERN.test(entry.url))
+        .map((entry) => entry.url),
+    ]),
+  ];
+  const failedHeroVideoUrls = [
+    ...new Set(
+      requestsStartedBeforeBoundary
+        .filter((entry) => entry.failed && HERO_VIDEO_PATTERN.test(entry.url))
+        .map((entry) => entry.url),
+    ),
+  ];
   const transferBytes = beforeBoundary.reduce((sum, entry) => sum + (entry.transferSize || 0), 0);
-  const inflightAtBoundary = startedRequests.filter((entry) => entry.inflightAtBoundary).length;
-  const eventualBytesForStartedRequests = startedRequests.reduce((sum, entry) => {
+  const heroVideoTransferBytes = heroVideoResources.reduce(
+    (sum, entry) => sum + (entry.transferSize || 0),
+    0,
+  );
+  const nonHeroTransferBytes = nonHeroResources.reduce(
+    (sum, entry) => sum + (entry.transferSize || 0),
+    0,
+  );
+  const inflightAtBoundary = requestsStartedBeforeBoundary.filter(
+    (entry) => entry.inflightAtBoundary,
+  ).length;
+  const heroVideoInflightAtBoundary = requestsStartedBeforeBoundary.filter(
+    (entry) => entry.inflightAtBoundary && HERO_VIDEO_PATTERN.test(entry.url),
+  ).length;
+  const nonHeroInflightAtBoundary = inflightAtBoundary - heroVideoInflightAtBoundary;
+  const eventualBytesForStartedRequests = requestsStartedBeforeBoundary.reduce((sum, entry) => {
     if (!entry.sizes) return sum;
     return (
       sum +
@@ -824,7 +897,7 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       entry.sizes.responseHeadersSize
     );
   }, 0);
-  const eventualBytesForCompletedRequests = startedRequests.reduce((sum, entry) => {
+  const eventualBytesForCompletedRequests = requestsStartedBeforeBoundary.reduce((sum, entry) => {
     if (!entry.completedBeforeFirstInput || !entry.sizes) return sum;
     return (
       sum +
@@ -834,9 +907,41 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       entry.sizes.responseHeadersSize
     );
   }, 0);
+  const eventualHeroVideoBytesForCompletedRequests = requestsStartedBeforeBoundary.reduce((sum, entry) => {
+    if (!entry.completedBeforeFirstInput || !entry.sizes || !HERO_VIDEO_PATTERN.test(entry.url))
+      return sum;
+    return (
+      sum +
+      entry.sizes.requestBodySize +
+      entry.sizes.requestHeadersSize +
+      entry.sizes.responseBodySize +
+      entry.sizes.responseHeadersSize
+    );
+  }, 0);
+  const eventualNonHeroBytesForCompletedRequests =
+    eventualBytesForCompletedRequests - eventualHeroVideoBytesForCompletedRequests;
   const transferMetricApproximate =
     networkMode.approximate && transferBytes === 0 && eventualBytesForCompletedRequests > 0;
   const transferMetricBoundaryApproximate = transferMetricApproximate || inflightAtBoundary > 0;
+  const heroVideoTransferMetricApproximate =
+    networkMode.approximate &&
+    heroVideoTransferBytes === 0 &&
+    eventualHeroVideoBytesForCompletedRequests > 0;
+  const heroVideoTransferMetricBoundaryApproximate =
+    heroVideoTransferMetricApproximate || heroVideoInflightAtBoundary > 0;
+  const nonHeroTransferMetricApproximate =
+    networkMode.approximate &&
+    nonHeroTransferBytes === 0 &&
+    eventualNonHeroBytesForCompletedRequests > 0;
+  const nonHeroTransferMetricBoundaryApproximate =
+    nonHeroTransferMetricApproximate || nonHeroInflightAtBoundary > 0;
+  const nonHeroBudgetBytes = profile.isMobile ? 1_500_000 : 2_500_000;
+  const nonHeroBytesBeforeFirstScroll = nonHeroTransferMetricApproximate
+    ? eventualNonHeroBytesForCompletedRequests
+    : nonHeroTransferBytes;
+  const heroVideoBytesBeforeFirstScroll = heroVideoTransferMetricApproximate
+    ? eventualHeroVideoBytesForCompletedRequests
+    : heroVideoTransferBytes;
 
   return {
     lcp: raw.capabilities.lcp
@@ -895,18 +1000,65 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
             : null,
       },
     ),
+    nonHeroBytesBeforeFirstScroll: metric(
+      nonHeroTransferMetricBoundaryApproximate ? "approximate" : "measured",
+      nonHeroBytesBeforeFirstScroll,
+      {
+        unit: "bytes",
+        definition:
+          "startup transfer before first harness scroll excluding only the active Hero video transport; Hero poster, fonts, scripts, styles and all other resources remain included",
+        hardBudgetBytes: nonHeroBudgetBytes,
+        withinHardBudget:
+          nonHeroTransferMetricBoundaryApproximate
+            ? null
+            : nonHeroBytesBeforeFirstScroll <= nonHeroBudgetBytes,
+        excludedHeroVideoUrls: observedHeroVideoUrls,
+        observedHeroTransportCount: observedHeroVideoUrls.length,
+        completedTransferSizeBytes: nonHeroTransferBytes,
+        inflightRequestCountAtBoundary: nonHeroInflightAtBoundary,
+        eventualBytesForCompletedRequestsBeforeFirstScroll:
+          eventualNonHeroBytesForCompletedRequests,
+        caveat:
+          nonHeroInflightAtBoundary > 0
+            ? "advisory lower-bound while non-Hero requests remain in flight at the boundary"
+            : null,
+      },
+    ),
+    heroVideoBytesBeforeFirstScroll: metric(
+      observedHeroVideoUrls.length === 0
+        ? "not-observed"
+        : heroVideoTransferMetricBoundaryApproximate
+          ? "approximate"
+          : "measured",
+      observedHeroVideoUrls.length === 0 ? null : heroVideoBytesBeforeFirstScroll,
+      {
+        unit: "bytes",
+        definition:
+          "active approved-quality Hero video transport before first harness scroll; reported separately and never hidden from the total",
+        completedTransferSizeBytes: heroVideoTransferBytes,
+        inflightRequestCountAtBoundary: heroVideoInflightAtBoundary,
+        eventualBytesForCompletedRequestsBeforeFirstScroll:
+          eventualHeroVideoBytesForCompletedRequests,
+        urls: observedHeroVideoUrls,
+        transportCount: observedHeroVideoUrls.length,
+        failedUrls: failedHeroVideoUrls,
+      },
+    ),
     videoRequestsBeforeFirstScroll: metric("measured", uniqueVideoRequests, {
       count: uniqueVideoRequests.length,
       resourceTimingUrls: [...new Set(videoResources.map((entry) => entry.name))],
-      requests: startedRequests.filter((entry) => entry.video),
+      requests: requestsStartedBeforeBoundary.filter((entry) => entry.video),
     }),
     preloaderRevealMs: metric(
       Number.isFinite(raw.heroSurfaceReadyMs) ? "measured" : "not-observed",
       round(raw.heroSurfaceReadyMs),
       {
         unit: "ms",
-        definition: "navigation start to main[data-hero-surface-ready=true]",
+        definition:
+          "navigation start to visible Hero surface (main readiness or root CSS fail-open)",
         preloaderCompleteMs: round(raw.preloaderCompleteMs),
+        cssFailOpenMs: round(raw.cssFailOpenMs),
+        hardFailOpenMs: round(raw.hardFailOpenMs),
       },
     ),
     longTasks: raw.capabilities.longtask
@@ -1046,6 +1198,7 @@ const runCase = async (caseSpec, baseUrl) => {
         video: request.resourceType() === "media" || VIDEO_PATTERN.test(url),
         range: request.headers().range ?? null,
         completedBeforeFirstInput: false,
+        startedBeforeFirstInput: beforeFirstInput,
         failed: false,
         inflightAtBoundary: false,
         sizes: null,
@@ -1204,6 +1357,8 @@ const requiredMetricNames = [
   "tbt",
   "cls",
   "bytesBeforeFirstScroll",
+  "nonHeroBytesBeforeFirstScroll",
+  "heroVideoBytesBeforeFirstScroll",
   "videoRequestsBeforeFirstScroll",
   "preloaderRevealMs",
   "longTasks",
@@ -1215,6 +1370,15 @@ const requiredMetricNames = [
   "jsHeapPeak",
 ];
 const structuralFailures = [];
+const acceptanceFailures = [];
+const advisories = [];
+const recordAcceptanceFinding = (result, message) => {
+  const target = result.metrics?.networkMode?.approximate === true &&
+    result.configuration?.engine === "webkit"
+    ? advisories
+    : acceptanceFailures;
+  target.push(`${result.id}: ${message}`);
+};
 for (const result of results) {
   if (result.status !== "measured") {
     structuralFailures.push(`${result.id}: ${result.error?.message ?? "case error"}`);
@@ -1225,11 +1389,63 @@ for (const result of results) {
       structuralFailures.push(`${result.id}: missing metric ${field}`);
     }
   }
+  const nonHeroTransfer = result.metrics?.nonHeroBytesBeforeFirstScroll;
+  if (
+    nonHeroTransfer?.status === "measured" &&
+    nonHeroTransfer.withinHardBudget === false
+  ) {
+    recordAcceptanceFinding(
+      result,
+      `non-Hero startup transfer ${nonHeroTransfer.value} B exceeds ${nonHeroTransfer.hardBudgetBytes} B`,
+    );
+  }
+  if (
+    nonHeroTransfer?.status === "approximate" &&
+    nonHeroTransfer.value > nonHeroTransfer.hardBudgetBytes
+  ) {
+    recordAcceptanceFinding(
+      result,
+      `non-Hero startup lower bound ${nonHeroTransfer.value} B already exceeds ${nonHeroTransfer.hardBudgetBytes} B`,
+    );
+  }
+  if ((nonHeroTransfer?.observedHeroTransportCount ?? 0) > 1) {
+    recordAcceptanceFinding(
+      result,
+      `${nonHeroTransfer.observedHeroTransportCount} Hero transports started before first scroll`,
+    );
+  }
+  const heroTransfer = result.metrics?.heroVideoBytesBeforeFirstScroll;
+  if ((heroTransfer?.failedUrls?.length ?? 0) > 0) {
+    recordAcceptanceFinding(
+      result,
+      `Hero transport failed before first scroll: ${heroTransfer.failedUrls.join(", ")}`,
+    );
+  }
+  const videoRequests = result.metrics?.videoRequestsBeforeFirstScroll;
+  if (videoRequests?.status !== "measured") {
+    recordAcceptanceFinding(result, "video request count was not measured");
+  }
+  else if (videoRequests.count > 1) {
+    recordAcceptanceFinding(
+      result,
+      `${videoRequests.count} video requests started before first scroll`,
+    );
+  }
+  const preloaderReveal = result.metrics?.preloaderRevealMs;
+  if (preloaderReveal?.status !== "measured") {
+    recordAcceptanceFinding(result, "preloader reveal was not measured");
+  }
+  else if (preloaderReveal.value > PRELOADER_REVEAL_LIMIT_MS) {
+    recordAcceptanceFinding(
+      result,
+      `preloader reveal ${preloaderReveal.value} ms exceeds ${PRELOADER_REVEAL_LIMIT_MS} ms`,
+    );
+  }
 }
 
 const sourceStatus = git("status", "--porcelain") ?? "";
 const report = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   generatedAt: new Date().toISOString(),
   source: {
     revision: git("rev-parse", "HEAD"),
@@ -1251,6 +1467,8 @@ const report = {
     firstScrollBoundary: "first scroll input issued by this harness after startup observation and readiness wait",
     webkitNetworkCaveat:
       "Throttled WebKit uses buffered route fulfillment and is approximate; it is not equivalent to physical Safari streaming.",
+    syntheticWebKitPolicy:
+      "Approximate throttled WebKit budget and reveal findings are reported as advisories; physical Safari is the hard external acceptance boundary.",
     physicalDeviceBoundary:
       "Playwright WebKit on Windows is not iPhone Safari, iPhone Chrome, Android Chrome, or macOS Safari acceptance.",
   },
@@ -1260,6 +1478,8 @@ const report = {
     caseCount: cases.length,
   },
   structuralFailures,
+  acceptanceFailures,
+  advisories,
   results,
 };
 
@@ -1267,6 +1487,12 @@ fs.mkdirSync(path.dirname(outputPath), { recursive: true });
 const temporaryPath = `${outputPath}.tmp`;
 fs.writeFileSync(temporaryPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 fs.renameSync(temporaryPath, outputPath);
-console.log(JSON.stringify({ outputPath, caseCount: results.length, structuralFailures }, null, 2));
+console.log(
+  JSON.stringify(
+    { outputPath, caseCount: results.length, structuralFailures, acceptanceFailures, advisories },
+    null,
+    2,
+  ),
+);
 
-if (structuralFailures.length) process.exitCode = 1;
+if (structuralFailures.length || acceptanceFailures.length) process.exitCode = 1;

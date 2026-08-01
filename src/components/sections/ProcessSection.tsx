@@ -5,7 +5,7 @@ type ProcessSectionProps = {
     mapArmed: boolean;
 };
 export function ProcessSection({ mapArmed }: ProcessSectionProps) {
-    return (<section className="process-contact-section glass-editorial-section" id="process" aria-label="The process and contact">
+    return (<section className="process-contact-section glass-editorial-section" id="process" aria-label="The process and contact" data-process-media-armed={mapArmed ? "true" : "false"}>
       <div className="process-contact-bg" aria-hidden="true">
         <span className="process-gradient process-gradient-top"/>
         <span className="process-gradient process-gradient-bottom"/>

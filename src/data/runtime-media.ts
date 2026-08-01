@@ -3,13 +3,13 @@ const secondsAtFrame = (frame: number, fps = FPS_30) => frame / fps;
 export const RUNTIME_MEDIA = {
     hero: {
         nativeAlpha: {
-            desktop: "/media/hero-earth-alpha-640-60fps-20260716.webm",
+            desktop: "/media/hero-earth-alpha-640-60fps-t1-20260731.webm",
             mobile: "/media/hero-earth-alpha-480-30fps-mobile-20260722.webm",
             desktopOutput: { width: 640, height: 640 },
             mobileOutput: { width: 480, height: 480 },
         },
         webkitPacked: {
-            desktop: "/media/hero-earth-safari-packed-640-60fps-20260716.mp4",
+            desktop: "/media/hero-earth-safari-packed-640-60fps-t1-20260731.mp4",
             mobile: "/media/hero-earth-safari-packed-480-30fps-mobile-20260722.mp4",
             desktopOutput: { width: 640, height: 640 },
             mobileOutput: { width: 480, height: 480 },
@@ -25,7 +25,7 @@ export const RUNTIME_MEDIA = {
             mobile: "/media/services-keyframes-mobile-lean-20260721.webm",
         },
         webkitPacked: {
-            desktop: "/media/services-keyframes-packed-1280-final-20260718.mp4",
+            desktop: "/media/services-keyframes-packed-1280-t1-20260731.mp4",
             mobile: "/media/services-keyframes-packed-960-lean-20260721.mp4",
             desktopOutput: { width: 1280, height: 720 },
             mobileOutput: { width: 960, height: 540 },

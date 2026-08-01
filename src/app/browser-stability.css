@@ -2,7 +2,7 @@ html[data-tasc-boot-fail-open="true"] .site-preloader {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
-  transition: opacity 180ms ease-out, visibility 0s linear 180ms !important;
+  transition: none !important;
 }
 
 html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-hero-title > span,

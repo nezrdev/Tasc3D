@@ -3,6 +3,10 @@ import { useEffect, useRef } from "react";
 import Image from "next/image";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
+import {
+    PRELOADER_HARD_FAIL_OPEN_MS,
+    PRELOADER_REVEAL_SAFETY_MS,
+} from "@/lib/preloader-timing";
 gsap.registerPlugin(useGSAP);
 type SitePreloaderProps = {
     ready: boolean;
@@ -51,10 +55,28 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             }
             onCompleteRef.current();
         };
+        const handleHardFailOpen = () => finish();
+        const handleCriticalHide = (event: AnimationEvent) => {
+            if (event.animationName === "tasc-preloader-critical-hide") {
+                finish();
+            }
+        };
+        window.addEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
+        root.addEventListener("animationend", handleCriticalHide);
+        const criticalHideFinished = typeof root.getAnimations === "function"
+            && root.getAnimations().some((animation) =>
+                (animation as CSSAnimation).animationName === "tasc-preloader-critical-hide"
+                && animation.playState === "finished");
+        if (document.documentElement.dataset.tascBootFailOpen === "true" || criticalHideFinished) {
+            finish();
+            return () => {
+                root.removeEventListener("animationend", handleCriticalHide);
+                window.removeEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
+            };
+        }
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const compact = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
         const blinds = gsap.utils.toArray<HTMLElement>(".preloader-blind", root);
-        const killSwitch = window.setTimeout(() => revealRef.current?.(), 2800);
         gsap.set(root, { autoAlpha: 1 });
         gsap.set(blinds, { scaleX: 1, transformOrigin: "50% 50%" });
         gsap.set(".preloader-logo", { autoAlpha: 1, y: 0 });
@@ -85,15 +107,27 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             if (revealStartedRef.current || completeRef.current || timeline.isActive())
                 return;
             startReveal();
-            window.clearTimeout(killSwitch);
             loadingTween.kill();
             timeline.play(0);
         };
-        revealRef.current = reveal;
-        if (readyRef.current)
+        const revealWithinDeadline = () => {
+            const remainingMs = PRELOADER_HARD_FAIL_OPEN_MS - performance.now();
+            const requiredMs = timeline.duration() * 1000 + PRELOADER_REVEAL_SAFETY_MS;
+            if (remainingMs <= requiredMs) {
+                finish();
+                return;
+            }
             reveal();
+        };
+        revealRef.current = revealWithinDeadline;
+        const handleNavigationDeadline = () => revealWithinDeadline();
+        window.addEventListener("tasc:preloader-deadline", handleNavigationDeadline);
+        if (readyRef.current || document.documentElement.dataset.tascPreloaderDeadline === "true")
+            revealWithinDeadline();
         return () => {
-            window.clearTimeout(killSwitch);
+            root.removeEventListener("animationend", handleCriticalHide);
+            window.removeEventListener("tasc:preloader-deadline", handleNavigationDeadline);
+            window.removeEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
             revealRef.current = null;
             loadingTween.kill();
             timeline.kill();

@@ -30,6 +30,12 @@
   content: "";
   position: absolute;
   inset: 0;
+  background: #000 !important;
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.process-contact-section[data-process-media-armed="true"] .process-contact-bg::before {
   background: url("/media/process-gradient-original-20260709.webp") center top / 100% 100% no-repeat !important;
   filter: none !important;
   opacity: 1 !important;
