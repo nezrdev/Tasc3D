@@ -100,6 +100,8 @@ export function TascLanding() {
     const interactiveGalaxyRef = useRef<GalaxyHandle | null>(null);
     const dominoVideoRef = useRef<HTMLVideoElement | null>(null);
     const dominoReverseVideoRef = useRef<HTMLVideoElement | null>(null);
+    const dominoSourceErrorReporterRef = useRef<((direction: "forward" | "reverse") => void) | null>(null);
+    const dominoPendingSourceErrorsRef = useRef({ forward: false, reverse: false });
     const servicesVideoRef = useRef<HTMLVideoElement | null>(null);
     const servicesWarmupClaimRef = useRef<(() => void) | null>(null);
     const datumVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -202,6 +204,14 @@ export function TascLanding() {
     const armDominoReverseMedia = useCallback(() => {
         rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
         setDominoReverseMediaArmed(true);
+    }, []);
+    const reportDominoSourceError = useCallback((direction: "forward" | "reverse") => {
+        dominoPendingSourceErrorsRef.current[direction] = true;
+        const reporter = dominoSourceErrorReporterRef.current;
+        if (!reporter)
+            return;
+        dominoPendingSourceErrorsRef.current[direction] = false;
+        reporter(direction);
     }, []);
     const datumVideoSource = lightweightMediaMode
         ? DATUM_VIDEO_MOBILE_MP4
@@ -894,13 +904,28 @@ export function TascLanding() {
         if (!forwardVideo || !reverseVideo)
             return;
         let disposed = false;
-        const retryTimers = new Set<number>();
+        const retryTimers = new Map<number, HTMLVideoElement>();
         const failedVideos = new Set<HTMLVideoElement>();
-        const retryScheduled = new Set<HTMLVideoElement>();
+        const retryLadderStarted = new Set<HTMLVideoElement>();
         const videos = [forwardVideo, ...(dominoReverseMediaArmed ? [reverseVideo] : [])];
+        const clearRetryLadder = (video: HTMLVideoElement) => {
+            retryTimers.forEach((owner, timer) => {
+                if (owner !== video)
+                    return;
+                window.clearTimeout(timer);
+                retryTimers.delete(timer);
+            });
+            failedVideos.delete(video);
+            retryLadderStarted.delete(video);
+            if (video === forwardVideo)
+                dominoPendingSourceErrorsRef.current.forward = false;
+            else
+                dominoPendingSourceErrorsRef.current.reverse = false;
+        };
         const markPrepared = (video: HTMLVideoElement) => {
             if (disposed || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
                 return;
+            clearRetryLadder(video);
             if (video === forwardVideo) {
                 setDominoForwardPrepared(true);
                 setDominoForwardFallback(false);
@@ -911,7 +936,7 @@ export function TascLanding() {
             }
         };
         const warmVideo = (video: HTMLVideoElement) => {
-            if (video.dataset.armed !== "true")
+            if (video.dataset.armed !== "true" || failedVideos.has(video))
                 return;
             if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
                 video.load();
@@ -925,51 +950,82 @@ export function TascLanding() {
                 markPrepared(video);
                 return;
             }
-            if (video.networkState !== HTMLMediaElement.NETWORK_EMPTY)
+            if (video.networkState !== HTMLMediaElement.NETWORK_EMPTY &&
+                video.networkState !== HTMLMediaElement.NETWORK_NO_SOURCE)
                 return;
             failedVideos.delete(video);
             video.load();
         };
         const scheduleColdMediaRetry = (video: HTMLVideoElement) => {
             failedVideos.add(video);
-            if (retryScheduled.has(video))
+            if (retryLadderStarted.has(video))
                 return;
-            retryScheduled.add(video);
-            [2000, 6000, 12000].forEach((delay, index, delays) => {
+            retryLadderStarted.add(video);
+            [2000, 6000, 12000].forEach((delay) => {
                 const timer = window.setTimeout(() => {
                     retryTimers.delete(timer);
                     retryColdMedia(video);
-                    if (index === delays.length - 1)
-                        retryScheduled.delete(video);
                 }, delay);
-                retryTimers.add(timer);
+                retryTimers.set(timer, video);
             });
         };
         const handleForwardPrepared = () => markPrepared(forwardVideo);
         const handleReversePrepared = () => markPrepared(reverseVideo);
-        const handleForwardError = () => scheduleColdMediaRetry(forwardVideo);
-        const handleReverseError = () => scheduleColdMediaRetry(reverseVideo);
-        const handlePageShow = () => videos.forEach(retryColdMedia);
+        const handleForwardError = () => {
+            setDominoForwardPrepared(false);
+            setDominoForwardFallback(true);
+            scheduleColdMediaRetry(forwardVideo);
+        };
+        const handleReverseError = () => {
+            setDominoReversePrepared(false);
+            setDominoReverseFallback(true);
+            scheduleColdMediaRetry(reverseVideo);
+        };
+        const reportSourceError = (direction: "forward" | "reverse") => {
+            if (direction === "forward")
+                handleForwardError();
+            else if (dominoReverseMediaArmed)
+                handleReverseError();
+        };
+        dominoSourceErrorReporterRef.current = reportSourceError;
+        if (dominoPendingSourceErrorsRef.current.forward) {
+            dominoPendingSourceErrorsRef.current.forward = false;
+            handleForwardError();
+        }
+        if (dominoReverseMediaArmed && dominoPendingSourceErrorsRef.current.reverse) {
+            dominoPendingSourceErrorsRef.current.reverse = false;
+            handleReverseError();
+        }
+        const handlePageShow = () => videos.forEach(warmVideo);
         forwardVideo.addEventListener("loadeddata", handleForwardPrepared);
         forwardVideo.addEventListener("canplay", handleForwardPrepared);
-        forwardVideo.addEventListener("error", handleForwardError);
+        forwardVideo.addEventListener("error", handleForwardError, true);
         if (dominoReverseMediaArmed) {
             reverseVideo.addEventListener("loadeddata", handleReversePrepared);
             reverseVideo.addEventListener("canplay", handleReversePrepared);
-            reverseVideo.addEventListener("error", handleReverseError);
+            reverseVideo.addEventListener("error", handleReverseError, true);
         }
         videos.forEach(warmVideo);
+        if (forwardVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
+            forwardVideo.networkState === HTMLMediaElement.NETWORK_NO_SOURCE)
+            handleForwardError();
+        if (dominoReverseMediaArmed &&
+            reverseVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
+            reverseVideo.networkState === HTMLMediaElement.NETWORK_NO_SOURCE)
+            handleReverseError();
         window.addEventListener("pageshow", handlePageShow);
         return () => {
             disposed = true;
-            retryTimers.forEach((timer) => window.clearTimeout(timer));
+            if (dominoSourceErrorReporterRef.current === reportSourceError)
+                dominoSourceErrorReporterRef.current = null;
+            retryTimers.forEach((_, timer) => window.clearTimeout(timer));
             retryTimers.clear();
             forwardVideo.removeEventListener("loadeddata", handleForwardPrepared);
             forwardVideo.removeEventListener("canplay", handleForwardPrepared);
-            forwardVideo.removeEventListener("error", handleForwardError);
+            forwardVideo.removeEventListener("error", handleForwardError, true);
             reverseVideo.removeEventListener("loadeddata", handleReversePrepared);
             reverseVideo.removeEventListener("canplay", handleReversePrepared);
-            reverseVideo.removeEventListener("error", handleReverseError);
+            reverseVideo.removeEventListener("error", handleReverseError, true);
             window.removeEventListener("pageshow", handlePageShow);
         };
     }, [dominoMediaArmed, dominoReverseMediaArmed, dominoTransportKey]);
@@ -5217,8 +5273,8 @@ export function TascLanding() {
                 setDominoForwardFallback(true);
             }}>
                 {dominoMediaArmed ? (<>
-                    {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_MP4 : DOMINO_VIDEO_MP4} type="video/mp4"/>) : null}
-                    <source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_WEBM : DOMINO_VIDEO_WEBM} type="video/webm"/>
+                    {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_MP4 : DOMINO_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("forward")}/>) : null}
+                    <source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_WEBM : DOMINO_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("forward")}/>
                   </>) : null}
                 </video>
                 <video key={`domino-reverse-${dominoTransportKey}`} ref={dominoReverseVideoRef} className="domino-sequence domino-sequence-reverse" data-domino-direction="reverse" data-armed={dominoReverseMediaArmed ? "true" : "false"} muted playsInline preload={dominoReverseMediaArmed ? "auto" : "metadata"} disablePictureInPicture tabIndex={-1} onLoadedData={() => {
@@ -5234,10 +5290,10 @@ export function TascLanding() {
                   {dominoReverseMediaArmed ? (<>
                       {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode
                         ? DOMINO_REVERSE_VIDEO_MOBILE_MP4
-                        : DOMINO_REVERSE_VIDEO_MP4} type="video/mp4"/>) : null}
+                        : DOMINO_REVERSE_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("reverse")}/>) : null}
                       <source src={lightweightMediaMode
                     ? DOMINO_REVERSE_VIDEO_MOBILE_WEBM
-                    : DOMINO_REVERSE_VIDEO_WEBM} type="video/webm"/>
+                    : DOMINO_REVERSE_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("reverse")}/>
                     </>) : null}
                 </video>
               </>) : null}

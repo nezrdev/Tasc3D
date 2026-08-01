@@ -1,5 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import {
+    PRELOADER_HARD_FAIL_OPEN_MS,
+    PRELOADER_SOFT_REVEAL_MS,
+} from "@/lib/preloader-timing";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_OG_IMAGE, SITE_TITLE, SITE_URL } from "@/lib/site-seo";
 import "./globals.css";
 import "./clients-final.css";
@@ -87,8 +91,8 @@ const webkitCompatibilityBootstrap = `
 `;
 const preloaderNavigationFailOpen = `
   try {
-    var revealWait = 1800;
-    var hardWait = 2400;
+    var revealWait = ${PRELOADER_SOFT_REVEAL_MS};
+    var hardWait = ${PRELOADER_HARD_FAIL_OPEN_MS};
     var scheduleFromNavigation = function (wait, callback) {
       setTimeout(callback, Math.max(0, wait - performance.now()));
     };
@@ -114,12 +118,12 @@ const preloaderCriticalFailOpenCss = `
     to { opacity: 1; visibility: visible; transform: translate3d(0, 0, 0); }
   }
   .site-preloader {
-    animation: tasc-preloader-critical-hide 1ms step-end 1900ms 1 normal forwards;
+    animation: tasc-preloader-critical-hide 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
   }
   .site-shell:not(.site-preloader-complete) .figma-hero-title > span,
   .site-shell:not(.site-preloader-complete) .hero-subcopy,
   .site-shell:not(.site-preloader-complete) .figma-hero-actions .figma-cta {
-    animation: tasc-hero-critical-reveal 1ms step-end 1900ms 1 normal forwards;
+    animation: tasc-hero-critical-reveal 1ms step-end ${PRELOADER_HARD_FAIL_OPEN_MS}ms 1 normal forwards;
   }
 `;
 export const metadata: Metadata = {
