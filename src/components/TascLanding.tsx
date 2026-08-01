@@ -70,6 +70,8 @@ const DATUM_VIDEO_MOBILE_WEBM = RUNTIME_MEDIA.datum.chromium.mobile;
 const DATUM_VIDEO_POSTER = RUNTIME_MEDIA.datum.poster;
 const VISION_LOGO_PLACEHOLDER =
     "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+const CLIENTS_FLARE_PLACEHOLDER =
+    "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 const VISION_LOGO_DEEP_LINKS = new Set([
     "#clients",
     "#services",
@@ -147,6 +149,7 @@ export function TascLanding() {
     const [lowerMediaWarmDeadlineReached, setLowerMediaWarmDeadlineReached] = useState(false);
     const [processMapArmed, setProcessMapArmed] = useState(false);
     const [visionLogoArmed, setVisionLogoArmed] = useState(false);
+    const [clientsFlareArmed, setClientsFlareArmed] = useState(false);
     const [preloaderComplete, setPreloaderComplete] = useState(false);
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
@@ -874,6 +877,8 @@ export function TascLanding() {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
                 setVisionLogoArmed(true);
+            if (hash === "#clients" || hash === "#services")
+                setClientsFlareArmed(true);
             if (hash === "#services") {
                 setServicesMediaArmed(true);
                 setServicesStopPostersArmed(true);
@@ -899,17 +904,20 @@ export function TascLanding() {
         if (!root)
             return;
         const armFromHash = () => {
-            if (VISION_LOGO_DEEP_LINKS.has(window.location.hash))
+            const hash = window.location.hash;
+            if (VISION_LOGO_DEEP_LINKS.has(hash))
                 setVisionLogoArmed(true);
-            if (window.location.hash === "#services") {
+            if (hash === "#clients" || hash === "#services")
+                setClientsFlareArmed(true);
+            if (hash === "#services") {
                 setServicesMediaArmed(true);
                 setServicesStopPostersArmed(true);
             }
-            if (window.location.hash === "#datum")
+            if (hash === "#datum")
                 setDatumMediaArmed(true);
-            if (window.location.hash === "#brief")
+            if (hash === "#brief")
                 setDominoMediaArmed(true);
-            if (window.location.hash === "#process" || window.location.hash === "#contact") {
+            if (hash === "#process" || hash === "#contact") {
                 setProcessMapArmed(true);
             }
         };
@@ -924,6 +932,7 @@ export function TascLanding() {
             setServicesMediaArmed(true);
             setServicesStopPostersArmed(true);
         });
+        register(".figma-clients-section", () => setClientsFlareArmed(true));
         register(".datum-motion-section", () => setDatumMediaArmed(true));
         register(".domino-cta-section", () => setDominoMediaArmed(true));
         register(".process-contact-section", () => setProcessMapArmed(true));
@@ -1507,34 +1516,42 @@ export function TascLanding() {
         if (!root || !clientsSection || !clientsFlareStage || !clientsScrollElement)
             return;
         let frame = 0;
-        let stableViewportWidth = window.innerWidth;
+        let debounceTimer = 0;
+        const readViewportWidth = () => Math.max(1, document.documentElement.clientWidth || window.visualViewport?.width || window.innerWidth);
+        let stableViewportWidth = readViewportWidth();
         let stableViewportHeight = Math.max(document.documentElement.clientHeight, window.visualViewport?.height ?? window.innerHeight);
         const syncClientsFlareDocumentPosition = () => {
             frame = 0;
             const rootRect = root.getBoundingClientRect();
             const clientsRect = clientsSection.getBoundingClientRect();
-            const viewportHeight = stableViewportHeight;
-            const compactFlare = window.innerWidth <= 900;
-            const angle = (15 * Math.PI) / 180;
-            const planeScale = compactFlare ? 1 : 1.42;
             const planeWidth = clientsScrollElement.offsetWidth;
             const planeHeight = clientsScrollElement.offsetHeight;
+            const planeOffsetTop = clientsScrollElement.offsetTop;
+            const viewportHeight = stableViewportHeight;
+            const compactFlare = stableViewportWidth <= 900;
+            const angle = (15 * Math.PI) / 180;
+            const planeScale = compactFlare ? 1 : 1.42;
             const rotatedHeight = Math.abs(planeWidth * Math.sin(angle)) +
                 Math.abs(planeHeight * Math.cos(angle));
-            const rotatedTopWithinStage = clientsScrollElement.offsetTop + planeHeight / 2 - (rotatedHeight * planeScale) / 2;
+            const rotatedTopWithinStage = planeOffsetTop + planeHeight / 2 - (rotatedHeight * planeScale) / 2;
             const entryFactor = compactFlare ? 0.82 : 1.24;
             const entryOverlap = Math.min(Math.max(viewportHeight * entryFactor, 520), compactFlare ? 760 : 1680);
             const clientsTopWithinRoot = clientsRect.top - rootRect.top;
             const stageTop = clientsTopWithinRoot - entryOverlap - rotatedTopWithinStage;
-            clientsFlareStage.style.top = `${Math.round(stageTop)}px`;
+            clientsFlareStage.style.transform = `translate3d(0, ${Math.round(stageTop)}px, 0)`;
         };
         const scheduleSync = () => {
-            if (frame)
-                window.cancelAnimationFrame(frame);
-            frame = window.requestAnimationFrame(syncClientsFlareDocumentPosition);
+            if (debounceTimer)
+                window.clearTimeout(debounceTimer);
+            debounceTimer = window.setTimeout(() => {
+                debounceTimer = 0;
+                if (frame)
+                    window.cancelAnimationFrame(frame);
+                frame = window.requestAnimationFrame(syncClientsFlareDocumentPosition);
+            }, 200);
         };
         const handleViewportResize = () => {
-            const nextWidth = window.innerWidth;
+            const nextWidth = readViewportWidth();
             const compact = nextWidth <= 900;
             if (compact && Math.abs(nextWidth - stableViewportWidth) < 24)
                 return;
@@ -1545,19 +1562,20 @@ export function TascLanding() {
         const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
         syncClientsFlareDocumentPosition();
         const resizeObserver = new ResizeObserver(scheduleSync);
+        resizeObserver.observe(root);
         resizeObserver.observe(clientsSection);
         resizeObserver.observe(clientsScrollElement);
         window.addEventListener("resize", handleViewportResize, { passive: true });
         reducedMotionQuery.addEventListener("change", scheduleSync);
-        ScrollTrigger.addEventListener("refresh", scheduleSync);
         return () => {
+            if (debounceTimer)
+                window.clearTimeout(debounceTimer);
             if (frame)
                 window.cancelAnimationFrame(frame);
             resizeObserver.disconnect();
             window.removeEventListener("resize", handleViewportResize);
             reducedMotionQuery.removeEventListener("change", scheduleSync);
-            ScrollTrigger.removeEventListener("refresh", scheduleSync);
-            clientsFlareStage.style.removeProperty("top");
+            clientsFlareStage.style.removeProperty("transform");
         };
     }, []);
     useGSAP(() => {
@@ -3812,6 +3830,24 @@ export function TascLanding() {
             .to(".second-media", { y: -30, autoAlpha: 1, duration: visionHoldDuration, ease: "none" }, "secondVideoComplete")
             .addLabel("galaxyHidden", 5.92);
         const clientsSection = root.querySelector<HTMLElement>(".figma-clients-section");
+        let clientsEntranceMoving = false;
+        let clientsHandoffMoving = false;
+        const syncClientsCardsMoving = () => {
+            if (!clientsSection)
+                return;
+            if (clientsEntranceMoving || clientsHandoffMoving)
+                clientsSection.dataset.clientCardsMoving = "true";
+            else
+                delete clientsSection.dataset.clientCardsMoving;
+        };
+        const setClientsEntranceMoving = (moving: boolean) => {
+            clientsEntranceMoving = moving;
+            syncClientsCardsMoving();
+        };
+        const setClientsHandoffMoving = (moving: boolean) => {
+            clientsHandoffMoving = moving;
+            syncClientsCardsMoving();
+        };
         if (clientsSection) {
             const clientsInner = clientsSection.querySelector<HTMLElement>(".figma-clients-inner");
             const clientsHeadingItems = Array.from(clientsSection.querySelectorAll<HTMLElement>(".figma-clients-kicker, .figma-clients-heading h2 > span, .figma-clients-cta"));
@@ -3873,6 +3909,9 @@ export function TascLanding() {
             });
             const clientsEntrance = gsap.timeline({
                 defaults: { ease: "power2.out" },
+                onStart: () => setClientsEntranceMoving(true),
+                onComplete: () => setClientsEntranceMoving(false),
+                onReverseComplete: () => setClientsEntranceMoving(false),
                 scrollTrigger: {
                     trigger: clientsInner ?? clientsSection,
                     start: "top 96%",
@@ -3880,9 +3919,20 @@ export function TascLanding() {
                     scrub: mobilePerformanceMode ? false : macPerformanceMode ? 0.08 : 0.24,
                     toggleActions: mobilePerformanceMode ? "play none none reverse" : undefined,
                     invalidateOnRefresh: true,
-                    onLeave: () => clientsSection.setAttribute("data-client-cards-visible", "true"),
-                    onEnterBack: () => clientsSection.removeAttribute("data-client-cards-visible"),
-                    onLeaveBack: () => clientsSection.removeAttribute("data-client-cards-visible"),
+                    onUpdate: (self) => setClientsEntranceMoving(self.progress > 0 && self.progress < 1),
+                    onScrubComplete: () => setClientsEntranceMoving(false),
+                    onLeave: () => {
+                        clientsSection.setAttribute("data-client-cards-visible", "true");
+                        setClientsEntranceMoving(false);
+                    },
+                    onEnterBack: () => {
+                        clientsSection.removeAttribute("data-client-cards-visible");
+                        setClientsEntranceMoving(true);
+                    },
+                    onLeaveBack: () => {
+                        clientsSection.removeAttribute("data-client-cards-visible");
+                        setClientsEntranceMoving(false);
+                    },
                 },
             });
             if (clientsHeadingItems.length) {
@@ -3922,8 +3972,16 @@ export function TascLanding() {
             if (clientsNoteItems.length) {
                 clientsEntrance.to(clientsNoteItems, { y: 0, autoAlpha: 1, duration: 0.68, stagger: 0.1 }, 1.22);
             }
+            cleanupCallbacks.push(() => {
+                clientsEntranceMoving = false;
+                clientsHandoffMoving = false;
+                syncClientsCardsMoving();
+            });
             if (clientsScrollElement) {
                 const clientsPlaneScale = window.innerWidth <= 900 ? 1 : 1.8;
+                const syncClientsFlareWillChange = (active: boolean) => {
+                    clientsScrollElement.style.willChange = active ? "transform" : "auto";
+                };
                 const clientsRotation = gsap.fromTo(clientsScrollElement, {
                     rotation: 15,
                     scale: clientsPlaneScale,
@@ -3942,9 +4000,12 @@ export function TascLanding() {
                             : "bottom bottom",
                         scrub: true,
                         invalidateOnRefresh: true,
+                        onToggle: (self) => syncClientsFlareWillChange(self.isActive),
+                        onRefresh: (self) => syncClientsFlareWillChange(self.isActive),
                     },
                 });
                 cleanupCallbacks.push(() => {
+                    clientsScrollElement.style.removeProperty("will-change");
                     clientsRotation.scrollTrigger?.kill();
                     clientsRotation.kill();
                 });
@@ -4000,13 +4061,17 @@ export function TascLanding() {
                         scrub: 0.28,
                         invalidateOnRefresh: true,
                         onUpdate: (self) => {
+                            setClientsHandoffMoving(self.progress > 0 && self.progress < 1);
                             firstServicesHandoffDirection = self.direction < 0 ? -1 : 1;
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
+                        onScrubComplete: () => setClientsHandoffMoving(false),
+                        onLeave: () => setClientsHandoffMoving(false),
                         onRefresh: (self) => {
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
                         onLeaveBack: () => {
+                            setClientsHandoffMoving(false);
                             if (servicesActive || servicesReleasing)
                                 return;
                             showServicesIdlePreview();
@@ -4052,6 +4117,7 @@ export function TascLanding() {
                     if (servicesMediaVisuals.length) {
                         gsap.set(servicesMediaVisuals, { clearProps: "opacity,visibility" });
                     }
+                    setClientsHandoffMoving(false);
                 });
             }
             const syncServicesApproach = (active: boolean) => {
@@ -4532,8 +4598,29 @@ export function TascLanding() {
                 gsap.set(datumWaitlistSegments, { y: 30, autoAlpha: 0 });
                 setRegionInteractive(datumCardsState, false);
                 setRegionInteractive(datumWaitlistState, false);
+                let datumCardsRevealMoving = false;
+                let datumCardsScrubMoving = false;
+                const syncDatumCardsMoving = () => {
+                    if (datumCardsRevealMoving || datumCardsScrubMoving)
+                        datumCardsState.dataset.datumCardsMoving = "true";
+                    else
+                        delete datumCardsState.dataset.datumCardsMoving;
+                };
+                const setDatumCardsRevealMoving = (moving: boolean) => {
+                    datumCardsRevealMoving = moving;
+                    syncDatumCardsMoving();
+                };
+                const setDatumCardsScrubMoving = (moving: boolean) => {
+                    datumCardsScrubMoving = moving;
+                    syncDatumCardsMoving();
+                };
                 const cardsRevealTimeline = gsap
-                    .timeline({ paused: true })
+                    .timeline({
+                    paused: true,
+                    onStart: () => setDatumCardsRevealMoving(true),
+                    onComplete: () => setDatumCardsRevealMoving(false),
+                    onReverseComplete: () => setDatumCardsRevealMoving(false),
+                })
                     .set(datumWaitlistState, { pointerEvents: "none" }, 0)
                     .set(datumCardsState, { autoAlpha: 1, pointerEvents: "auto" }, 0)
                     .set(datumHeading ?? [], { autoAlpha: 1, clearProps: "transform,willChange" }, 0)
@@ -4568,6 +4655,9 @@ export function TascLanding() {
                 });
                 const resetDatumContent = () => {
                     datumContentState = null;
+                    datumCardsRevealMoving = false;
+                    datumCardsScrubMoving = false;
+                    syncDatumCardsMoving();
                     cardsRevealTimeline.timeScale(1).pause(0);
                     gsap.set(datumCardsState, { y: 0, autoAlpha: 1, pointerEvents: "none" });
                     if (datumHeading) {
@@ -4657,17 +4747,21 @@ export function TascLanding() {
                             syncDatumContent(self.progress);
                         },
                         onUpdate: (self) => {
+                            setDatumCardsScrubMoving(self.progress > 0 && self.progress < 1);
                             syncDatumContent(self.progress);
                         },
+                        onScrubComplete: () => setDatumCardsScrubMoving(false),
                         onRefresh: (self) => {
                             if (self.isActive) {
                                 syncDatumContent(self.progress);
                             }
                         },
                         onLeave: () => {
+                            setDatumCardsScrubMoving(false);
                             syncDatumContent(1);
                         },
                         onLeaveBack: () => {
+                            setDatumCardsScrubMoving(false);
                             syncDatumContent(0);
                         },
                     },
@@ -4701,6 +4795,9 @@ export function TascLanding() {
                     datumVisibilityResetGuard.kill();
                     cardsRevealTimeline.kill();
                     delete root.dataset.datumPinned;
+                    datumCardsRevealMoving = false;
+                    datumCardsScrubMoving = false;
+                    syncDatumCardsMoving();
                 });
             }
         }
@@ -5384,9 +5481,8 @@ export function TascLanding() {
       <div className="vision-clients-flare-stage" aria-hidden="true">
         <div className="clients-scroll-element-wrap">
           <picture className="clients-scroll-element-picture">
-            <source media="(max-width: 640px)" srcSet="/media/clients-flare-white-diagonal-20260716.svg"/>
-            <source media="(max-width: 900px)" srcSet="/media/clients-flare-white-diagonal-20260716.svg"/>
-            <Image className="clients-scroll-element" src="/media/clients-flare-white-diagonal-20260716.svg" data-design-source="/media/clients-flare-white-diagonal-20260716.svg" alt="" width={1920} height={1080} sizes="180vw" loading="eager" fetchPriority="high" unoptimized/>
+            <source media="(max-width: 900px)" type="image/webp" srcSet={clientsFlareArmed ? "/media/clients-flare-white-diagonal-2304x1296-20260801.webp" : undefined}/>
+            <Image className="clients-scroll-element" src={clientsFlareArmed ? "/media/clients-flare-white-diagonal-4096x2304-20260801.webp" : CLIENTS_FLARE_PLACEHOLDER} data-design-source="/media/clients-flare-white-diagonal-20260716.svg" alt="" width={4096} height={2304} sizes="180vw" loading={clientsFlareArmed ? "eager" : "lazy"} fetchPriority={clientsFlareArmed ? "high" : "low"} unoptimized/>
           </picture>
         </div>
       </div>
