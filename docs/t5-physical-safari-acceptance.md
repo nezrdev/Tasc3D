@@ -10,6 +10,22 @@ This runbook is the external gate for PR #7. Do not merge, deploy, or start T6 f
 
 Windows Playwright WebKit is useful regression coverage, but it is not physical Safari acceptance.
 
+## Remote Real-Device Alternative
+
+If local Apple hardware is unavailable, an authenticated remote session is acceptable only when it exposes real macOS Safari and real iPhone Safari. BrowserStack Live or an equivalent real-device service may be used when the session provides the same screen recording, Safari/Web Inspector evidence and downloadable network artifacts required below. Provider name or plan is not proof of equivalence: session metadata must identify physical Apple hardware, OS version, Safari build, viewport and DPR. Simulators, generic WebKit sessions and provider logs without the required Safari Timeline tracks are not accepted.
+
+The remote route does not relax the gate:
+
+- browser-engine emulation, Windows Playwright WebKit and screenshots without a full journey are not accepted;
+- baseline and candidate must run on the same real device, Safari build, viewport, DPR and network profile;
+- the remote device must reach both T4 and T5 revisions through a provider-supported secure tunnel or authorized staging endpoints;
+- every endpoint must be an immutable build of baseline commit `21a0e00c48b5f32188a6b7274dd6e68aae3e4ebb` or the exact candidate commit recorded immediately before the run; save verifiable deployment/build identity in every evidence bundle because a URL or run label alone is insufficient;
+- all three matched runs per revision and device remain mandatory;
+- the constrained-network candidate run remains mandatory; if the selected plan cannot throttle the real session, perform that run on a physical limited network instead;
+- account access or provider credentials must be supplied by the authorized account owner and must not be committed to the repository.
+
+Current Windows-hosted automation can prepare and validate the evidence bundle, but it cannot create this real Safari evidence by itself.
+
 ## Revisions
 
 - Baseline branch: `task/a3-t4-webgl-transport`
@@ -159,7 +175,8 @@ Save these files per device:
 - screen recording;
 - Safari Timeline recording;
 - HAR or Network export;
-- device/browser/version note.
+- device/browser/version note, including physical-device session metadata for remote runs;
+- immutable build/revision identity for the tested endpoint.
 
 Keep the filenames written into each probe report relative to the bundle directory passed through `--evidence-root`. A filename alone is not accepted: every file must exist, be non-empty and receive a SHA-256 hash in the comparison result. Timeline, HAR and screen recording must be three different canonical files inside each report. Baseline and candidate reports must also reference separate files; reused paths are rejected.
 
