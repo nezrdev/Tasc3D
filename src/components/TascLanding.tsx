@@ -4294,7 +4294,8 @@ export function TascLanding() {
             const handleServicesPortionStart = (event: Event) => {
                 const detail = (event as CustomEvent<{ anchor?: string; direction?: number }>).detail;
                 const portionTargetIds = detail?.anchor?.split("+").filter(Boolean) ?? [];
-                if (!portionTargetIds.includes("services") &&
+                const portionTargetsBeforeServices = portionTargetIds.some((id) => id === "hero" || id === "clients");
+                if (portionTargetsBeforeServices &&
                     !servicesActive &&
                     !servicesReleasing &&
                     servicesEntryPreparing === 0) {
