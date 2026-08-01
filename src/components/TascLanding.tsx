@@ -610,7 +610,6 @@ export function TascLanding() {
         });
         observer.observe(hero);
         observer.observe(services);
-        window.addEventListener("scroll", scheduleSync, { passive: true });
         window.addEventListener("resize", scheduleSync, { passive: true });
         window.addEventListener("hashchange", scheduleSync);
         syncOwner();
@@ -618,7 +617,6 @@ export function TascLanding() {
             observer.disconnect();
             if (frame)
                 window.cancelAnimationFrame(frame);
-            window.removeEventListener("scroll", scheduleSync);
             window.removeEventListener("resize", scheduleSync);
             window.removeEventListener("hashchange", scheduleSync);
         };
@@ -1677,6 +1675,8 @@ export function TascLanding() {
         let servicesPendingTimer = 0;
         let servicesPortionDirection: 1 | -1 | 0 = 0;
         let servicesLastPortionDirection: 1 | -1 | 0 = 0;
+        let documentScrollY = window.scrollY;
+        let documentScrollDirection: 1 | -1 | 0 = 0;
         let servicesPortionDirectionClearFrame = 0;
         let servicesPortionTargetIds: string[] | null = null;
         const resetServicesPortionState = () => {
@@ -1713,6 +1713,15 @@ export function TascLanding() {
         let dominoTimelineWatchdog = 0;
         let heroVideoSuspended = false;
         const cleanupCallbacks: Array<() => void> = [];
+        const trackDocumentScrollDirection = () => {
+            const nextY = window.scrollY;
+            const delta = nextY - documentScrollY;
+            if (Math.abs(delta) > 1)
+                documentScrollDirection = delta > 0 ? 1 : -1;
+            documentScrollY = nextY;
+        };
+        window.addEventListener("scroll", trackDocumentScrollDirection, { passive: true });
+        cleanupCallbacks.push(() => window.removeEventListener("scroll", trackDocumentScrollDirection));
         const managedRevealElements = new Set<HTMLElement>();
         const managedRevealTriggers = new Set<HTMLElement>();
         const registerManagedRevealElements = (elements: Iterable<HTMLElement>) => {
@@ -4171,6 +4180,15 @@ export function TascLanding() {
                 isServicesVisuallyNear() &&
                 root.dataset.dominoPinned !== "true" &&
                 !dominoInputLocked;
+            const hasServicesReverseEntryIntent = (direction = 0) => {
+                if (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services")
+                    return false;
+                return servicesPortionDirection < 0 ||
+                    servicesLastPortionDirection < 0 ||
+                    root.dataset.portionedScroll === "reverse" ||
+                    direction < 0 ||
+                    documentScrollDirection < 0;
+            };
             servicesTrigger = ScrollTrigger.create({
                 id: "services-reversible",
                 trigger: servicesSection,
@@ -4189,9 +4207,7 @@ export function TascLanding() {
                 onEnter: (self) => {
                     if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
                         return;
-                    if (servicesPortionDirection < 0 ||
-                        servicesLastPortionDirection < 0 ||
-                        root.dataset.portionedScroll === "reverse")
+                    if (hasServicesReverseEntryIntent(self.direction))
                         startServicesAtLastStage(self.end - 1, "trigger-on-enter");
                     else
                         startServicesForward(self.start + 1, 1, "trigger-on-enter");
@@ -4216,16 +4232,23 @@ export function TascLanding() {
                         return;
                     if (servicesPhase !== "idle")
                         return;
-                    if (servicesPortionDirection < 0 ||
-                        servicesLastPortionDirection < 0 ||
-                        root.dataset.portionedScroll === "reverse" ||
-                        self.direction < 0)
+                    if (hasServicesReverseEntryIntent(self.direction))
                         startServicesAtLastStage(self.end - 1, "trigger-on-update");
                     else
                         startServicesForward(self.start + 1, 1, "trigger-on-update");
                 },
                 onLeave: (self) => {
+                    if (hasServicesReverseEntryIntent(self.direction) &&
+                        !servicesActive &&
+                        !servicesReleasing &&
+                        servicesPhase === "idle" &&
+                        !shouldBypassServicesMotion() &&
+                        canStartServicesMotion(self)) {
+                        startServicesAtLastStage(self.end - 1, "trigger-on-leave-reverse");
+                        return;
+                    }
                     if (self.direction > 0 &&
+                        documentScrollDirection >= 0 &&
                         servicesPortionDirection >= 0 &&
                         servicesLastPortionDirection >= 0 &&
                         root.dataset.portionedScroll !== "reverse" &&
@@ -4297,10 +4320,7 @@ export function TascLanding() {
                 refreshPriority: 31,
                 invalidateOnRefresh: true,
                 onEnter: (self) => {
-                    if (servicesPortionDirection < 0 ||
-                        servicesLastPortionDirection < 0 ||
-                        root.dataset.portionedScroll === "reverse" ||
-                        self.direction < 0 ||
+                    if (hasServicesReverseEntryIntent(self.direction) ||
                         shouldBypassServicesMotion() ||
                         !canStartServicesMotion(servicesTrigger ?? self) ||
                         servicesActive ||
@@ -4328,11 +4348,11 @@ export function TascLanding() {
                 refreshPriority: 31,
                 invalidateOnRefresh: true,
                 onEnterBack: (self) => {
-                    if (servicesPortionDirection < 0 || servicesLastPortionDirection < 0 || root.dataset.portionedScroll === "reverse" || self.direction < 0)
+                    if (hasServicesReverseEntryIntent(self.direction))
                         startServicesReverseFromPrelock();
                 },
                 onLeaveBack: (self) => {
-                    if (servicesPortionDirection < 0 || servicesLastPortionDirection < 0 || root.dataset.portionedScroll === "reverse" || self.direction < 0)
+                    if (hasServicesReverseEntryIntent(self.direction))
                         startServicesReverseFromPrelock();
                 },
             });
@@ -5307,14 +5327,14 @@ export function TascLanding() {
         };
         const revealStuckElements = () => {
             watchdogFrame = 0;
-            const stuckElements = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]'))
+            const stuckElements = Array.from(root.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]:not([data-reveal-complete="true"])'))
                 .filter((element) => isAtOrAboveViewport(element) && isHidden(element));
             const stuckTriggers = new Set(stuckElements.map((element) => element.closest<HTMLElement>('[data-reveal-trigger="true"]'))
                 .filter((element): element is HTMLElement => Boolean(element)));
             stuckTriggers.forEach((triggerElement) => {
                 const candidates = [
-                    ...(triggerElement.matches('[data-reveal-managed="true"]') ? [triggerElement] : []),
-                    ...Array.from(triggerElement.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]')),
+                    ...(triggerElement.matches('[data-reveal-managed="true"]:not([data-reveal-complete="true"])') ? [triggerElement] : []),
+                    ...Array.from(triggerElement.querySelectorAll<HTMLElement>('[data-reveal-managed="true"]:not([data-reveal-complete="true"])')),
                 ];
                 const hiddenTargets = candidates.filter(isHidden);
                 if (hiddenTargets.length === 0)

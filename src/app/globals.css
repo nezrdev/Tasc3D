@@ -11505,8 +11505,8 @@ body::before {
 .figma-clients-section[data-client-cards-visible="true"] .figma-client-card {
   opacity: 1 !important;
   visibility: visible !important;
-  filter: blur(0px) !important;
-  transform: translate3d(0, 0, 0) !important;
+  filter: none !important;
+  transform: none !important;
 }
 
 @media (max-width: 900px) {

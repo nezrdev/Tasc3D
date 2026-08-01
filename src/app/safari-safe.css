@@ -25,9 +25,16 @@ html[data-tasc-webkit="true"] .mobile-menu-glass,
 html[data-tasc-webkit="true"] .mobile-menu-toggle,
 html[data-tasc-webkit="true"] .mobile-menu-card,
 html[data-tasc-webkit="true"] .cookie-consent-shell,
+html[data-tasc-webkit="true"] .cookie-consent-button,
 html[data-tasc-webkit="true"] .glass-surface {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
+}
+
+html[data-tasc-webkit="true"] .cookie-consent-shell::before,
+html[data-tasc-webkit="true"] .cookie-consent-button::before,
+html[data-tasc-webkit="true"] .cookie-consent-button::after {
+  mix-blend-mode: normal !important;
 }
 
 html[data-tasc-webkit="true"] .site-header-glass,
@@ -118,6 +125,43 @@ html[data-tasc-webkit="true"] .datum-motion-state,
 html[data-tasc-webkit="true"] .domino-media {
   backface-visibility: hidden;
   transform-style: flat;
+}
+
+html[data-tasc-webkit="true"] .services-story-panel,
+html[data-tasc-webkit="true"] .services-story-video-wrap,
+html[data-tasc-webkit="true"] .services-story-video-packed,
+html[data-tasc-webkit="true"] .services-galaxy-stage,
+html[data-tasc-webkit="true"] .how-work-step-number,
+html[data-tasc-webkit="true"] .how-work-step-copy,
+html[data-tasc-webkit="true"] .datum-motion-state,
+html[data-tasc-webkit="true"] .datum-motion-state-cards .stagger-reveal-item,
+html[data-tasc-webkit="true"] .domino-media,
+html[data-tasc-webkit="true"] .domino-video-title {
+  will-change: auto !important;
+}
+
+html[data-tasc-webkit="true"]
+  .site-shell:is([data-services-inrange="true"], [data-services-pinned="true"])
+  :is(.services-story-panel, .services-story-video-wrap, .services-story-video-packed),
+html[data-tasc-webkit="true"]
+  .site-shell[data-how-work-inrange="true"]
+  :is(.how-work-step-number, .how-work-step-copy),
+html[data-tasc-webkit="true"]
+  .site-shell[data-datum-pinned="true"]
+  :is(.datum-motion-state, .datum-motion-state-cards .stagger-reveal-item),
+html[data-tasc-webkit="true"]
+  .datum-motion-state-cards[data-datum-cards-moving="true"]
+  .stagger-reveal-item,
+html[data-tasc-webkit="true"]
+  .site-shell[data-domino-pinned="true"]
+  :is(.domino-media, .domino-video-title) {
+  will-change: transform, opacity !important;
+}
+
+html[data-tasc-webkit="true"]
+  .site-shell:is([data-services-inrange="true"], [data-services-pinned="true"])
+  .services-galaxy-stage {
+  will-change: opacity !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -287,7 +287,7 @@ const VisibilityTriggeredVideo = forwardRef<HTMLVideoElement, VisibilityTriggere
                 scrollDirection = nextScrollY > lastScrollY ? 1 : -1;
                 lastScrollY = nextScrollY;
             }
-            if (visibilityFrame)
+            if (!nearViewport || visibilityFrame)
                 return;
             visibilityFrame = window.requestAnimationFrame(checkVisibility);
         };
@@ -316,6 +316,8 @@ const VisibilityTriggeredVideo = forwardRef<HTMLVideoElement, VisibilityTriggere
             scheduleVisibilityCheck();
         }, armDelayMs);
         const playbackHealthTimer = window.setInterval(() => {
+            if (!nearViewport)
+                return;
             restartCompletedLoop();
             if ((started || visibilityQualified) && video.paused && hasStableVisibility()) {
                 schedulePlaybackRetry();
