@@ -1,4 +1,4 @@
-import { closeSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -92,6 +92,7 @@ const evidenceGate = (report, evidenceRoot) => {
     return { pass: false, status: "references-only-unverified", missing: [], files: references, verified: [] };
   }
   const root = resolve(evidenceRoot);
+  const canonicalRoot = realpathSync.native(root);
   const verified = [];
   const invalid = [];
   required.forEach((key) => {
@@ -103,12 +104,18 @@ const evidenceGate = (report, evidenceRoot) => {
       return;
     }
     try {
-      const stat = statSync(path);
+      const canonicalPath = realpathSync.native(path);
+      const canonicalPathFromRoot = relative(canonicalRoot, canonicalPath);
+      if (canonicalPathFromRoot.startsWith("..") || isAbsolute(canonicalPathFromRoot)) {
+        invalid.push({ key, requested, reason: "resolved-outside-evidence-root" });
+        return;
+      }
+      const stat = statSync(canonicalPath);
       if (!stat.isFile() || stat.size <= 0) {
         invalid.push({ key, requested, reason: stat.isFile() ? "empty-file" : "not-a-file" });
         return;
       }
-      verified.push({ key, requested, path, size: stat.size, sha256: hashFile(path) });
+      verified.push({ key, requested, path: canonicalPath, size: stat.size, sha256: hashFile(canonicalPath) });
     } catch (error) {
       invalid.push({ key, requested, reason: error instanceof Error ? error.code || error.message : "unreadable" });
     }
@@ -120,7 +127,7 @@ const evidenceGate = (report, evidenceRoot) => {
     invalid,
     files: references,
     verified,
-    evidenceRoot: root,
+    evidenceRoot: canonicalRoot,
   };
 };
 
@@ -149,27 +156,56 @@ const orderedVisits = (visits, required) => {
 
 const storyValue = (sample, key) => sample?.story?.[key] ?? sample?.[key] ?? null;
 
+const orderedSampleIndices = (samples, predicates, fromIndex = 0) => {
+  const indices = [];
+  let cursor = Math.max(0, fromIndex);
+  for (const predicate of predicates) {
+    const relativeIndex = samples.slice(cursor).findIndex(predicate);
+    if (relativeIndex < 0) return [];
+    const index = cursor + relativeIndex;
+    indices.push(index);
+    cursor = index + 1;
+  }
+  return indices;
+};
+
+const hasOrderedSubsequence = (values, expected) => {
+  let cursor = 0;
+  for (const value of values) {
+    if (value === expected[cursor]) cursor += 1;
+    if (cursor === expected.length) return true;
+  }
+  return false;
+};
+
 const journeyGate = (report) => {
   const visits = (report.journey?.sectionVisits || []).map((visit) => visit.section).filter(Boolean);
   const missingSections = requiredSections.filter((section) => !visits.includes(section));
   const sectionsInOrder = orderedVisits(visits, requiredSections);
   const storySamples = report.journey?.storySamples || [];
-  const reverseMarkerIndex = storySamples.findIndex((sample) => (
-    storyValue(sample, "servicesVideoDirection") === "reverse-playback"
-      || storyValue(sample, "servicesEntryDirection") === "reverse"
-  ));
-  const serviceStopsBeforeReverse = new Set(storySamples.slice(0, reverseMarkerIndex < 0 ? storySamples.length : reverseMarkerIndex)
-    .filter((sample) => storyValue(sample, "servicesPhase") === "waiting")
-    .map((sample) => Number(storyValue(sample, "servicesActive")))
-    .filter((value) => [1, 2, 3].includes(value)));
-  const serviceStopsAfterReverse = new Set(storySamples.slice(Math.max(0, reverseMarkerIndex))
-    .filter((sample) => storyValue(sample, "servicesPhase") === "waiting")
-    .map((sample) => Number(storyValue(sample, "servicesActive")))
-    .filter((value) => [1, 2, 3].includes(value)));
-  const forwardStopsPass = [1, 2, 3].every((stage) => serviceStopsBeforeReverse.has(stage));
-  const reverseStopsPass = reverseMarkerIndex >= 0
-    && serviceStopsBeforeReverse.has(3)
-    && [1, 2].every((stage) => serviceStopsAfterReverse.has(stage));
+  const firstReverseMarkerIndex = storySamples.findIndex((sample) => storyValue(sample, "servicesVideoDirection") === "reverse-playback");
+  const forwardStopIndices = orderedSampleIndices(
+    storySamples,
+    [1, 2, 3].map((stage) => (sample) => (
+      storyValue(sample, "servicesPhase") === "waiting"
+        && Number(storyValue(sample, "servicesActive")) === stage
+    )),
+  );
+  const reverseStopIndices = orderedSampleIndices(
+    storySamples,
+    [2, 1].flatMap((stage) => [
+      (sample) => storyValue(sample, "servicesVideoDirection") === "reverse-playback",
+      (sample) => (
+        storyValue(sample, "servicesPhase") === "waiting"
+          && Number(storyValue(sample, "servicesActive")) === stage
+          && [null, "reverse-playback"].includes(storyValue(sample, "servicesVideoDirection"))
+      ),
+    ]),
+    firstReverseMarkerIndex < 0 ? storySamples.length : firstReverseMarkerIndex,
+  );
+  const forwardStopsPass = forwardStopIndices.length === 3
+    && (firstReverseMarkerIndex < 0 || forwardStopIndices[2] < firstReverseMarkerIndex);
+  const reverseStopsPass = reverseStopIndices.length === 4;
   const datumPlaying = storySamples.some((sample) => storyValue(sample, "datumPlayback") === "playing");
   const dominoTransitions = [];
   storySamples.forEach((sample) => {
@@ -178,7 +214,7 @@ const journeyGate = (report) => {
   });
   const dominoForwardRuns = dominoTransitions.filter((value) => value === "forward").length;
   const dominoReverseRuns = dominoTransitions.filter((value) => value === "reverse").length;
-  const dominoReplayPass = dominoForwardRuns >= 2 && dominoReverseRuns >= 1;
+  const dominoReplayPass = hasOrderedSubsequence(dominoTransitions, ["forward", "complete", "reverse", "start", "forward", "complete"]);
   return {
     pass: missingSections.length === 0
       && sectionsInOrder
@@ -191,9 +227,9 @@ const journeyGate = (report) => {
     sectionsInOrder,
     storySamplesObserved: storySamples.length,
     services: {
-      forwardStops: [...serviceStopsBeforeReverse].sort(),
-      reverseStops: [...serviceStopsAfterReverse].sort(),
-      reverseMarkerObserved: reverseMarkerIndex >= 0,
+      forwardStopIndices,
+      reverseStopIndices,
+      reverseMarkerObserved: firstReverseMarkerIndex >= 0,
       pass: forwardStopsPass && reverseStopsPass,
     },
     datum: { playingObserved: datumPlaying, pass: datumPlaying },
@@ -250,13 +286,19 @@ const videoGate = (report) => {
     .filter((event) => event.event === "play" || event.event === "playing")
     .map((event) => event.video));
   const progressByKey = new Map(details.map((entry) => [entry.key, entry.pass]));
-  const activeWithoutProgress = [...activeKeys].filter((key) => progressByKey.has(key) && !progressByKey.get(key));
+  const activeWithoutProgress = [...activeKeys].filter((key) => !progressByKey.get(key));
+  const activeProgressingKinds = new Set(details
+    .filter((entry) => activeKeys.has(entry.key) && entry.pass)
+    .map((entry) => entry.kind));
+  const inactiveRequiredKinds = ["services", "datum", "domino-forward", "domino-reverse"]
+    .filter((kind) => !activeProgressingKinds.has(kind));
   return {
     pass: servicePass
       && datumPass
       && dominoForwardPass
       && dominoReversePass
       && activeWithoutProgress.length === 0
+      && inactiveRequiredKinds.length === 0
       && mediaErrors.length === 0
       && unresolvedStalls.length === 0,
     videosObserved: videos.length,
@@ -269,6 +311,7 @@ const videoGate = (report) => {
       dominoReverse: { pass: dominoReversePass, observed: dominoReverse.length },
     },
     activeWithoutProgress,
+    inactiveRequiredKinds,
     mediaErrors,
     unresolvedStalls,
   };

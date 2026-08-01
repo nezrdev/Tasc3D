@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { compareReports } from "./compare-t5-physical-safari.mjs";
@@ -26,6 +26,7 @@ const storySamples = [
   { story: { servicesPhase: "waiting", servicesActive: "3", servicesEntryDirection: "forward" } },
   { story: { servicesPhase: "playing", servicesActive: "3", servicesVideoDirection: "reverse-playback" } },
   { story: { servicesPhase: "waiting", servicesActive: "2" } },
+  { story: { servicesPhase: "playing", servicesActive: "2", servicesVideoDirection: "reverse-playback" } },
   { story: { servicesPhase: "waiting", servicesActive: "1" } },
   { story: { datumPlayback: "playing" } },
   { story: { dominoPlayback: "forward", dominoPinned: "true" } },
@@ -165,12 +166,45 @@ try {
   assert.equal(journeyResult.gates.journeys.candidate.pass, false);
   assert.equal(journeyResult.verdict.status, "fail");
 
+  const reverseOrderFailure = structuredClone(passing);
+  reverseOrderFailure.journey.storySamples = [
+    ...storySamples.slice(0, 3),
+    { story: { servicesPhase: "playing", servicesActive: "3", servicesVideoDirection: "reverse-playback" } },
+    { story: { servicesPhase: "waiting", servicesActive: "2", servicesEntryDirection: "forward", servicesVideoDirection: "forward-playback" } },
+    { story: { servicesPhase: "playing", servicesActive: "2", servicesVideoDirection: "reverse-playback" } },
+    { story: { servicesPhase: "waiting", servicesActive: "1", servicesEntryDirection: "forward", servicesVideoDirection: "forward-playback" } },
+    ...storySamples.slice(7),
+  ];
+  const reverseOrderResult = compareReports(baseline, reverseOrderFailure, options);
+  assert.equal(reverseOrderResult.gates.journeys.candidate.services.pass, false);
+  assert.equal(reverseOrderResult.verdict.status, "fail");
+
+  const dominoOrderFailure = structuredClone(passing);
+  dominoOrderFailure.journey.storySamples = [
+    ...storySamples.slice(0, 8),
+    { story: { dominoPlayback: "forward" } },
+    { story: { dominoPlayback: "complete" } },
+    { story: { dominoPlayback: "forward" } },
+    { story: { dominoPlayback: "complete" } },
+    { story: { dominoPlayback: "reverse" } },
+    { story: { dominoPlayback: "start" } },
+  ];
+  const dominoOrderResult = compareReports(baseline, dominoOrderFailure, options);
+  assert.equal(dominoOrderResult.gates.journeys.candidate.domino.pass, false);
+  assert.equal(dominoOrderResult.verdict.status, "fail");
+
   const oneVideoFailure = structuredClone(passing);
   oneVideoFailure.metrics.videos = oneVideoFailure.metrics.videos.slice(0, 1);
   oneVideoFailure.journey.mediaEvents = oneVideoFailure.journey.mediaEvents.slice(0, 1);
   const oneVideoResult = compareReports(baseline, oneVideoFailure, options);
   assert.equal(oneVideoResult.gates.videos.candidate.pass, false);
   assert.equal(oneVideoResult.verdict.status, "fail");
+
+  const unknownActiveVideo = structuredClone(passing);
+  unknownActiveVideo.journey.mediaEvents.push({ event: "playing", video: "unknown-active" });
+  const unknownActiveResult = compareReports(baseline, unknownActiveVideo, options);
+  assert.deepEqual(unknownActiveResult.gates.videos.candidate.activeWithoutProgress, ["unknown-active"]);
+  assert.equal(unknownActiveResult.verdict.status, "fail");
 
   const evidenceFailure = structuredClone(passing);
   evidenceFailure.evidenceFiles.har = "missing-network.har";
@@ -184,6 +218,21 @@ try {
   assert.equal(reusedEvidenceResult.gates.evidence.pass, false);
   assert.equal(reusedEvidenceResult.gates.evidence.reusedPaths.length, 3);
   assert.equal(reusedEvidenceResult.verdict.status, "fail");
+
+  const outsideRoot = mkdtempSync(join(tmpdir(), "tasc-t5-safari-outside-"));
+  try {
+    writeFileSync(join(outsideRoot, "escape.har"), "outside\n", "utf8");
+    symlinkSync(outsideRoot, join(evidenceRoot, "outside-link"), "junction");
+    const escapedEvidence = structuredClone(passing);
+    escapedEvidence.evidenceFiles.har = "outside-link/escape.har";
+    const escapedEvidenceResult = compareReports(baseline, escapedEvidence, options);
+    assert.equal(escapedEvidenceResult.gates.evidence.candidate.pass, false);
+    assert.equal(escapedEvidenceResult.gates.evidence.candidate.invalid[0].reason, "resolved-outside-evidence-root");
+    assert.equal(escapedEvidenceResult.verdict.status, "fail");
+  } finally {
+    rmSync(join(evidenceRoot, "outside-link"), { recursive: true, force: true });
+    rmSync(outsideRoot, { recursive: true, force: true });
+  }
 
   const noRootResult = compareReports(baseline, passing);
   assert.equal(noRootResult.gates.evidence.pass, false);
