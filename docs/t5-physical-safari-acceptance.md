@@ -53,7 +53,7 @@ Use a fresh timestamp for each pass to avoid browser cache ambiguity.
 For macOS Safari:
 
 - Enable Develop menu.
-- Open Web Inspector for the candidate tab.
+- Open Web Inspector for the active revision tab before each baseline or candidate run.
 - Disable cache while Web Inspector is open.
 - Record Timelines.
 - Export or save the Network record as HAR if available.
