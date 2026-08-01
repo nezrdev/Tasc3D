@@ -402,6 +402,20 @@ const mediaVideoForKind = (state, kind) => {
   );
 };
 
+const secondsAtFrame = (frame, fps = 30) => frame / fps;
+const SERVICES_FORWARD_STOP_FRAMES = [90, 187, 307];
+const SERVICES_REVERSE_STOP_FRAMES = [557, 460, 340];
+const SERVICES_FORWARD_STOP_SECONDS = SERVICES_FORWARD_STOP_FRAMES.map((frame) => secondsAtFrame(frame));
+const SERVICES_REVERSE_STOP_SECONDS = SERVICES_REVERSE_STOP_FRAMES.map((frame) => secondsAtFrame(frame));
+
+const expectedWebKitDefaultMedia = (kind, source) => {
+  if (!source) return false;
+  if (kind === "services") return /services-keyframes-packed-.*\.mp4(?:\?|$)/i.test(source);
+  if (kind === "datum") return /datum-news-loop-.*\.mp4(?:\?|$)/i.test(source);
+  if (kind === "domino-forward") return /domino-cta-forward-.*\.mp4(?:\?|$)/i.test(source);
+  return true;
+};
+
 const readPerformanceMediaRequests = async (page, kind) => {
   const resources = await page.evaluate(() =>
     performance
@@ -497,7 +511,15 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
               servicesPinned: root.dataset.servicesPinned ?? null,
               servicesStaticStop: root.dataset.servicesStaticStop ?? null,
               servicesVideoDirection: root.dataset.servicesVideoDirection ?? null,
+              servicesReverseTransport: root.dataset.servicesReverseTransport ?? null,
+              servicesReverseSeekFps: root.dataset.servicesReverseSeekFps ?? null,
+              servicesTransportFailure: root.dataset.servicesTransportFailure ?? null,
+              servicesMediaFallback: root.dataset.servicesMediaFallback ?? null,
               servicesMediaDecoded: root.dataset.servicesMediaDecoded ?? null,
+              servicesPortionDirection: root.dataset.servicesPortionDirection ?? null,
+              servicesPortionTarget: root.dataset.servicesPortionTarget ?? null,
+              portionedScroll: root.dataset.portionedScroll ?? null,
+              portionSettling: root.dataset.portionSettling ?? null,
               datumPlayback: root.dataset.datumPlayback ?? null,
               datumProgress: root.dataset.datumProgress ?? null,
               datumPinned: root.dataset.datumPinned ?? null,
@@ -532,6 +554,8 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
           direction: video.dataset.dominoDirection ?? null,
           active: video.dataset.dominoActive ?? null,
           segmentState: video.dataset.segmentState ?? null,
+          scrubState: video.dataset.scrubState ?? null,
+          scrubTime: video.dataset.scrubTime ?? null,
           playbackState: video.dataset.playbackState ?? null,
           armed: video.dataset.armed ?? null,
           src: video.currentSrc || video.getAttribute("src") || "",
@@ -881,6 +905,8 @@ const readPageState = (page) =>
         active: video.dataset.dominoActive ?? null,
         direction: video.dataset.dominoDirection ?? null,
         segmentState: video.dataset.segmentState ?? null,
+        scrubState: video.dataset.scrubState ?? null,
+        scrubTime: video.dataset.scrubTime ?? null,
         armed: video.dataset.armed ?? null,
         playbackState: video.dataset.playbackState ?? null,
         display: style.display,
@@ -1300,9 +1326,11 @@ const sendDirectionalInput = async (session, direction, magnitude, beforeState =
 
 const transientTransport = (state) => {
   const servicePhase = state.root?.servicesPhase;
+  const serviceEntryPreparing = state.root?.servicesEntryPreparing;
   const domino = state.root?.dominoPlayback;
   return (
-    ["playing", "reverse", "releasing"].includes(servicePhase) ||
+    ["preparing", "playing", "reverse", "releasing"].includes(servicePhase) ||
+    Boolean(serviceEntryPreparing) ||
     ["forward", "reverse", "waiting-media", "waiting-seek", "waiting-play", "waiting-frame"].includes(
       domino,
     )
@@ -1358,8 +1386,15 @@ const captureServicesStop = async (page, pass, direction) => {
     readyState: video?.readyState ?? null,
     paused: video?.paused ?? null,
     segmentState: video?.segmentState ?? null,
+    scrubState: video?.scrubState ?? null,
+    scrubTime: video?.scrubTime ?? null,
     staticStop: state.root?.servicesStaticStop ?? null,
+    mediaDecoded: state.root?.servicesMediaDecoded ?? null,
     mediaFallback: state.root?.servicesMediaFallback ?? null,
+    reverseTransport: state.root?.servicesReverseTransport ?? null,
+    reverseSeekFps: state.root?.servicesReverseSeekFps ?? null,
+    transportFailure: state.root?.servicesTransportFailure ?? null,
+    videoDirection: state.root?.servicesVideoDirection ?? null,
     visuals: state.servicesVisuals,
     source: video?.src ?? null,
     y: state.y,
@@ -1385,7 +1420,7 @@ const isMediaArmingEligible = (state, sectionName, caseSpec) => {
 
 const expectedCompactMedia = (kind, source) => {
   if (kind === "services") {
-    return source.includes("services-keyframes-packed-960-lean-20260721.mp4");
+    return /services-keyframes-packed-960-.*\.mp4(?:\?|$)/i.test(source);
   }
   if (kind === "datum") {
     return source.includes("datum-news-loop-mobile-lowbit-20260722.mp4");
@@ -1483,6 +1518,14 @@ const waitForMediaArming = async (
       caseResult,
       expectedCompactMedia(target.kind, source),
       `${target.kind}: constrained network selects compact transport when armed`,
+      evidence,
+    );
+  }
+  if (caseResult.configuration.browserFamily === "webkit") {
+    addCheck(
+      caseResult,
+      expectedWebKitDefaultMedia(target.kind, source),
+      `${target.kind}: WebKit/default transport uses MP4 packed/default source`,
       evidence,
     );
   }
@@ -1644,10 +1687,37 @@ const traverse = async (session, caseResult, directory, direction, pass, mediaAr
     mediaArming.datumPreThresholdPlayback.push({ position, visibility, video, y: state.y });
   };
 
+  const recordServicesStop = async (position) => {
+    const stop = await captureServicesStop(page, pass, direction);
+    if (!stop) return;
+    const key = `${stop.active}-${Math.round((stop.currentTime ?? -1) * 10)}`;
+    if (capturedStops.has(key)) return;
+    capturedStops.add(key);
+    servicesStops.push(stop);
+    const proof = await screenshot(
+      page,
+      directory,
+      `${pass}-${position}-services-stop-${stop.active}-${servicesStops.length}`,
+    );
+    caseResult.proofFiles.push(proof);
+    const serviceCta = page.locator(`.services-story-card-${stop.active} .services-story-cta`).first();
+    if (await serviceCta.isVisible().catch(() => false)) {
+      const probe = await probeClick(page, serviceCta, `${pass}-services-${stop.active}`);
+      caseResult.cta.push(probe);
+      addCheck(
+        caseResult,
+        probe.visible && probe.hit && probe.clicked,
+        `cta: Services stage ${stop.active} remains interactive during ${pass}`,
+        probe,
+      );
+    }
+  };
+
   for (let index = 0; index < maximumInputs; index += 1) {
     const before = await readPageState(page);
     await captureArmingForState(before, `before-input-${index}`);
     recordDatumPreThresholdPlayback(before, `before-input-${index}`);
+    await recordServicesStop(`before-input-${index}`);
     const atTarget = direction > 0 ? before.y >= before.maxY - 3 : before.y <= 3;
     if (atTarget) {
       reached = true;
@@ -1659,11 +1729,20 @@ const traverse = async (session, caseResult, directory, direction, pass, mediaAr
     const after = await readPageState(page);
     await captureArmingForState(after, `after-input-${index}`);
     recordDatumPreThresholdPlayback(after, `after-input-${index}`);
+    await recordServicesStop(`after-input-${index}`);
     const deltaY = after.y - before.y;
     const expectedDelta = direction * deltaY;
+    const howStoryOwned =
+      before.root?.howWorkInputOwner === "true" ||
+      after.root?.howWorkInputOwner === "true" ||
+      before.root?.howWorkPinned === "true" ||
+      after.root?.howWorkPinned === "true" ||
+      before.root?.howWorkInrange === "true" ||
+      after.root?.howWorkInrange === "true";
     const locked =
       before.root?.motionInputLocked === "true" ||
       after.root?.motionInputLocked === "true" ||
+      howStoryOwned ||
       transport.observed;
     const step = {
       index,
@@ -1703,30 +1782,6 @@ const traverse = async (session, caseResult, directory, direction, pass, mediaAr
     if (after.horizontalOverflow > 1) {
       addCheck(caseResult, false, `${pass}: no horizontal overflow while scrolling`, step);
       break;
-    }
-
-    const stop = await captureServicesStop(page, pass, direction);
-    if (stop) {
-      const key = `${stop.active}-${Math.round((stop.currentTime ?? -1) * 10)}`;
-      if (!capturedStops.has(key)) {
-        capturedStops.add(key);
-        servicesStops.push(stop);
-        const proof = await screenshot(page, directory, `${pass}-services-stop-${stop.active}-${servicesStops.length}`);
-        caseResult.proofFiles.push(proof);
-        const serviceCta = page
-          .locator(`.services-story-card-${stop.active} .services-story-cta`)
-          .first();
-        if (await serviceCta.isVisible().catch(() => false)) {
-          const probe = await probeClick(page, serviceCta, `${pass}-services-${stop.active}`);
-          caseResult.cta.push(probe);
-          addCheck(
-            caseResult,
-            probe.visible && probe.hit && probe.clicked,
-            `cta: Services stage ${stop.active} remains interactive during ${pass}`,
-            probe,
-          );
-        }
-      }
     }
 
     if (
@@ -1791,47 +1846,40 @@ const traverse = async (session, caseResult, directory, direction, pass, mediaAr
 };
 
 const validateServicesStops = (caseResult, traversals) => {
-  const forwardExpected = [3, 187 / 30, 307 / 30];
-  const reverseExpected = { 2: 460 / 30, 1: 557 / 30 };
   for (const traversal of traversals) {
     const stops = traversal.servicesStops;
-    if (traversal.direction > 0) {
-      for (let stage = 1; stage <= 3; stage += 1) {
-        const candidates = stops.filter((stop) => stop.active === stage);
-        const exact = candidates.some(
-          (stop) => Number.isFinite(stop.currentTime) && Math.abs(stop.currentTime - forwardExpected[stage - 1]) <= 0.22,
-        );
-        addCheck(
-          caseResult,
-          exact,
-          `services: ${traversal.pass} pauses on authored stop ${stage}`,
-          { expected: forwardExpected[stage - 1], candidates },
-        );
-      }
-    } else {
-      for (const [stageText, expected] of Object.entries(reverseExpected)) {
-        const stage = Number(stageText);
-        const candidates = stops.filter((stop) => stop.active === stage);
-        const exact = candidates.some(
-          (stop) => Number.isFinite(stop.currentTime) && Math.abs(stop.currentTime - expected) <= 0.24,
-        );
-        addCheck(caseResult, exact, `services: reverse pauses on authored stop ${stage}`, {
+    const expectedSeconds =
+      traversal.direction > 0 ? SERVICES_FORWARD_STOP_SECONDS : SERVICES_REVERSE_STOP_SECONDS;
+    const expectedFrames =
+      traversal.direction > 0 ? SERVICES_FORWARD_STOP_FRAMES : SERVICES_REVERSE_STOP_FRAMES;
+    const tolerance = traversal.direction > 0 ? 0.22 : 0.24;
+
+    for (let stage = 1; stage <= expectedSeconds.length; stage += 1) {
+      const expected = expectedSeconds[stage - 1];
+      const expectedFrame = expectedFrames[stage - 1];
+      const candidates = stops.filter((stop) => stop.active === stage);
+      const exact = candidates.some(
+        (stop) => Number.isFinite(stop.currentTime) && Math.abs(stop.currentTime - expected) <= tolerance,
+      );
+      addCheck(
+        caseResult,
+        exact,
+        `services: ${traversal.pass} pauses on authored stop ${stage} at frame ${expectedFrame}/30`,
+        {
           expected,
+          expectedFrame,
+          tolerance,
           candidates,
-        });
-      }
+        },
+      );
     }
-    /* Reverse entry intentionally paints the authored stop-three poster while
-       the first reverse GOP is armed. A traversal can also sample the same
-       authored stage twice while it is releasing its input lock. Judge one
-       decoded representative per authored stage so that a later transient
-       buffering sample cannot turn an already-proven stop into a false
-       slideshow failure. */
-    const expectedStages = traversal.pass === "reverse" ? [2, 1] : [1, 2, 3];
+
+    const expectedStages = expectedSeconds.map((_, index) => index + 1);
     const isDecodedStop = (stop) =>
       Boolean(stop) &&
       !stop.mediaFallback &&
       !stop.staticStop &&
+      stop.mediaDecoded === "true" &&
       stop.readyState >= 2 &&
       stop.segmentState === "ready" &&
       (stop.visuals?.video?.opacity ?? 1) > 0.05 &&
@@ -1847,6 +1895,21 @@ const validateServicesStops = (caseResult, traversals) => {
       transportStops.length === expectedStages.length && transportStops.every(isDecodedStop),
       `services: ${traversal.pass} uses decoded video, not slideshow posters`,
       { stops, transportStops, expectedStages },
+    );
+    const scrubTelemetry = transportStops.filter(
+      (stop) => stop?.scrubState || stop?.scrubTime || stop?.reverseSeekFps,
+    );
+    addCheck(
+      caseResult,
+      scrubTelemetry.length === 0,
+      `services: ${traversal.pass} decoded stops do not retain scrub telemetry`,
+      { stops, transportStops, scrubTelemetry, expectedStages },
+    );
+    addCheck(
+      caseResult,
+      transportStops.every((stop) => stop?.source && stop.readyState >= 2 && stop.segmentState),
+      `services: ${traversal.pass} stop transport diagnostics are present`,
+      { transportStops, expectedStages },
     );
   }
 };
@@ -2013,6 +2076,15 @@ const runJourney = async (session, caseResult, directory) => {
   traversals.push(await traverse(session, caseResult, directory, 1, "forward-1", mediaArming));
   traversals.push(await traverse(session, caseResult, directory, -1, "reverse", mediaArming));
   traversals.push(await traverse(session, caseResult, directory, 1, "forward-2", mediaArming));
+  const reverseTerminalRoot = traversals.find((traversal) => traversal.pass === "reverse")?.terminal?.root;
+  addCheck(
+    caseResult,
+    reverseTerminalRoot?.servicesPortionDirection == null &&
+      reverseTerminalRoot?.servicesLastPortionDirection == null &&
+      reverseTerminalRoot?.servicesPortionTarget == null,
+    "services: reverse release clears stale portion routing before replay",
+    { reverseTerminalRoot },
+  );
   validateServicesStops(caseResult, traversals);
   for (const target of MEDIA_ARMING_TARGETS) {
     addCheck(

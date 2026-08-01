@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit --incremental false --pretty false",
     "media:verify": "node scripts/verify-runtime-media.mjs",
     "qa:mobile-portions": "node scripts/verify-mobile-portioned-scroll.mjs",
+    "qa:webgl": "node scripts/verify-webgl-lifecycle.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm media:verify && pnpm build",
     "db:migrate": "node scripts/migrate.mjs"
   },

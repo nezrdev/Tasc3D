@@ -268,7 +268,12 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 }
                 howTimeline?.progress(0);
                 root.dataset.howWorkProgress = "0.000";
-                writeHowScroll(trigger.start - 2);
+                const handoff = new CustomEvent("tasc:how-work-release-backward", {
+                    cancelable: true,
+                    detail: { fallbackY: trigger.start - 2 },
+                });
+                if (window.dispatchEvent(handoff))
+                    writeHowScroll(trigger.start - 2);
             };
             const releaseForward = () => {
                 const trigger = howTrigger;

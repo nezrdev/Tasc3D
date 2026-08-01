@@ -1,9 +1,11 @@
 "use client";
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactEventHandler, } from "react";
+import { installRestorableWebglLifecycle, releaseWebglContext } from "./webglLifecycle";
 type PackedAlphaVideoProps = {
     armed?: boolean;
     autoPlay?: boolean;
     className?: string;
+    compositeActive?: boolean;
     loop?: boolean;
     maxFps?: number;
     muted?: boolean;
@@ -193,7 +195,15 @@ function compileShader(gl: WebGLRenderingContext, type: number, source: string) 
     }
     return shader;
 }
-const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(function PackedAlphaVideo({ armed = true, autoPlay = false, className, loop = false, maxFps = 30, muted = true, onError, onFirstFrame, onLoadedMetadata, onReady, outputHeight, outputWidth, pauseWhenOffscreen = false, playsInline = true, preload = "metadata", renderMode = "webgl", src, tabIndex = -1, videoClassName, }, forwardedRef) {
+type PackedAlphaWebglResources = {
+    fragmentShader: WebGLShader;
+    positionBuffer: WebGLBuffer;
+    program: WebGLProgram;
+    texCoordBuffer: WebGLBuffer;
+    texture: WebGLTexture;
+    vertexShader: WebGLShader;
+};
+const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(function PackedAlphaVideo({ armed = true, autoPlay = false, className, compositeActive = true, loop = false, maxFps = 30, muted = true, onError, onFirstFrame, onLoadedMetadata, onReady, outputHeight, outputWidth, pauseWhenOffscreen = false, playsInline = true, preload = "metadata", renderMode = "webgl", src, tabIndex = -1, videoClassName, }, forwardedRef) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const onErrorRef = useRef(onError);
@@ -341,7 +351,7 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
     useEffect(() => {
         const canvas = canvasRef.current;
         const video = videoRef.current as VideoWithFrameCallback | null;
-        if (renderMode !== "webgl" || !armed || !canvas || !video)
+        if (renderMode !== "webgl" || !armed || !compositeActive || !canvas || !video)
             return;
         const gl = canvas.getContext("webgl", {
             alpha: true,
@@ -356,63 +366,129 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             onErrorRef.current?.();
             return;
         }
-        const vertexShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
-        const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
-        const program = gl.createProgram();
-        const positionBuffer = gl.createBuffer();
-        const texCoordBuffer = gl.createBuffer();
-        const texture = gl.createTexture();
-        if (!vertexShader ||
-            !fragmentShader ||
-            !program ||
-            !positionBuffer ||
-            !texCoordBuffer ||
-            !texture) {
+        let resources: PackedAlphaWebglResources | null = null;
+        const disposeResources = () => {
+            if (!resources)
+                return;
+            try {
+                gl.deleteTexture(resources.texture);
+                gl.deleteBuffer(resources.positionBuffer);
+                gl.deleteBuffer(resources.texCoordBuffer);
+                gl.deleteProgram(resources.program);
+                gl.deleteShader(resources.vertexShader);
+                gl.deleteShader(resources.fragmentShader);
+            }
+            catch {
+            }
+            resources = null;
+        };
+        const initializeResources = () => {
+            disposeResources();
+            const vertexShader = compileShader(gl, gl.VERTEX_SHADER, VERTEX_SHADER);
+            const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, FRAGMENT_SHADER);
+            const program = gl.createProgram();
+            const positionBuffer = gl.createBuffer();
+            const texCoordBuffer = gl.createBuffer();
+            const texture = gl.createTexture();
+            if (!vertexShader ||
+                !fragmentShader ||
+                !program ||
+                !positionBuffer ||
+                !texCoordBuffer ||
+                !texture) {
+                vertexShader && gl.deleteShader(vertexShader);
+                fragmentShader && gl.deleteShader(fragmentShader);
+                program && gl.deleteProgram(program);
+                positionBuffer && gl.deleteBuffer(positionBuffer);
+                texCoordBuffer && gl.deleteBuffer(texCoordBuffer);
+                texture && gl.deleteTexture(texture);
+                return false;
+            }
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                gl.deleteTexture(texture);
+                gl.deleteBuffer(positionBuffer);
+                gl.deleteBuffer(texCoordBuffer);
+                gl.deleteProgram(program);
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                return false;
+            }
+            gl.useProgram(program);
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+            const positionLocation = gl.getAttribLocation(program, "aPosition");
+            if (positionLocation < 0) {
+                gl.deleteTexture(texture);
+                gl.deleteBuffer(positionBuffer);
+                gl.deleteBuffer(texCoordBuffer);
+                gl.deleteProgram(program);
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                return false;
+            }
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
+            const texCoordLocation = gl.getAttribLocation(program, "aTexCoord");
+            if (texCoordLocation < 0) {
+                gl.deleteTexture(texture);
+                gl.deleteBuffer(positionBuffer);
+                gl.deleteBuffer(texCoordBuffer);
+                gl.deleteProgram(program);
+                gl.deleteShader(vertexShader);
+                gl.deleteShader(fragmentShader);
+                return false;
+            }
+            gl.enableVertexAttribArray(texCoordLocation);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
+            gl.uniform1i(gl.getUniformLocation(program, "uPacked"), 0);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+            gl.clearColor(0, 0, 0, 0);
+            resources = {
+                fragmentShader,
+                positionBuffer,
+                program,
+                texCoordBuffer,
+                texture,
+                vertexShader,
+            };
+            canvas.dataset.packedAlphaWebgl = "ready";
+            return true;
+        };
+        if (!initializeResources()) {
+            canvas.dataset.packedAlphaWebgl = "unavailable";
+            releaseWebglContext(canvas, gl);
             onErrorRef.current?.();
             return;
         }
-        gl.attachShader(program, vertexShader);
-        gl.attachShader(program, fragmentShader);
-        gl.linkProgram(program);
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            onErrorRef.current?.();
-            return;
-        }
-        gl.useProgram(program);
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-        const positionLocation = gl.getAttribLocation(program, "aPosition");
-        gl.enableVertexAttribArray(positionLocation);
-        gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
-        const texCoordLocation = gl.getAttribLocation(program, "aTexCoord");
-        gl.enableVertexAttribArray(texCoordLocation);
-        gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
-        gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, texture);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
-        gl.uniform1i(gl.getUniformLocation(program, "uPacked"), 0);
-        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-        gl.clearColor(0, 0, 0, 0);
         let animationFrameId: number | undefined;
         let disposed = false;
         let failed = false;
+        let contextLost = false;
         let firstFrameReported = false;
         let readyReported = false;
         let readyFrameCount = 0;
         let advancingReadyFrameCount = 0;
+        let renderedFrameCount = 0;
         let lastReadyMediaTime = Number.NEGATIVE_INFINITY;
         let frameCallbackId: number | undefined;
         let pauseRecoveryFrame: number | undefined;
         let visible = true;
         let lastFrameDrawAt = Number.NEGATIVE_INFINITY;
         let playbackController: ReturnType<typeof createBoundedPlaybackController> | null = null;
+        let restorableLifecycle: ReturnType<typeof installRestorableWebglLifecycle> | null = null;
         const normalizedMaxFps = Number.isFinite(maxFps)
             ? Math.min(60, Math.max(1, maxFps))
             : 30;
@@ -444,14 +520,21 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             if (disposed || failed)
                 return;
             failed = true;
+            if (!canvas.dataset.packedAlphaWebgl?.startsWith("fallback:")) {
+                canvas.dataset.packedAlphaWebgl = "fallback";
+            }
             playbackController?.stop();
             cancelFrame();
             video.pause();
+            disposeResources();
+            restorableLifecycle?.dispose();
             onErrorRef.current?.();
         };
         const renderFrame = (now: number, force = false) => {
             if (disposed ||
                 failed ||
+                contextLost ||
+                !resources ||
                 (!visible && !force) ||
                 video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
                 (!force && now - lastFrameDrawAt + frameIntervalTolerance < minimumFrameInterval)) {
@@ -460,11 +543,13 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             lastFrameDrawAt = now;
             try {
                 gl.activeTexture(gl.TEXTURE0);
-                gl.bindTexture(gl.TEXTURE_2D, texture);
+                gl.bindTexture(gl.TEXTURE_2D, resources.texture);
                 gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video);
                 gl.viewport(0, 0, canvas.width, canvas.height);
                 gl.clear(gl.COLOR_BUFFER_BIT);
                 gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+                renderedFrameCount += 1;
+                canvas.dataset.packedAlphaFrameCount = String(renderedFrameCount);
                 if (!firstFrameReported) {
                     firstFrameReported = true;
                     onFirstFrameRef.current?.();
@@ -491,12 +576,16 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
                 }
             }
             catch {
+                if (gl.isContextLost()) {
+                    return;
+                }
                 reportFailure();
             }
         };
         const scheduleFrame = () => {
             if (disposed ||
                 failed ||
+                contextLost ||
                 !visible ||
                 video.paused ||
                 frameCallbackId !== undefined ||
@@ -527,6 +616,7 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             canPlay: () => autoPlay &&
                 !failed &&
                 !disposed &&
+                !contextLost &&
                 visible &&
                 !document.hidden &&
                 video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA,
@@ -535,10 +625,10 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
         const handlePause = () => {
             cancelFrame();
             renderFrame(performance.now(), true);
-            if (autoPlay && visible && !document.hidden && !disposed && !failed && pauseRecoveryFrame === undefined) {
+            if (autoPlay && visible && !document.hidden && !disposed && !failed && !contextLost && pauseRecoveryFrame === undefined) {
                 pauseRecoveryFrame = window.requestAnimationFrame(() => {
                     pauseRecoveryFrame = undefined;
-                    if (video.paused && visible && !document.hidden && !disposed && !failed) {
+                    if (video.paused && visible && !document.hidden && !disposed && !failed && !contextLost) {
                         playbackController?.tryPlay("pause");
                     }
                 });
@@ -558,10 +648,54 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             else
                 handleFrameAvailable();
         };
-        const handleContextLost = (event: Event) => {
-            event.preventDefault();
-            reportFailure();
-        };
+        restorableLifecycle = installRestorableWebglLifecycle({
+            canvas,
+            label: "packed-alpha",
+            onLost: () => {
+                contextLost = true;
+                canvas.dataset.packedAlphaWebgl = "lost";
+                cancelFrame();
+                if (pauseRecoveryFrame !== undefined) {
+                    window.cancelAnimationFrame(pauseRecoveryFrame);
+                    pauseRecoveryFrame = undefined;
+                }
+                video.pause();
+                resources = null;
+            },
+            onPermanentFailure: (reason) => {
+                contextLost = false;
+                canvas.dataset.packedAlphaWebgl = `fallback:${reason}`;
+                disposeResources();
+                reportFailure();
+            },
+            onRestored: (attemptsUsed) => {
+                contextLost = false;
+                canvas.dataset.packedAlphaWebgl = "restored";
+                canvas.dataset.packedAlphaRestoreAttempts = String(attemptsUsed);
+                if (autoPlay && visible && !document.hidden) {
+                    playbackController?.tryPlay("visibility");
+                }
+                else {
+                    handleFrameAvailable();
+                }
+            },
+            release: () => gl.getExtension("WEBGL_lose_context")?.loseContext(),
+            restore: () => {
+                contextLost = false;
+                if (!initializeResources()) {
+                    return false;
+                }
+                try {
+                    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                        renderFrame(performance.now(), true);
+                    }
+                }
+                catch {
+                    return false;
+                }
+                return true;
+            },
+        });
         const observer = new IntersectionObserver(([entry]) => {
             visible = entry?.isIntersecting ?? true;
             if (visible) {
@@ -583,7 +717,6 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
         video.addEventListener("play", handleFrameAvailable);
         video.addEventListener("playing", handleFrameAvailable);
         video.addEventListener("seeked", handleFrameAvailable);
-        canvas.addEventListener("webglcontextlost", handleContextLost);
         document.addEventListener("visibilitychange", handleVisibilityChange);
         observer.observe(canvas);
         if (autoPlay)
@@ -603,20 +736,14 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
             video.removeEventListener("play", handleFrameAvailable);
             video.removeEventListener("playing", handleFrameAvailable);
             video.removeEventListener("seeked", handleFrameAvailable);
-            canvas.removeEventListener("webglcontextlost", handleContextLost);
+            restorableLifecycle?.dispose();
             document.removeEventListener("visibilitychange", handleVisibilityChange);
-            gl.deleteTexture(texture);
-            gl.deleteBuffer(positionBuffer);
-            gl.deleteBuffer(texCoordBuffer);
-            gl.deleteProgram(program);
-            gl.deleteShader(vertexShader);
-            gl.deleteShader(fragmentShader);
-            gl.getExtension("WEBGL_lose_context")?.loseContext();
+            disposeResources();
         };
-    }, [armed, autoPlay, maxFps, pauseWhenOffscreen, renderMode, src]);
-    return (<div className={className} data-packed-alpha-video={armed ? (renderMode === "screen" ? "screen-crop" : "h264-side-by-side") : "dormant"}>
-        {renderMode === "webgl" ? (<canvas ref={canvasRef} width={outputWidth} height={outputHeight} aria-hidden="true"/>) : null}
-        <video ref={videoRef} className={videoClassName} src={armed ? src : undefined} width={outputWidth * 2} height={outputHeight} autoPlay={autoPlay} loop={loop} muted={muted} playsInline={playsInline} preload={preload} disablePictureInPicture tabIndex={tabIndex} onLoadedMetadata={onLoadedMetadata} aria-hidden="true"/>
+    }, [armed, autoPlay, compositeActive, maxFps, pauseWhenOffscreen, renderMode, src]);
+    return (<div className={className} data-packed-alpha-video={armed ? (renderMode === "screen" ? "screen-crop" : "h264-side-by-side") : "dormant"} data-packed-alpha-composite={renderMode === "webgl" ? (compositeActive ? "active" : "suspended") : "screen"}>
+      {renderMode === "webgl" && compositeActive ? (<canvas ref={canvasRef} width={outputWidth} height={outputHeight} aria-hidden="true"/>) : null}
+        <video ref={videoRef} className={videoClassName} src={armed ? src : undefined} width={outputWidth * 2} height={outputHeight} autoPlay={autoPlay && (renderMode === "screen" || compositeActive)} loop={loop} muted={muted} playsInline={playsInline} preload={preload} disablePictureInPicture tabIndex={tabIndex} onLoadedMetadata={onLoadedMetadata} aria-hidden="true"/>
       </div>);
 });
 export default PackedAlphaVideo;

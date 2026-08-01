@@ -357,8 +357,9 @@ const installInstrumentation = async (context, network) => {
         previousFrameAt: null,
         webglCreatedTotal: 0,
         webglPeakConnectedNonLost: 0,
-        webglLost: 0,
-        webglRestored: 0,
+        webglIntentionalLost: 0,
+        webglUnexpectedLost: 0,
+        webglUnexpectedRestored: 0,
         contextReferences: [],
       };
 
@@ -431,6 +432,7 @@ const installInstrumentation = async (context, network) => {
       const originalGetContext = HTMLCanvasElement.prototype.getContext;
       const seenContexts = new WeakSet();
       const seenCanvases = new WeakSet();
+      const unexpectedLossByCanvas = new WeakMap();
       const dereferenceContexts = () =>
         state.contextReferences
           .map((reference) => (typeof reference?.deref === "function" ? reference.deref() : reference))
@@ -458,10 +460,20 @@ const installInstrumentation = async (context, network) => {
           if (!seenCanvases.has(this)) {
             seenCanvases.add(this);
             this.addEventListener("webglcontextlost", () => {
-              state.webglLost += 1;
+              if (this.dataset.webglRelease === "intentional") {
+                state.webglIntentionalLost += 1;
+                unexpectedLossByCanvas.set(this, false);
+              }
+              else {
+                state.webglUnexpectedLost += 1;
+                unexpectedLossByCanvas.set(this, true);
+              }
             });
             this.addEventListener("webglcontextrestored", () => {
-              state.webglRestored += 1;
+              if (unexpectedLossByCanvas.get(this) === true) {
+                state.webglUnexpectedRestored += 1;
+              }
+              unexpectedLossByCanvas.delete(this);
             });
           }
           updateContextPeak();
@@ -611,8 +623,9 @@ const installInstrumentation = async (context, network) => {
             createdTotal: state.webglCreatedTotal,
             currentConnectedNonLost: updateContextPeak(),
             peakConnectedNonLost: state.webglPeakConnectedNonLost,
-            lost: state.webglLost,
-            restored: state.webglRestored,
+            intentionalLost: state.webglIntentionalLost,
+            unexpectedLost: state.webglUnexpectedLost,
+            unexpectedRestored: state.webglUnexpectedRestored,
             renderer: describeRenderer(),
           },
         };
@@ -1144,9 +1157,16 @@ const summarizeCase = (raw, profile, networkMode, startedRequests, diagnostics) 
       peakConnectedNonLost: raw.webgl.peakConnectedNonLost,
       renderer: raw.webgl.renderer,
     }),
-    webglContextLost: metric("measured", raw.webgl.lost, {
-      restored: raw.webgl.restored,
-    }),
+    webglContextLost: metric(
+      "measured",
+      Math.max(0, raw.webgl.unexpectedLost - raw.webgl.unexpectedRestored),
+      {
+        definition: "unexpected WebGL context losses that were not restored",
+        intentionalReleaseEvents: raw.webgl.intentionalLost,
+        unexpectedLost: raw.webgl.unexpectedLost,
+        unexpectedRestored: raw.webgl.unexpectedRestored,
+      },
+    ),
     hiddenInViewport: metric("measured", hiddenAllMaximum, {
       definition: "all hidden or opacity-zero non-aria-hidden elements intersecting the viewport",
       revealContractMaximum: hiddenExpectedMaximum,
@@ -1548,6 +1568,16 @@ for (const result of results) {
     recordAcceptanceFinding(
       result,
       `${hiddenInViewport.revealContractAtOrAboveMaximum} reveal-managed elements remained hidden at or above the viewport`,
+    );
+  }
+  const unrecoveredWebglLosses = result.metrics?.webglContextLost;
+  if (unrecoveredWebglLosses?.status !== "measured") {
+    recordAcceptanceFinding(result, "unrecovered WebGL context losses were not measured");
+  }
+  else if (unrecoveredWebglLosses.value > 0) {
+    recordAcceptanceFinding(
+      result,
+      `${unrecoveredWebglLosses.value} unexpected WebGL context losses were not restored`,
     );
   }
 }

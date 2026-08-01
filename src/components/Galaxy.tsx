@@ -1,6 +1,7 @@
 "use client";
 import { forwardRef, useEffect, useImperativeHandle, useRef, type HTMLAttributes } from "react";
 import { Color, Mesh, Program, Renderer, Triangle } from "ogl";
+import { installRestorableWebglLifecycle, isLikelyMobileRuntime, isLikelyWebKitRuntime, releaseWebglContext } from "./webglLifecycle";
 const DEFAULT_FOCAL: [
     number,
     number
@@ -171,6 +172,74 @@ void main() {
   }
 }
 `;
+type GalaxyRuntimeProfile = {
+    constrained: boolean;
+    devicePixelRatio: number;
+    dpr: number;
+    fps: number;
+    frameBudgeted: boolean;
+    innerLoopMax: 0 | 1;
+    layerCount: 2 | 3;
+    precision: "highp" | "mediump";
+    runtime: "desktop" | "mobile" | "webkit";
+};
+type GalaxyBudgetState = {
+    active: number;
+};
+const GALAXY_CONTEXT_BUDGET_KEY = "__tascGalaxyContextBudgetV1__";
+const getGalaxyContextBudget = () => {
+    const globalScope = globalThis as typeof globalThis & {
+        [GALAXY_CONTEXT_BUDGET_KEY]?: GalaxyBudgetState;
+    };
+    if (!globalScope[GALAXY_CONTEXT_BUDGET_KEY]) {
+        globalScope[GALAXY_CONTEXT_BUDGET_KEY] = { active: 0 };
+    }
+    return globalScope[GALAXY_CONTEXT_BUDGET_KEY];
+};
+const reserveGalaxyContextBudget = (profile: GalaxyRuntimeProfile) => {
+    const budget = getGalaxyContextBudget();
+    const maxContexts = profile.constrained ? 1 : 3;
+    if (budget.active >= maxContexts) {
+        return null;
+    }
+    budget.active += 1;
+    let released = false;
+    return () => {
+        if (released)
+            return;
+        released = true;
+        budget.active = Math.max(0, budget.active - 1);
+    };
+};
+const createGalaxyFragmentShader = (profile: GalaxyRuntimeProfile) => fragmentShader
+    .replace("precision highp float;", `precision ${profile.precision} float;`)
+    .replace("#define NUM_LAYER 4.0", `#define NUM_LAYER ${profile.layerCount.toFixed(1)}`)
+    .replace("for (int y = -1; y <= 1; y++)", `for (int y = -1; y <= ${profile.innerLoopMax}; y++)`)
+    .replace("for (int x = -1; x <= 1; x++)", `for (int x = -1; x <= ${profile.innerLoopMax}; x++)`);
+const getGalaxyRuntimeProfile = (maxDevicePixelRatio: number, maxFps: number): GalaxyRuntimeProfile => {
+    const webkit = isLikelyWebKitRuntime();
+    const mobile = isLikelyMobileRuntime();
+    const constrained = webkit || mobile;
+    const devicePixelRatio = Math.max(1, window.devicePixelRatio || 1);
+    const requestedDpr = Number.isFinite(maxDevicePixelRatio)
+        ? Math.max(0.35, Math.min(devicePixelRatio, maxDevicePixelRatio))
+        : 1;
+    const requestedFps = Number.isFinite(maxFps)
+        ? Math.max(1, Math.min(60, maxFps))
+        : 30;
+    const desktopCanAttemptCrispMode = !constrained && maxDevicePixelRatio >= 0.8 && maxFps >= 30;
+    return {
+        constrained,
+        devicePixelRatio,
+        dpr: constrained ? Math.min(requestedDpr, 0.9) : desktopCanAttemptCrispMode ? Math.min(devicePixelRatio, 1) : requestedDpr,
+        fps: constrained ? Math.min(requestedFps, 30) : desktopCanAttemptCrispMode ? 60 : requestedFps,
+        frameBudgeted: desktopCanAttemptCrispMode,
+        innerLoopMax: constrained ? 0 : 1,
+        layerCount: constrained ? 2 : 3,
+        precision: constrained ? "mediump" : "highp",
+        runtime: webkit ? "webkit" : mobile ? "mobile" : "desktop",
+    };
+};
 type GalaxyMotionTarget = {
     speed?: number;
     starSpeed?: number;
@@ -283,6 +352,18 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             onStatusChange?.(status);
         };
         container.dataset.galaxyStatus = "pending";
+        const runtimeProfile = getGalaxyRuntimeProfile(maxDevicePixelRatio, maxFps);
+        const releaseGalaxyBudget = reserveGalaxyContextBudget(runtimeProfile);
+        container.dataset.galaxyRuntime = runtimeProfile.runtime;
+        container.dataset.galaxyLayers = String(runtimeProfile.layerCount);
+        container.dataset.galaxyInnerLoop = runtimeProfile.innerLoopMax === 0 ? "2x2" : "3x3";
+        container.dataset.galaxyPrecision = runtimeProfile.precision;
+        if (!releaseGalaxyBudget) {
+            container.dataset.galaxyContextBudget = "denied";
+            reportStatus("unavailable");
+            return;
+        }
+        container.dataset.galaxyContextBudget = "reserved";
         let renderer: Renderer;
         try {
             renderer = new Renderer({
@@ -291,19 +372,25 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
                 antialias: false,
                 depth: false,
                 stencil: false,
-                dpr: Math.min(window.devicePixelRatio || 1, maxDevicePixelRatio),
+                dpr: runtimeProfile.dpr,
             });
         }
         catch {
+            releaseGalaxyBudget();
             reportStatus("unavailable");
             return;
         }
         const gl = renderer.gl;
         if (!gl) {
+            releaseGalaxyBudget();
             reportStatus("unavailable");
             return;
         }
         gl.canvas.className = "galaxy-canvas-element";
+        gl.canvas.dataset.galaxyRuntime = runtimeProfile.runtime;
+        gl.canvas.dataset.galaxyLayers = String(runtimeProfile.layerCount);
+        gl.canvas.dataset.galaxyInnerLoop = runtimeProfile.innerLoopMax === 0 ? "2x2" : "3x3";
+        gl.canvas.dataset.galaxyPrecision = runtimeProfile.precision;
         container.dataset.galaxyActive = "false";
         container.dataset.galaxyInteractive = String(mouseInteraction && initialInteractionEnabled);
         container.dataset.galaxyPointerActive = "false";
@@ -315,6 +402,11 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             gl.clearColor(0, 0, 0, 1);
         }
         let program: Program | null = null;
+        let geometry: Triangle | null = null;
+        let mesh: Mesh | null = null;
+        let contextLost = false;
+        let waitingForActiveFrame = true;
+        const galaxyFragmentShader = createGalaxyFragmentShader(runtimeProfile);
         let pointerRect = {
             left: 0,
             top: 0,
@@ -327,6 +419,11 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
         let resizeFrame: number | null = null;
         let lastResizeWidth = 0;
         let lastResizeHeight = 0;
+        let activeDpr = runtimeProfile.dpr;
+        let activeFps = runtimeProfile.fps;
+        let minFrameInterval = 1000 / Math.max(1, activeFps);
+        let frameIntervalTolerance = Math.min(2, minFrameInterval * 0.08);
+        let slowFrameCount = 0;
         const readPointerRect = () => {
             const rect = container.getBoundingClientRect();
             pointerRect = {
@@ -346,7 +443,14 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
                 readPointerRect();
             });
         };
-        const performResize = () => {
+        const updateFrameCadence = (nextFps: number) => {
+            activeFps = Math.max(1, Math.min(60, nextFps));
+            minFrameInterval = 1000 / activeFps;
+            frameIntervalTolerance = Math.min(2, minFrameInterval * 0.08);
+            container.dataset.galaxyFps = String(Math.round(activeFps));
+            gl.canvas.dataset.galaxyFps = String(Math.round(activeFps));
+        };
+        const performResize = (force = false) => {
             if (pointerRectFrame !== null) {
                 cancelAnimationFrame(pointerRectFrame);
                 pointerRectFrame = null;
@@ -354,13 +458,51 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             readPointerRect();
             const width = Math.max(1, Math.round(pointerRect.width));
             const height = Math.max(1, Math.round(pointerRect.height));
-            if (width === lastResizeWidth && height === lastResizeHeight)
+            if (!force && width === lastResizeWidth && height === lastResizeHeight)
                 return;
             lastResizeWidth = width;
             lastResizeHeight = height;
             renderer.setSize(width, height);
             if (program) {
                 program.uniforms.uResolution.value = new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height);
+            }
+        };
+        const updateRendererDpr = (nextDpr: number) => {
+            const normalizedDpr = Math.max(0.5, Math.min(runtimeProfile.devicePixelRatio, nextDpr));
+            if (Math.abs(normalizedDpr - activeDpr) < 0.01)
+                return;
+            activeDpr = normalizedDpr;
+            (renderer as unknown as { dpr: number }).dpr = activeDpr;
+            container.dataset.galaxyDpr = activeDpr.toFixed(2);
+            gl.canvas.dataset.galaxyDpr = activeDpr.toFixed(2);
+            performResize(true);
+        };
+        const maybeDowngradeForFrameBudget = (renderCostMs: number) => {
+            if (!runtimeProfile.frameBudgeted)
+                return;
+            const budget = Math.max(5, (1000 / activeFps) * 0.72);
+            if (renderCostMs <= budget) {
+                slowFrameCount = 0;
+                return;
+            }
+            slowFrameCount += 1;
+            if (slowFrameCount < 10)
+                return;
+            slowFrameCount = 0;
+            if (activeFps > 45) {
+                updateFrameCadence(45);
+                return;
+            }
+            if (activeFps > 30) {
+                updateFrameCadence(30);
+                return;
+            }
+            if (activeDpr > 0.9) {
+                updateRendererDpr(0.9);
+                return;
+            }
+            if (activeDpr > 0.82) {
+                updateRendererDpr(0.82);
             }
         };
         const resize = () => {
@@ -371,57 +513,72 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
                 performResize();
             });
         };
-        let geometry: Triangle | null = null;
-        let mesh: Mesh | null = null;
-        try {
-            geometry = new Triangle(gl);
-            program = new Program(gl, {
-                vertex: vertexShader,
-                fragment: fragmentShader,
-                depthTest: false,
-                depthWrite: false,
-                cullFace: null,
-                uniforms: {
-                    uTime: { value: 0 },
-                    uResolution: {
-                        value: new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height),
+        updateFrameCadence(runtimeProfile.fps);
+        container.dataset.galaxyDpr = activeDpr.toFixed(2);
+        gl.canvas.dataset.galaxyDpr = activeDpr.toFixed(2);
+        updateRendererDpr(runtimeProfile.dpr);
+        const disposeSceneResources = () => {
+            try {
+                geometry?.remove();
+            }
+            catch {
+            }
+            try {
+                program?.remove();
+            }
+            catch {
+            }
+            geometry = null;
+            program = null;
+            mesh = null;
+        };
+        const initializeSceneResources = () => {
+            disposeSceneResources();
+            try {
+                geometry = new Triangle(gl);
+                program = new Program(gl, {
+                    vertex: vertexShader,
+                    fragment: galaxyFragmentShader,
+                    depthTest: false,
+                    depthWrite: false,
+                    cullFace: null,
+                    uniforms: {
+                        uTime: { value: motionRef.current.timePhase },
+                        uResolution: {
+                            value: new Color(gl.canvas.width, gl.canvas.height, gl.canvas.width / gl.canvas.height),
+                        },
+                        uFocal: { value: new Float32Array(focal) },
+                        uRotation: { value: new Float32Array(rotation) },
+                        uStarSpeed: { value: motionRef.current.starPhase },
+                        uDensity: { value: motionRef.current.currentDensity },
+                        uHueShift: { value: hueShift },
+                        uSpeed: { value: motionRef.current.currentSpeed },
+                        uMouse: { value: new Float32Array([smoothMousePos.current.x, smoothMousePos.current.y]) },
+                        uGlowIntensity: { value: motionRef.current.currentGlowIntensity },
+                        uSaturation: { value: saturation },
+                        uMouseRepulsion: { value: mouseRepulsion },
+                        uTwinkleIntensity: { value: twinkleIntensity },
+                        uRotationSpeed: { value: motionRef.current.currentRotationSpeed },
+                        uRepulsionStrength: { value: repulsionStrength },
+                        uMouseActiveFactor: { value: smoothMouseActive.current },
+                        uAutoCenterRepulsion: { value: autoCenterRepulsion },
+                        uTransparent: { value: transparent },
                     },
-                    uFocal: { value: new Float32Array(focal) },
-                    uRotation: { value: new Float32Array(rotation) },
-                    uStarSpeed: { value: 0 },
-                    uDensity: { value: density },
-                    uHueShift: { value: hueShift },
-                    uSpeed: { value: speed },
-                    uMouse: { value: new Float32Array([smoothMousePos.current.x, smoothMousePos.current.y]) },
-                    uGlowIntensity: { value: glowIntensity },
-                    uSaturation: { value: saturation },
-                    uMouseRepulsion: { value: mouseRepulsion },
-                    uTwinkleIntensity: { value: twinkleIntensity },
-                    uRotationSpeed: { value: rotationSpeed },
-                    uRepulsionStrength: { value: repulsionStrength },
-                    uMouseActiveFactor: { value: 0.0 },
-                    uAutoCenterRepulsion: { value: autoCenterRepulsion },
-                    uTransparent: { value: transparent },
-                },
-            });
-            mesh = new Mesh(gl, { geometry, program });
-        }
-        catch {
+                });
+                mesh = new Mesh(gl, { geometry, program });
+                return true;
+            }
+            catch {
+                disposeSceneResources();
+                return false;
+            }
+        };
+        if (!initializeSceneResources()) {
+            releaseGalaxyBudget();
             reportStatus("unavailable");
-            geometry?.remove();
-            program?.remove();
-            gl.getExtension("WEBGL_lose_context")?.loseContext();
+            releaseWebglContext(gl.canvas, gl);
             return;
         }
-        if (!geometry || !mesh || !program) {
-            reportStatus("unavailable");
-            geometry?.remove();
-            program?.remove();
-            gl.getExtension("WEBGL_lose_context")?.loseContext();
-            return;
-        }
-        const galaxyGeometry = geometry;
-        const galaxyMesh = mesh;
         let animationId: number | null = null;
         let active = false;
         let manuallyActive = true;
@@ -431,11 +588,11 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
         let scrollPaused = false;
         let scrollResumeTimer: number | undefined;
         let lastRenderTime = 0;
-        const minFrameInterval = 1000 / Math.max(1, maxFps);
-        const frameIntervalTolerance = Math.min(2, minFrameInterval * 0.08);
+        const lifecycleQaEnabled = new URLSearchParams(window.location.search).has("__tasc_webgl_lifecycle_qa");
+        let lifecycleQaFrameCount = 0;
         const resizeObserver = new ResizeObserver(resize);
         const update = (time: number) => {
-            if (disposed || !active || !program) {
+            if (disposed || contextLost || !active || !program || !mesh) {
                 return;
             }
             animationId = requestAnimationFrame(update);
@@ -476,9 +633,27 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             program.uniforms.uMouse.value[1] = smoothMousePos.current.y;
             program.uniforms.uMouseActiveFactor.value = smoothMouseActive.current;
             try {
-                renderer.render({ scene: galaxyMesh });
+                const renderStart = performance.now();
+                renderer.render({ scene: mesh });
+                if (lifecycleQaEnabled) {
+                    lifecycleQaFrameCount += 1;
+                    const frameCount = String(lifecycleQaFrameCount);
+                    const framePhase = motion.timePhase.toFixed(4);
+                    container.dataset.galaxyFrameCount = frameCount;
+                    container.dataset.galaxyFramePhase = framePhase;
+                    gl.canvas.dataset.galaxyFrameCount = frameCount;
+                    gl.canvas.dataset.galaxyFramePhase = framePhase;
+                }
+                if (waitingForActiveFrame) {
+                    waitingForActiveFrame = false;
+                    reportStatus("ready");
+                }
+                maybeDowngradeForFrameBudget(performance.now() - renderStart);
             }
             catch {
+                if (gl.isContextLost()) {
+                    return;
+                }
                 active = false;
                 container.dataset.galaxyActive = "false";
                 if (animationId !== null) {
@@ -490,6 +665,9 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
         };
         const setActive = (nextActive: boolean) => {
             if (disposed || active === nextActive) {
+                return;
+            }
+            if (nextActive && (contextLost || !program || !mesh)) {
                 return;
             }
             active = nextActive;
@@ -579,31 +757,70 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             targetMouseActive.current = 0.0;
             container.dataset.galaxyPointerActive = "false";
         };
-        const handleContextLost = (event: Event) => {
-            event.preventDefault();
-            active = false;
-            container.dataset.galaxyActive = "false";
-            if (animationId !== null) {
-                cancelAnimationFrame(animationId);
-                animationId = null;
-            }
-            reportStatus("unavailable");
-        };
+        const restorableLifecycle = installRestorableWebglLifecycle({
+            canvas: gl.canvas,
+            label: "galaxy",
+            onLost: () => {
+                contextLost = true;
+                active = false;
+                container.dataset.galaxyActive = "false";
+                container.dataset.galaxyContext = "lost";
+                waitingForActiveFrame = true;
+                reportStatus("unavailable");
+                if (animationId !== null) {
+                    cancelAnimationFrame(animationId);
+                    animationId = null;
+                }
+                geometry = null;
+                program = null;
+                mesh = null;
+            },
+            onPermanentFailure: (reason) => {
+                contextLost = false;
+                active = false;
+                container.dataset.galaxyActive = "false";
+                container.dataset.galaxyContext = `fallback:${reason}`;
+                disposeSceneResources();
+                reportStatus("unavailable");
+            },
+            onRestored: (attemptsUsed) => {
+                container.dataset.galaxyContext = "restored";
+                container.dataset.galaxyRestoreAttempts = String(attemptsUsed);
+                waitingForActiveFrame = true;
+                syncActiveState();
+            },
+            release: () => gl.getExtension("WEBGL_lose_context")?.loseContext(),
+            restore: () => {
+                contextLost = false;
+                if (!initializeSceneResources()) {
+                    return false;
+                }
+                try {
+                    performResize(true);
+                    if (mesh) {
+                        renderer.render({ scene: mesh });
+                    }
+                }
+                catch {
+                    return false;
+                }
+                return true;
+            },
+        });
         container.appendChild(gl.canvas);
-        gl.canvas.addEventListener("webglcontextlost", handleContextLost);
         try {
-            performResize();
-            renderer.render({ scene: galaxyMesh });
-            reportStatus("ready");
+            performResize(true);
+            if (mesh) {
+                renderer.render({ scene: mesh });
+            }
         }
         catch {
             reportStatus("unavailable");
-            gl.canvas.removeEventListener("webglcontextlost", handleContextLost);
+            restorableLifecycle.dispose();
             if (gl.canvas.parentNode === container)
                 container.removeChild(gl.canvas);
-            galaxyGeometry.remove();
-            program?.remove();
-            gl.getExtension("WEBGL_lose_context")?.loseContext();
+            disposeSceneResources();
+            releaseGalaxyBudget();
             return;
         }
         runtimeRef.current = {
@@ -659,13 +876,12 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
             }
             delete container.dataset.galaxyInteractive;
             delete container.dataset.galaxyPointerActive;
-            gl.canvas.removeEventListener("webglcontextlost", handleContextLost);
+            restorableLifecycle.dispose();
             if (gl.canvas.parentNode === container) {
                 container.removeChild(gl.canvas);
             }
-            galaxyGeometry.remove();
-            program?.remove();
-            gl.getExtension("WEBGL_lose_context")?.loseContext();
+            disposeSceneResources();
+            releaseGalaxyBudget();
         };
     }, [
         autoCenterRepulsion,
