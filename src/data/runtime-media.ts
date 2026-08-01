@@ -18,6 +18,16 @@ export const RUNTIME_MEDIA = {
         fps: { desktop: 60, mobile: 30 },
         frameCount: { desktop: 1200, mobile: 600 },
         duration: 20,
+        keyframeContract: {
+            nativeAlpha: {
+                desktop: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 0 },
+                mobile: { keyframeCount: 20, maxGopFrames: 30, hasBFrames: 0 },
+            },
+            webkitPacked: {
+                desktop: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 2 },
+                mobile: { keyframeCount: 20, maxGopFrames: 30, hasBFrames: 2 },
+            },
+        },
     },
     services: {
         nativeAlpha: {
@@ -25,8 +35,8 @@ export const RUNTIME_MEDIA = {
             mobile: "/media/services-keyframes-mobile-lean-20260721.webm",
         },
         webkitPacked: {
-            desktop: "/media/services-keyframes-packed-1280-t1-20260731.mp4",
-            mobile: "/media/services-keyframes-packed-960-lean-20260721.mp4",
+            desktop: "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
+            mobile: "/media/services-keyframes-packed-960-gop15-t4-20260801.mp4",
             desktopOutput: { width: 1280, height: 720 },
             mobileOutput: { width: 960, height: 540 },
         },
@@ -42,7 +52,11 @@ export const RUNTIME_MEDIA = {
         stopFrames: [90, 187, 307],
         reverseStopFrames: [557, 460, 340],
         exitFrame: 339,
-        seekProfile: "palindrome-positive-playback-gop15",
+        seekProfile: "palindrome-positive-playback",
+        keyframeContract: {
+            nativeAlpha: { keyframeCount: 38, maxGopFrames: 15, hasBFrames: 0 },
+            webkitPacked: { keyframeCount: 38, maxGopFrames: 15, hasBFrames: 0 },
+        },
     },
     datum: {
         desktop: "/media/datum-news-loop-desktop-20260718.mp4",
@@ -55,7 +69,11 @@ export const RUNTIME_MEDIA = {
         fps: FPS_30,
         frameCount: 201,
         visibilityRatio: 0.25,
-        seekProfile: "playback-gop15",
+        seekProfile: "playback",
+        keyframeContract: {
+            defaultPlayback: { keyframeCount: 14, maxGopFrames: 15, hasBFrames: 0 },
+            chromium: { keyframeCount: 14, maxGopFrames: 15, hasBFrames: 0 },
+        },
     },
     domino: {
         forward: {
@@ -77,7 +95,11 @@ export const RUNTIME_MEDIA = {
         fps: FPS_30,
         frameCount: 115,
         visibilityRatio: 0.25,
-        seekProfile: "directional-playback-gop15",
+        seekProfile: "directional-playback",
+        keyframeContract: {
+            defaultPlayback: { keyframeCount: 8, maxGopFrames: 15, hasBFrames: 0 },
+            chromium: { keyframeCount: 8, maxGopFrames: 15, hasBFrames: 0 },
+        },
     },
 } as const;
 export const SERVICES_KEYFRAME_STOPS = RUNTIME_MEDIA.services.stopFrames.map((frame) => secondsAtFrame(frame, RUNTIME_MEDIA.services.fps)) as readonly number[];

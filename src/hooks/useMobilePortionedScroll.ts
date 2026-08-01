@@ -61,6 +61,7 @@ export function useMobilePortionedScroll({
         let activeTargetIndex: number | null = null;
         let activeTargetY: number | null = null;
         let activeTargetId: string | null = null;
+        let activeDirection: PortionDirection | null = null;
         let cachedDocumentMaxScroll = 0;
         let cachedFrameStep = 1;
         let cachedAnchors: PortionAnchor[] = [];
@@ -234,6 +235,7 @@ export function useMobilePortionedScroll({
             sequence: number,
             targetIndex: number,
             targetY: number,
+            direction: PortionDirection,
             eventName: "tasc:portion-settled" | "tasc:portion-interrupted",
         ) => {
             if (sequence !== portionSequence)
@@ -243,12 +245,19 @@ export function useMobilePortionedScroll({
                 settleFrame = null;
             }
             portionTween = null;
-            delete root.dataset.portionedScroll;
+            activeDirection = null;
+            const anchor = cachedAnchors[targetIndex]?.ids.join("+") ?? activeTargetId ?? "";
+            root.dataset.portionSettling = direction < 0 ? "reverse" : "forward";
             emitPortionEvent(eventName, {
+                anchor,
+                direction,
                 index: targetIndex,
                 settledY: window.scrollY,
                 targetY,
             });
+            delete root.dataset.portionedScroll;
+            delete root.dataset.portionSettling;
+            ScrollTrigger.update();
         };
 
         const interruptActivePortion = (emit = true) => {
@@ -256,6 +265,7 @@ export function useMobilePortionedScroll({
                 return;
             const interruptedIndex = activeTargetIndex;
             const interruptedY = activeTargetY;
+            const interruptedDirection = activeDirection;
             if (settleFrame !== null) {
                 window.cancelAnimationFrame(settleFrame);
                 settleFrame = null;
@@ -266,8 +276,11 @@ export function useMobilePortionedScroll({
                 portionTween = null;
             }
             delete root.dataset.portionedScroll;
+            delete root.dataset.portionSettling;
+            activeDirection = null;
             if (emit && interruptedIndex !== null && interruptedY !== null) {
                 emitPortionEvent("tasc:portion-interrupted", {
+                    direction: interruptedDirection ?? 0,
                     index: interruptedIndex,
                     settledY: window.scrollY,
                     targetY: interruptedY,
@@ -323,6 +336,7 @@ export function useMobilePortionedScroll({
             activeTargetIndex = targetIndex;
             activeTargetY = target.y;
             activeTargetId = target.ids[0] ?? null;
+            activeDirection = direction;
             root.dataset.portionedScroll = direction > 0 ? "forward" : "reverse";
             root.dataset.portionTargetIndex = String(targetIndex);
             root.dataset.portionTargetY = String(target.y);
@@ -357,6 +371,7 @@ export function useMobilePortionedScroll({
                                     sequence,
                                     settledTargetIndex,
                                     settledTargetY,
+                                    direction,
                                     "tasc:portion-settled",
                                 );
                             });
@@ -375,6 +390,7 @@ export function useMobilePortionedScroll({
                                 sequence,
                                 settledTargetIndex,
                                 settledTargetY,
+                                direction,
                                 "tasc:portion-interrupted",
                             );
                             return;
@@ -390,6 +406,7 @@ export function useMobilePortionedScroll({
                         sequence,
                         interruptedTargetIndex,
                         interruptedTargetY,
+                        direction,
                         "tasc:portion-interrupted",
                     );
                 },

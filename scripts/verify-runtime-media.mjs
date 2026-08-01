@@ -139,6 +139,13 @@ function collectVideoUrls(value, urls = new Set()) {
     }
     return urls;
 }
+function frameContract(contract) {
+    return {
+        keyframeCount: contract.keyframeCount,
+        maxKeyframeInterval: contract.maxGopFrames,
+        hasBFrames: contract.hasBFrames,
+    };
+}
 function createManifest(media) {
     const serviceDuration = media.services.frameCount / media.services.fps;
     const datumDuration = media.datum.frameCount / media.datum.fps;
@@ -154,6 +161,7 @@ function createManifest(media) {
             frameCount: media.hero.frameCount.desktop,
             duration: media.hero.duration,
             alphaMode: "1",
+            ...frameContract(media.hero.keyframeContract.nativeAlpha.desktop),
         },
         {
             label: "Hero native alpha mobile",
@@ -165,6 +173,7 @@ function createManifest(media) {
             frameCount: media.hero.frameCount.mobile,
             duration: media.hero.duration,
             alphaMode: "1",
+            ...frameContract(media.hero.keyframeContract.nativeAlpha.mobile),
         },
         {
             label: "Hero WebKit packed desktop",
@@ -175,6 +184,7 @@ function createManifest(media) {
             fps: media.hero.fps.desktop,
             frameCount: media.hero.frameCount.desktop,
             duration: media.hero.duration,
+            ...frameContract(media.hero.keyframeContract.webkitPacked.desktop),
         },
         {
             label: "Hero WebKit packed mobile",
@@ -185,6 +195,7 @@ function createManifest(media) {
             fps: media.hero.fps.mobile,
             frameCount: media.hero.frameCount.mobile,
             duration: media.hero.duration,
+            ...frameContract(media.hero.keyframeContract.webkitPacked.mobile),
         },
         {
             label: "Services native alpha desktop",
@@ -196,8 +207,7 @@ function createManifest(media) {
             frameCount: media.services.frameCount,
             duration: serviceDuration,
             alphaMode: "1",
-            hasBFrames: 0,
-            maxKeyframeInterval: 15,
+            ...frameContract(media.services.keyframeContract.nativeAlpha),
         },
         {
             label: "Services native alpha mobile",
@@ -209,8 +219,7 @@ function createManifest(media) {
             frameCount: media.services.frameCount,
             duration: serviceDuration,
             alphaMode: "1",
-            hasBFrames: 0,
-            maxKeyframeInterval: 15,
+            ...frameContract(media.services.keyframeContract.nativeAlpha),
         },
         {
             label: "Services WebKit packed desktop",
@@ -221,9 +230,7 @@ function createManifest(media) {
             fps: media.services.fps,
             frameCount: media.services.frameCount,
             duration: serviceDuration,
-            hasBFrames: 0,
-            keyframeCount: Math.ceil(media.services.frameCount / 6),
-            maxKeyframeInterval: 6,
+            ...frameContract(media.services.keyframeContract.webkitPacked),
         },
         {
             label: "Services WebKit packed mobile",
@@ -234,16 +241,14 @@ function createManifest(media) {
             fps: media.services.fps,
             frameCount: media.services.frameCount,
             duration: serviceDuration,
-            hasBFrames: 0,
-            keyframeCount: Math.ceil(media.services.frameCount / 6),
-            maxKeyframeInterval: 6,
+            ...frameContract(media.services.keyframeContract.webkitPacked),
         },
         ...[
-            ["Datum WebKit/default playback desktop", media.datum.desktop, "h264", 1280, 720],
-            ["Datum WebKit/default playback mobile", media.datum.mobile, "h264", 960, 540],
-            ["Datum Chromium playback desktop", media.datum.chromium.desktop, "vp9", 1280, 720],
-            ["Datum Chromium playback mobile", media.datum.chromium.mobile, "vp9", 960, 540],
-        ].map(([label, url, codec, width, height]) => ({
+            ["Datum WebKit/default playback desktop", media.datum.desktop, "h264", 1280, 720, media.datum.keyframeContract.defaultPlayback],
+            ["Datum WebKit/default playback mobile", media.datum.mobile, "h264", 960, 540, media.datum.keyframeContract.defaultPlayback],
+            ["Datum Chromium playback desktop", media.datum.chromium.desktop, "vp9", 1280, 720, media.datum.keyframeContract.chromium],
+            ["Datum Chromium playback mobile", media.datum.chromium.mobile, "vp9", 960, 540, media.datum.keyframeContract.chromium],
+        ].map(([label, url, codec, width, height, contract]) => ({
             label,
             url,
             codec,
@@ -252,19 +257,18 @@ function createManifest(media) {
             fps: media.datum.fps,
             frameCount: media.datum.frameCount,
             duration: datumDuration,
-            hasBFrames: 0,
-            maxKeyframeInterval: 15,
+            ...frameContract(contract),
         })),
         ...[
-            ["Domino WebKit/default forward desktop", media.domino.forward.desktop, "h264", 1120, 630],
-            ["Domino WebKit/default forward mobile", media.domino.forward.mobile, "h264", 960, 540],
-            ["Domino WebKit/default reverse desktop", media.domino.reverse.desktop, "h264", 1120, 630],
-            ["Domino WebKit/default reverse mobile", media.domino.reverse.mobile, "h264", 960, 540],
-            ["Domino Chromium forward desktop", media.domino.forward.chromium.desktop, "vp9", 1120, 630],
-            ["Domino Chromium forward mobile", media.domino.forward.chromium.mobile, "vp9", 960, 540],
-            ["Domino Chromium reverse desktop", media.domino.reverse.chromium.desktop, "vp9", 1120, 630],
-            ["Domino Chromium reverse mobile", media.domino.reverse.chromium.mobile, "vp9", 960, 540],
-        ].map(([label, url, codec, width, height]) => ({
+            ["Domino WebKit/default forward desktop", media.domino.forward.desktop, "h264", 1120, 630, media.domino.keyframeContract.defaultPlayback],
+            ["Domino WebKit/default forward mobile", media.domino.forward.mobile, "h264", 960, 540, media.domino.keyframeContract.defaultPlayback],
+            ["Domino WebKit/default reverse desktop", media.domino.reverse.desktop, "h264", 1120, 630, media.domino.keyframeContract.defaultPlayback],
+            ["Domino WebKit/default reverse mobile", media.domino.reverse.mobile, "h264", 960, 540, media.domino.keyframeContract.defaultPlayback],
+            ["Domino Chromium forward desktop", media.domino.forward.chromium.desktop, "vp9", 1120, 630, media.domino.keyframeContract.chromium],
+            ["Domino Chromium forward mobile", media.domino.forward.chromium.mobile, "vp9", 960, 540, media.domino.keyframeContract.chromium],
+            ["Domino Chromium reverse desktop", media.domino.reverse.chromium.desktop, "vp9", 1120, 630, media.domino.keyframeContract.chromium],
+            ["Domino Chromium reverse mobile", media.domino.reverse.chromium.mobile, "vp9", 960, 540, media.domino.keyframeContract.chromium],
+        ].map(([label, url, codec, width, height, contract]) => ({
             label,
             url,
             codec,
@@ -273,8 +277,7 @@ function createManifest(media) {
             fps: media.domino.fps,
             frameCount: media.domino.frameCount,
             duration: dominoDuration,
-            hasBFrames: 0,
-            maxKeyframeInterval: 15,
+            ...frameContract(contract),
         })),
     ];
 }
@@ -331,7 +334,7 @@ function verifyAsset(asset) {
                 equal("other picture types", frameDetails.pictureTypes.other, 0);
                 equal("max keyframe interval", frameDetails.maxKeyframeInterval, 1);
             }
-            else {
+            else if (asset.hasBFrames === 0) {
                 equal("B-frame count", frameDetails.pictureTypes.B, 0);
             }
         }

@@ -595,6 +595,32 @@
   opacity: 0.4;
 }
 
+.site-shell[data-services-galaxy-shared="true"][data-services-galaxy-status="ready"]
+  .services-story-section,
+.site-shell[data-services-galaxy-shared="true"][data-services-galaxy-status="ready"]
+  .first-four-story
+  .services-story-section,
+.site-shell[data-services-galaxy-shared="true"][data-services-galaxy-status="ready"]
+  .services-story-section
+  .services-story-scene,
+.site-shell[data-services-galaxy-shared="true"][data-services-galaxy-status="ready"]
+  .services-galaxy-stage {
+  background: transparent !important;
+}
+
+.site-shell[data-services-galaxy-shared="true"][data-services-galaxy-status="ready"]
+  .services-galaxy-stage
+  .static-starfield-services {
+  display: none !important;
+}
+
+.site-shell[data-services-inrange="true"]
+  > .first-four-galaxy-stage
+  .first-four-galaxy-primary
+  .galaxy-canvas-element {
+  opacity: 0.4 !important;
+}
+
 .clients-services-curtain-space {
   position: relative;
   z-index: 0;
