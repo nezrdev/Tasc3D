@@ -257,6 +257,8 @@ export function useMobilePortionedScroll({
             });
             delete root.dataset.portionedScroll;
             delete root.dataset.portionSettling;
+            delete root.dataset.portionTargetIndex;
+            delete root.dataset.portionTargetY;
             ScrollTrigger.update();
         };
 
@@ -286,6 +288,8 @@ export function useMobilePortionedScroll({
                     targetY: interruptedY,
                 });
             }
+            delete root.dataset.portionTargetIndex;
+            delete root.dataset.portionTargetY;
         };
 
         const resolveTargetIndex = (direction: PortionDirection) => {
@@ -430,6 +434,8 @@ export function useMobilePortionedScroll({
             activeTargetId = null;
         };
 
+        const hasActivePortion = () => portionTween !== null || settleFrame !== null;
+
         const handleTouchStart = (event: TouchEvent) => {
             const touch = event.touches.length === 1 ? event.touches[0] : null;
             if (!touch) {
@@ -448,7 +454,8 @@ export function useMobilePortionedScroll({
             startY = touch.clientY;
             tracking = true;
             committed = false;
-            blockCurrentGesture = hasForeignScrollOwner() || isInsideOwnedStory(window.scrollY);
+            blockCurrentGesture = hasForeignScrollOwner() ||
+                (!hasActivePortion() && isInsideOwnedStory(window.scrollY));
             if (blockCurrentGesture)
                 releasePortionToStoryOwner();
             else
@@ -467,7 +474,10 @@ export function useMobilePortionedScroll({
             if (!touch)
                 return;
 
-            if (hasForeignScrollOwner() || (!committed && isInsideOwnedStory(window.scrollY))) {
+            if (
+                hasForeignScrollOwner() ||
+                (!committed && !hasActivePortion() && isInsideOwnedStory(window.scrollY))
+            ) {
                 blockCurrentGesture = true;
                 releasePortionToStoryOwner();
                 return;

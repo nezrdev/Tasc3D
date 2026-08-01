@@ -517,9 +517,12 @@ const addBrowserInstrumentation = async (context, networkProfile) => {
               servicesMediaFallback: root.dataset.servicesMediaFallback ?? null,
               servicesMediaDecoded: root.dataset.servicesMediaDecoded ?? null,
               servicesPortionDirection: root.dataset.servicesPortionDirection ?? null,
+              servicesLastPortionDirection: root.dataset.servicesLastPortionDirection ?? null,
               servicesPortionTarget: root.dataset.servicesPortionTarget ?? null,
               portionedScroll: root.dataset.portionedScroll ?? null,
               portionSettling: root.dataset.portionSettling ?? null,
+              portionTargetIndex: root.dataset.portionTargetIndex ?? null,
+              portionTargetY: root.dataset.portionTargetY ?? null,
               datumPlayback: root.dataset.datumPlayback ?? null,
               datumProgress: root.dataset.datumProgress ?? null,
               datumPinned: root.dataset.datumPinned ?? null,
@@ -2081,7 +2084,9 @@ const runJourney = async (session, caseResult, directory) => {
     caseResult,
     reverseTerminalRoot?.servicesPortionDirection == null &&
       reverseTerminalRoot?.servicesLastPortionDirection == null &&
-      reverseTerminalRoot?.servicesPortionTarget == null,
+      reverseTerminalRoot?.servicesPortionTarget == null &&
+      reverseTerminalRoot?.portionTargetIndex == null &&
+      reverseTerminalRoot?.portionTargetY == null,
     "services: reverse release clears stale portion routing before replay",
     { reverseTerminalRoot },
   );
