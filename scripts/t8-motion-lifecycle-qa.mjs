@@ -16,6 +16,8 @@ const output = typeof args.output === "string" ? path.resolve(root, args.output)
 const staticOnly = args.static === true;
 const layoutSource = readFileSync(path.join(root, "src/app/layout.tsx"), "utf8");
 const landingSource = readFileSync(path.join(root, "src/components/TascLanding.tsx"), "utf8");
+const servicesSectionSource = readFileSync(path.join(root, "src/components/sections/ServicesSection.tsx"), "utf8");
+const servicesRuntimeSource = `${landingSource}\n${servicesSectionSource}`;
 const checks = [];
 const check = (name, passed, detail = null) => checks.push({ name, passed: Boolean(passed), detail });
 
@@ -54,8 +56,8 @@ check(
 );
 check(
   "Services keys are transport-only and same-transport swaps call load",
-  landingSource.includes("key={servicesTransportKey}") &&
-    !landingSource.includes("key={servicesVideoSource}") &&
+  servicesRuntimeSource.includes("key={servicesTransportKey}") &&
+    !servicesRuntimeSource.includes("key={servicesVideoSource}") &&
     landingSource.includes("sameTransportSourceChange") &&
     landingSource.includes("video.load()"),
 );

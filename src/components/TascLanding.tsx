@@ -2,27 +2,25 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { ArrowRight } from "lucide-react";
 import Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import CookieConsent from "@/components/CookieConsent";
-import { GlassCta } from "@/components/GlassCta";
 import { ClientsSection } from "@/components/sections/ClientsSection";
+import { DatumSection } from "@/components/sections/DatumSection";
+import { DominoSection } from "@/components/sections/DominoSection";
+import { HeroSection } from "@/components/sections/HeroSection";
 import { HowWeWorkSection } from "@/components/sections/HowWeWorkSection";
 import { ProcessSection } from "@/components/sections/ProcessSection";
+import { ServicesSection } from "@/components/sections/ServicesSection";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 import SitePreloader from "@/components/SitePreloader";
-import PackedAlphaVideo from "@/components/PackedAlphaVideo";
-import { ServiceTextLines } from "@/components/ServiceTextLines";
 import TascHeader from "@/components/TascHeader";
-import VisibilityTriggeredVideo from "@/components/VisibilityTriggeredVideo";
 import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
-import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, figmaMissionLines, finalImpulseCopy, journeyCtaLabel, secondRevealCopy, servicesStoryCopy, } from "@/data/landing-content";
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import {
@@ -5779,329 +5777,81 @@ export function TascLanding() {
           <span className="first-two-transition-art"/>
         </div>
 
-        <section id="main-content" className="hero-motion" tabIndex={-1} aria-label="TASC hero and mission animation">
-        <div className="hero-grid figma-hero-grid" id="top">
-          <div className="hero-copy figma-hero-copy">
-            <h1 className="figma-hero-title" aria-label={`${figmaHeroCopy.lead} ${figmaHeroCopy.accent}`}>
-              <span className="figma-hero-title-lead" aria-hidden="true">
-                <span className="figma-hero-title-lead-desktop">{figmaHeroCopy.lead}</span>
-                <span className="figma-hero-title-lead-mobile">
-                  <span>Delivering what</span>
-                  <span>matters.</span>
-                </span>
-              </span>
-              <span className="figma-hero-title-accent" aria-hidden="true">{figmaHeroCopy.accent}</span>
-            </h1>
-            <p className="figma-hero-descriptor hero-descriptor hero-subcopy">{figmaHeroCopy.descriptor}</p>
-            <div className="figma-hero-actions">
-              <GlassCta className="figma-cta-primary" href="#brief" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#brief");
-        }}>
-                <span>{journeyCtaLabel}</span>
-                <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-              </GlassCta>
-              <a className="figma-cta figma-cta-secondary figma-cta-services" href="#services" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#services");
-        }}>
-                <span className="figma-cta-content">Move to services</span>
-              </a>
-            </div>
-          </div>
-
-          <div className={`lens-stage lens-stage-${motionAllowed ? heroVideoState : "fallback"}`} data-animated-fallback-ready={heroFallbackAnimationReady ? "true" : "false"} aria-label="Looped glass lens animation">
-            <span className="lens-poster" aria-hidden="true"/>
-            {motionAllowed && heroFallbackAnimationEligible ? (<PackedAlphaVideo className="lens-safari-animation" compositeActive={packedAlphaOwner === "hero"} videoClassName="packed-alpha-video-source" src={mobilePerformanceMode ? HERO_LENS_SAFARI_MOBILE_PACKED_MP4 : HERO_LENS_SAFARI_PACKED_MP4} outputWidth={mobilePerformanceMode
-                ? RUNTIME_MEDIA.hero.webkitPacked.mobileOutput.width
-                : RUNTIME_MEDIA.hero.webkitPacked.desktopOutput.width} outputHeight={mobilePerformanceMode
-                ? RUNTIME_MEDIA.hero.webkitPacked.mobileOutput.height
-                : RUNTIME_MEDIA.hero.webkitPacked.desktopOutput.height} autoPlay loop preload="auto" pauseWhenOffscreen maxFps={lightweightMediaMode ? 30 : 60} onReady={() => setHeroFallbackAnimationReady(true)} onError={() => {
-                setHeroFallbackAnimationReady(false);
-                setHeroFallbackAnimationEligible(false);
-            }}/>) : null}
-            {motionAllowed && heroVideoEligible ? (<video className="lens-video" loop muted playsInline preload="auto">
-                <source src={HERO_LENS_VIDEO_MOBILE_WEBM} type="video/webm" media="(max-width: 760px)"/>
-                <source src={HERO_LENS_VIDEO_WEBM} type="video/webm"/>
-              </video>) : null}
-          </div>
-
-          <div className="mission-frame figma-mission-frame" aria-label="TASC mission">
-            <div className="mission-story-positioner">
-            <article className="mission-story">
-              <p className="mission-statement" aria-label={figmaMissionCopy.statement}>
-                {figmaMissionLines.statement.map((line) => (<span className="mission-copy-line" aria-hidden="true" key={line}>{line}</span>))}
-              </p>
-              <div className="mission-main-block">
-                <span className="mission-main-rule" aria-hidden="true"/>
-                <p aria-label={figmaMissionCopy.main}>
-                  <span className="mission-main-copy mission-main-copy-desktop" aria-hidden="true">
-                    {figmaMissionLines.main.map((line) => (<span className="mission-copy-line" key={line}>{line}</span>))}
-                  </span>
-                  <span className="mission-main-copy mission-main-copy-mobile" aria-hidden="true">
-                    {figmaMissionLines.mainMobile.map((line) => (<span className="mission-copy-line" key={line}>{line}</span>))}
-                  </span>
-                </p>
-              </div>
-              <p className="mission-support" aria-label={figmaMissionCopy.support}>
-                {figmaMissionLines.support.map((line) => (<span className="mission-copy-line" aria-hidden="true" key={line}>{line}</span>))}
-              </p>
-              <GlassCta className="figma-cta-primary mission-story-cta" href="#brief" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#brief");
-        }}>
-                <span className="mission-cta-label mission-cta-label-desktop">{journeyCtaLabel}</span>
-                <span className="mission-cta-label mission-cta-label-mobile">{journeyCtaLabel}</span>
-                <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-              </GlassCta>
-            </article>
-            </div>
-          </div>
-        </div>
-
-        <div className="second-stage" aria-label="Our Vision reveal">
-          <div className="second-copy vision-reveal-copy">
-            <p className="vision-reveal-label">{secondRevealCopy.label}</p>
-            <p className="vision-reveal-body">{secondRevealCopy.body}</p>
-          </div>
-          <div className="second-media vision-logo-media" aria-label="TASC Strategic Communications Group logo">
-            <Image className="vision-logo-image" src={visionLogoArmed ? "/media/vision-logo-glass-20260710.webp" : VISION_LOGO_PLACEHOLDER} alt="TASC Strategic Communications Group" width={3430} height={2160} sizes="(max-width: 760px) 112vw, 78vw" loading={visionLogoArmed ? "eager" : "lazy"} fetchPriority={visionLogoArmed ? "high" : "low"} unoptimized={!visionLogoArmed}/>
-          </div>
-        </div>
-        </section>
+        <HeroSection
+          heroFallbackAnimationEligible={heroFallbackAnimationEligible}
+          heroFallbackAnimationReady={heroFallbackAnimationReady}
+          heroVideoEligible={heroVideoEligible}
+          heroVideoState={heroVideoState}
+          lightweightMediaMode={lightweightMediaMode}
+          mobilePerformanceMode={mobilePerformanceMode}
+          motionAllowed={motionAllowed}
+          onHeroFallbackAnimationEligibleChange={setHeroFallbackAnimationEligible}
+          onHeroFallbackAnimationReadyChange={setHeroFallbackAnimationReady}
+          onNavigate={handleAnchorNavigate}
+          packedAlphaOwner={packedAlphaOwner}
+          visionLogoArmed={visionLogoArmed}
+        />
 
         <ClientsSection onNavigate={handleAnchorNavigate}/>
 
-        <div className="services-story-overlap-shell">
-          <section className="services-story-section services-section glass-editorial-section" id="services" aria-label="TASC services scroll story">
-        <div className="services-story-scene">
-          <div className="services-galaxy-stage" data-galaxy-visibility-root aria-hidden="true">
-            <div className="services-star-reveal-layer">
-              <span className="static-starfield-fallback static-starfield-services"/>
-            </div>
-          </div>
-          <div className="services-story-copy-layer">
-            {servicesStoryCopy.map((service, index) => (<article className={`services-story-panel services-story-card services-story-card-${index + 1}`} data-layout={service.layout} key={service.category}>
-                <div className="services-story-heading">
-                  <p>{service.category}</p>
-                  <h2>
-                    {service.titleLines.map((line) => (<span key={line}>{line}</span>))}
-                  </h2>
-                </div>
-                <div className="services-story-lead-block">
-                  <span className="services-story-rule" aria-hidden="true"/>
-                  <p className="services-story-lead">
-                    <ServiceTextLines lines={service.leadLines} highlights={service.leadHighlights}/>
-                  </p>
-                </div>
-                <p className="services-story-body">
-                  <ServiceTextLines lines={service.bodyLines} highlights={service.bodyHighlights}/>
-                </p>
-                <GlassCta className="figma-cta-primary services-story-cta" href="#brief" onClick={(event) => {
-                event.preventDefault();
-                handleAnchorNavigate("#brief");
-            }}>
-                  <span>{journeyCtaLabel}</span>
-                  <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-                </GlassCta>
-              </article>))}
-          </div>
-
-          <div className="services-story-video-wrap" aria-hidden="true">
-            <span className="services-story-entry-poster" style={servicesMediaArmed ? { backgroundImage: `url("${SERVICES_SEQUENCE_POSTER}")` } : undefined}/>
-            <span className="services-story-stop-posters">
-              {SERVICES_STOP_POSTERS.map((poster, index) => (<span className="services-story-stop-poster" data-services-stop={index + 1} key={poster} style={servicesStopPostersArmed ? { backgroundImage: `url("${poster}")` } : undefined}/>))}
-            </span>
-            {motionAllowed && servicesPackedTransportMode ? (<PackedAlphaVideo key={servicesTransportKey} ref={servicesVideoRef} armed={servicesMediaArmed} compositeActive={packedAlphaOwner === "services"} className="services-story-video services-story-video-packed" videoClassName="packed-alpha-video-source" src={servicesVideoSource} outputWidth={lightweightMediaMode
-                ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.width
-                : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.width} outputHeight={lightweightMediaMode
-                ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.height
-                : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.height} maxFps={RUNTIME_MEDIA.services.fps} preload={servicesMediaArmed ? "auto" : "none"} tabIndex={-1} onLoadedMetadata={() => {
-                rootRef.current?.setAttribute("data-services-video-format", "packed-alpha-h264");
-            }} onFirstFrame={() => {
-                rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
-                recoverServicesMedia();
-            }} onReady={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : motionAllowed ? (<video key={servicesTransportKey} ref={servicesVideoRef} className="services-story-video" data-armed={servicesMediaArmed ? "true" : "false"} src={servicesMediaArmed ? servicesVideoSource : undefined} muted playsInline preload={servicesMediaArmed ? "auto" : "none"} poster={servicesMediaArmed ? SERVICES_SEQUENCE_POSTER : undefined} disablePictureInPicture tabIndex={-1} onLoadedMetadata={() => {
-                rootRef.current?.setAttribute("data-services-video-format", "native-alpha-webm");
-            }} onLoadedData={() => {
-                rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
-                recoverServicesMedia();
-            }} onCanPlay={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : (<span className="services-story-poster" style={servicesMediaArmed ? { backgroundImage: `url("${SERVICES_SEQUENCE_POSTER}")` } : undefined}/>)}
-          </div>
-          </div>
-          </section>
-        </div>
+        <ServicesSection
+          activateServicesMediaFallback={activateServicesMediaFallback}
+          lightweightMediaMode={lightweightMediaMode}
+          motionAllowed={motionAllowed}
+          onNavigate={handleAnchorNavigate}
+          onNativeLoadedMetadata={() => {
+            rootRef.current?.setAttribute("data-services-video-format", "native-alpha-webm");
+          }}
+          onPackedLoadedMetadata={() => {
+            rootRef.current?.setAttribute("data-services-video-format", "packed-alpha-h264");
+          }}
+          onServicesFrameReady={() => {
+            rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
+            recoverServicesMedia();
+          }}
+          packedAlphaOwner={packedAlphaOwner}
+          recoverServicesMedia={recoverServicesMedia}
+          servicesMediaArmed={servicesMediaArmed}
+          servicesPackedTransportMode={servicesPackedTransportMode}
+          servicesStopPostersArmed={servicesStopPostersArmed}
+          servicesTransportKey={servicesTransportKey}
+          servicesVideoRef={servicesVideoRef}
+          servicesVideoSource={servicesVideoSource}
+        />
       </div>
 
       <HowWeWorkSection />
 
-      <section className="datum-motion-section glass-editorial-section" id="datum" aria-label="The Datum">
-        <div className="datum-motion-media" aria-hidden="true">
-          {motionAllowed ? (<VisibilityTriggeredVideo key={datumVideoSource} ref={datumVideoRef} className="datum-motion-video" enabled={datumMediaArmed} hostStateAttribute="data-datum-playback" sources={datumMediaArmed ? [
-                ...(webkitCompatibilityMode || lightweightMediaMode
-                    ? [{ src: datumVideoSource, type: "video/mp4" }]
-                    : []),
-                {
-                    src: lightweightMediaMode ? DATUM_VIDEO_MOBILE_WEBM : DATUM_VIDEO_WEBM,
-                    type: "video/webm",
-                },
-            ] : []} data-armed={datumMediaArmed ? "true" : "false"} poster={datumMediaArmed ? DATUM_VIDEO_POSTER : undefined} preload={datumMediaArmed ? "auto" : "metadata"} threshold={RUNTIME_MEDIA.datum.visibilityRatio} armDelayMs={0} playbackRate={0.85} onLoadedData={() => {
-                setDatumMediaPrepared(true);
-                setDatumMediaFallback(false);
-            }} onError={() => {
-                setDatumMediaPrepared(false);
-                setDatumMediaFallback(true);
-            }}/>) : null}
-        </div>
-
-        <div className="datum-motion-content">
-          <div className="datum-motion-state datum-motion-state-cards stagger-reveal-group">
-            <div className="datum-motion-heading stagger-reveal-item">
-              <h2>The Datum</h2>
-              <p>A Global Media Network. Built by TASC</p>
-            </div>
-
-            <div className="datum-card-stack">
-              {datumCardsCopy.map((card) => (<article className="datum-glass-card stagger-reveal-item" key={card.title}>
-                  <div className="datum-card-top">
-                    <strong>{card.value}</strong>
-                    <span>
-                      {card.label}
-                      <br />
-                      {card.labelSecondLine}
-                    </span>
-                  </div>
-                  <span className="datum-card-rule" aria-hidden="true"/>
-                  <h3>{card.title}</h3>
-                  <p>{card.body}</p>
-                </article>))}
-            </div>
-          </div>
-
-          <div className="datum-motion-state datum-motion-state-waitlist">
-            <p className="datum-waitlist-eyebrow datum-waitlist-segment">{datumWaitlistCopy.eyebrow}</p>
-            <h2>
-              <span className="datum-waitlist-segment">{datumWaitlistCopy.headline}</span>
-              <span className="datum-waitlist-segment">{datumWaitlistCopy.accent}</span>
-            </h2>
-
-            <form className="datum-waitlist-form" data-submit-state={datumLead.state.status} onSubmit={datumLead.submit}>
-              <div className="datum-email-row">
-                <label className="datum-waitlist-segment" htmlFor="datum-email">Your Email</label>
-                <input className="datum-waitlist-segment" id="datum-email" name="email" type="email" placeholder="EXAMPLE@MAIL.COM" autoComplete="email" maxLength={254} onFocus={datumLead.captureFirstInteraction} required/>
-                <label className="lead-honeypot" aria-hidden="true">
-                  Company website
-                  <input name="website" type="text" tabIndex={-1} autoComplete="off"/>
-                </label>
-              </div>
-              <div className="datum-consent-row">
-                <label className="datum-waitlist-segment">
-                  <input name="privacy" type="checkbox" onFocus={datumLead.captureFirstInteraction} required/>
-                  <span>
-                    I agree to the processing of my personal data and accept the{" "}
-                    <a href="/privacy-policy">Privacy Policy</a>.
-                  </span>
-                </label>
-                <button className="datum-submit-button datum-waitlist-segment" type="submit" aria-label="Submit waitlist email" disabled={datumLead.state.status === "submitting"}>
-                  {datumLead.state.status === "submitting" ? "Sending" : "Submit"}
-                  <ArrowRight aria-hidden="true" size={28} strokeWidth={1.25}/>
-                </button>
-              </div>
-              <p className={`lead-form-status is-${datumLead.state.status}`} role={datumLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
-                {datumLead.state.message}
-              </p>
-            </form>
-          </div>
-        </div>
-      </section>
+      <DatumSection
+        datumLead={datumLead}
+        datumMediaArmed={datumMediaArmed}
+        datumVideoRef={datumVideoRef}
+        datumVideoSource={datumVideoSource}
+        lightweightMediaMode={lightweightMediaMode}
+        motionAllowed={motionAllowed}
+        onMediaFallbackChange={setDatumMediaFallback}
+        onMediaPreparedChange={setDatumMediaPrepared}
+        webkitCompatibilityMode={webkitCompatibilityMode}
+      />
 
       <ProcessSection mapArmed={processMapArmed}/>
 
-      <section className="domino-cta-section glass-editorial-section" id="brief" aria-label="One impulse CTA">
-        <div className="domino-scene">
-          <div className="domino-media" aria-label="Autonomous domino animation">
-            {motionAllowed ? (<>
-                <video key={`domino-forward-${dominoTransportKey}`} ref={dominoVideoRef} className="domino-sequence domino-sequence-forward" data-domino-direction="forward" data-armed={dominoMediaArmed ? "true" : "false"} muted playsInline preload={dominoMediaArmed ? "auto" : "metadata"} disablePictureInPicture tabIndex={-1} onLoadedData={() => {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
-            }} onCanPlay={() => {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
-            }} onError={() => {
-                setDominoForwardPrepared(false);
-                setDominoForwardFallback(true);
-            }}>
-                {dominoMediaArmed ? (<>
-                    {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_MP4 : DOMINO_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("forward")}/>) : null}
-                    <source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_WEBM : DOMINO_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("forward")}/>
-                  </>) : null}
-                </video>
-                <video key={`domino-reverse-${dominoTransportKey}`} ref={dominoReverseVideoRef} className="domino-sequence domino-sequence-reverse" data-domino-direction="reverse" data-armed={dominoReverseMediaArmed ? "true" : "false"} muted playsInline preload={dominoReverseMediaArmed ? "auto" : "metadata"} disablePictureInPicture tabIndex={-1} onLoadedData={() => {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
-            }} onCanPlay={() => {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
-            }} onError={() => {
-                setDominoReversePrepared(false);
-                setDominoReverseFallback(true);
-            }}>
-                  {dominoReverseMediaArmed ? (<>
-                      {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode
-                        ? DOMINO_REVERSE_VIDEO_MOBILE_MP4
-                        : DOMINO_REVERSE_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("reverse")}/>) : null}
-                      <source src={lightweightMediaMode
-                    ? DOMINO_REVERSE_VIDEO_MOBILE_WEBM
-                    : DOMINO_REVERSE_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("reverse")}/>
-                    </>) : null}
-                </video>
-              </>) : null}
-            </div>
-          <h2 className="domino-video-title" aria-live="polite">
-            <span>{finalImpulseCopy.title}</span>
-            <span>{finalImpulseCopy.accent}</span>
-          </h2>
-        </div>
-
-        <div className="domino-form-stage">
-          <div className="domino-copy domino-impulse-copy stagger-reveal-group">
-            <p className="domino-body domino-body-primary stagger-reveal-item">
-              {finalImpulseCopy.bodyPrimary}
-            </p>
-            <p className="domino-body domino-body-signal stagger-reveal-item">
-              {finalImpulseCopy.bodySignal}
-            </p>
-            <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={dominoLead.submit}>
-              <div className="domino-impulse-row stagger-reveal-item">
-                <label className="sr-only" htmlFor="domino-email">
-                  Email
-                </label>
-                <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" required maxLength={254} autoComplete="email" onFocus={dominoLead.captureFirstInteraction}/>
-                <button type="submit" disabled={dominoLead.state.status === "submitting"}>
-                  {dominoLead.state.status === "submitting" ? "Sending" : finalImpulseCopy.action}
-                  <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5}/>
-                </button>
-              </div>
-              <label className="domino-privacy-row stagger-reveal-item">
-                <input name="privacy" type="checkbox" onFocus={dominoLead.captureFirstInteraction} required/>
-                <span className="domino-privacy-desktop">
-                  I agree to the processing of my email under the <a href="/privacy-policy">Privacy Policy</a>.
-                </span>
-                <span className="domino-privacy-mobile">
-                  By clicking you agree to our <a href="/privacy-policy">Policy</a>
-                </span>
-              </label>
-              <label className="lead-honeypot" aria-hidden="true">
-                Company website
-                <input name="website" type="text" tabIndex={-1} autoComplete="off"/>
-              </label>
-              <p className={`lead-form-status stagger-reveal-item is-${dominoLead.state.status}`} role={dominoLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
-                {dominoLead.state.message}
-              </p>
-            </form>
-          </div>
-        </div>
-      </section>
+      <DominoSection
+        dominoLead={dominoLead}
+        dominoMediaArmed={dominoMediaArmed}
+        dominoReverseMediaArmed={dominoReverseMediaArmed}
+        dominoReverseVideoRef={dominoReverseVideoRef}
+        dominoTransportKey={dominoTransportKey}
+        dominoVideoRef={dominoVideoRef}
+        lightweightMediaMode={lightweightMediaMode}
+        motionAllowed={motionAllowed}
+        onForwardFallbackChange={setDominoForwardFallback}
+        onForwardPreparedChange={setDominoForwardPrepared}
+        onReverseFallbackChange={setDominoReverseFallback}
+        onReversePreparedChange={setDominoReversePrepared}
+        reportDominoSourceError={reportDominoSourceError}
+        webkitCompatibilityMode={webkitCompatibilityMode}
+      />
 
       <SiteFooter onNavigate={handleAnchorNavigate}/>
     </main>);
