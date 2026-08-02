@@ -4,6 +4,13 @@ import { useEffect, type RefObject } from "react";
 import type Lenis from "lenis";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import {
+    getMotionInputOwnerId,
+    registerMotionInputStory,
+    type MotionInputGesture,
+    type MotionInputRegistration,
+    type MotionInputReleaseReason,
+} from "@/lib/motion-input-bus";
 
 type MobilePortionedScrollOptions = {
     enabled: boolean;
@@ -66,6 +73,8 @@ export function useMobilePortionedScroll({
         let cachedFrameStep = 1;
         let cachedAnchors: PortionAnchor[] = [];
         let cachedStoryCorridors: StoryCorridor[] = [];
+        let motionInputRegistration: MotionInputRegistration | null = null;
+        let portionStoppedLenis = false;
 
         const readViewportHeight = () => Math.max(1, window.visualViewport?.height ?? window.innerHeight);
 
@@ -201,13 +210,10 @@ export function useMobilePortionedScroll({
             }, 160);
         };
 
-        const hasLocalStoryOwner = () => root.dataset.motionInputLocked === "true" ||
-            root.dataset.servicesPinned === "true" ||
-            root.dataset.howWorkInputOwner === "true" ||
-            (root.dataset.dominoPinned === "true" &&
-                ["forward", "reverse"].includes(root.dataset.dominoPlayback ?? ""));
-
-        const hasForeignScrollOwner = () => Boolean(root.dataset.programmaticAnchor) || hasLocalStoryOwner();
+        const hasForeignScrollOwner = () => {
+            const ownerId = getMotionInputOwnerId();
+            return Boolean(root.dataset.programmaticAnchor) || Boolean(ownerId && ownerId !== "portion");
+        };
 
         const isInsideOwnedStory = (scrollPosition = window.scrollY) => cachedStoryCorridors.some(
             ({ start, end }) => scrollPosition >= start - 3 && scrollPosition <= end + 3,
@@ -218,10 +224,32 @@ export function useMobilePortionedScroll({
             const currentY = window.scrollY;
             const y = currentY + clamp(requestedY - currentY, -cachedFrameStep, cachedFrameStep);
             const lenis = lenisRef.current;
-            window.scrollTo({ top: y, left: 0, behavior: "auto" });
-            if (!lenis)
+            if (lenis)
+                lenis.scrollTo(y, { immediate: true, force: true });
+            else {
+                window.scrollTo({ top: y, left: 0, behavior: "auto" });
                 ScrollTrigger.update();
+            }
             return window.scrollY;
+        };
+
+        const claimLenis = () => {
+            const lenis = lenisRef.current;
+            if (!lenis || portionStoppedLenis || lenis.isStopped)
+                return;
+            lenis.stop();
+            portionStoppedLenis = true;
+        };
+
+        const releaseLenis = () => {
+            if (!portionStoppedLenis)
+                return;
+            const lenis = lenisRef.current;
+            portionStoppedLenis = false;
+            if (!lenis)
+                return;
+            lenis.scrollTo(window.scrollY, { immediate: true, force: true });
+            lenis.start();
         };
 
         const emitPortionEvent = (
@@ -255,14 +283,21 @@ export function useMobilePortionedScroll({
                 settledY: window.scrollY,
                 targetY,
             });
+            motionInputRegistration?.markProgress(
+                `${eventName === "tasc:portion-settled" ? "settled" : "interrupted"}:${sequence}:${targetIndex}`,
+            );
             delete root.dataset.portionedScroll;
             delete root.dataset.portionSettling;
             delete root.dataset.portionTargetIndex;
             delete root.dataset.portionTargetY;
             ScrollTrigger.update();
+            motionInputRegistration?.release(
+                eventName === "tasc:portion-settled" ? "completed" : "out-of-range",
+            );
+            releaseLenis();
         };
 
-        const interruptActivePortion = (emit = true) => {
+        const interruptActivePortion = (emit = true, keepLenisStopped = false) => {
             if (!portionTween && settleFrame === null)
                 return;
             const interruptedIndex = activeTargetIndex;
@@ -290,6 +325,8 @@ export function useMobilePortionedScroll({
             }
             delete root.dataset.portionTargetIndex;
             delete root.dataset.portionTargetY;
+            if (!keepLenisStopped)
+                releaseLenis();
         };
 
         const resolveTargetIndex = (direction: PortionDirection) => {
@@ -334,7 +371,11 @@ export function useMobilePortionedScroll({
 
             const target = cachedAnchors[targetIndex];
             const fromIndex = activeTargetIndex ?? findNearestAnchorIndex(window.scrollY) ?? -1;
-            interruptActivePortion();
+            const retargeting = hasActivePortion();
+            if (retargeting)
+                motionInputRegistration?.markProgress(`retarget:${portionSequence}:${targetIndex}`);
+            interruptActivePortion(true, retargeting);
+            claimLenis();
             const sequence = ++portionSequence;
             const proxy = { y: window.scrollY };
             activeTargetIndex = targetIndex;
@@ -352,6 +393,7 @@ export function useMobilePortionedScroll({
                 index: targetIndex,
                 targetY: target.y,
             });
+            motionInputRegistration?.markProgress(`start:${sequence}:${targetIndex}`);
             portionTween = gsap.to(proxy, {
                 y: target.y,
                 duration: PORTION_DURATION,
@@ -369,16 +411,14 @@ export function useMobilePortionedScroll({
                         const settledTargetY = activeTargetY ?? target.y;
                         const actualY = writeScroll(settledTargetY);
                         if (Math.abs(actualY - settledTargetY) <= 0.5) {
-                            settleFrame = window.requestAnimationFrame(() => {
-                                settleFrame = null;
-                                finishPortion(
-                                    sequence,
-                                    settledTargetIndex,
-                                    settledTargetY,
-                                    direction,
-                                    "tasc:portion-settled",
-                                );
-                            });
+                            settleFrame = null;
+                            finishPortion(
+                                sequence,
+                                settledTargetIndex,
+                                settledTargetY,
+                                direction,
+                                "tasc:portion-settled",
+                            );
                             return;
                         }
                         stalledFrames = Math.abs(actualY - previousY) <= 0.5
@@ -426,12 +466,15 @@ export function useMobilePortionedScroll({
         };
 
         const releasePortionToStoryOwner = () => {
-            if (!portionTween && settleFrame === null)
-                return;
-            interruptActivePortion(false);
+            if (portionTween || settleFrame !== null) {
+                motionInputRegistration?.markProgress(`interrupted:${portionSequence}`);
+                interruptActivePortion(false);
+            }
             activeTargetIndex = null;
             activeTargetY = null;
             activeTargetId = null;
+            resetGesture();
+            motionInputRegistration?.release("out-of-range");
         };
 
         const hasActivePortion = () => portionTween !== null || settleFrame !== null;
@@ -440,14 +483,14 @@ export function useMobilePortionedScroll({
             const touch = event.touches.length === 1 ? event.touches[0] : null;
             if (!touch) {
                 resetGesture();
-                return;
+                return false;
             }
             if (
                 event.target instanceof Element &&
                 event.target.closest("input, textarea, select, [contenteditable='true'], .mobile-menu-panel")
             ) {
                 resetGesture();
-                return;
+                return false;
             }
 
             startX = touch.clientX;
@@ -460,19 +503,15 @@ export function useMobilePortionedScroll({
                 releasePortionToStoryOwner();
             else
                 root.dataset.portionGesture = "tracking";
-        };
-
-        const ownTouchMove = (event: TouchEvent) => {
-            if (event.cancelable)
-                event.preventDefault();
+            return false;
         };
 
         const handleTouchMove = (event: TouchEvent) => {
             if (!tracking || blockCurrentGesture || event.defaultPrevented)
-                return;
+                return false;
             const touch = event.touches.length === 1 ? event.touches[0] : null;
             if (!touch)
-                return;
+                return false;
 
             if (
                 hasForeignScrollOwner() ||
@@ -480,7 +519,7 @@ export function useMobilePortionedScroll({
             ) {
                 blockCurrentGesture = true;
                 releasePortionToStoryOwner();
-                return;
+                return false;
             }
 
             const deltaX = touch.clientX - startX;
@@ -490,43 +529,95 @@ export function useMobilePortionedScroll({
                     Math.abs(deltaX) > Math.abs(deltaY) * HORIZONTAL_BIAS ||
                     Math.abs(deltaY) < TOUCH_COMMIT_PX
                 ) {
-                    return;
+                    return false;
                 }
                 if (!beginPortion(deltaY > 0 ? 1 : -1))
-                    return;
+                    return false;
                 committed = true;
             }
-            ownTouchMove(event);
+            return true;
         };
 
         const handleTouchEnd = () => {
             resetGesture();
+            return !hasActivePortion();
+        };
+
+        const canClaimPortionedGesture = (gesture: MotionInputGesture) => {
+            if (!compactQuery.matches || hasForeignScrollOwner())
+                return false;
+            if (motionInputRegistration?.isOwner())
+                return true;
+            if (
+                tracking && committed &&
+                (gesture.kind === "touchmove" ||
+                    gesture.kind === "touchend" ||
+                    gesture.kind === "touchcancel")
+            ) {
+                return true;
+            }
+            if (gesture.kind !== "touchstart")
+                return false;
+            const event = gesture.event as TouchEvent;
+            if (isInsideOwnedStory(gesture.scrollY))
+                return false;
+            const touch = event.touches.length === 1 ? event.touches[0] : null;
+            if (!touch)
+                return false;
+            return !(event.target instanceof Element && event.target.closest(
+                "input, textarea, select, [contenteditable='true'], .mobile-menu-panel",
+            ));
+        };
+
+        const handleMotionGesture = (gesture: MotionInputGesture) => {
+            if (
+                gesture.kind !== "touchstart" &&
+                gesture.kind !== "touchmove" &&
+                gesture.kind !== "touchend" &&
+                gesture.kind !== "touchcancel"
+            )
+                return false;
+            const event = gesture.event as TouchEvent;
+            if (gesture.kind === "touchstart")
+                return handleTouchStart(event);
+            if (gesture.kind === "touchmove")
+                return handleTouchMove(event);
+            if (gesture.kind === "touchend" || gesture.kind === "touchcancel") {
+                const release = handleTouchEnd();
+                return { release };
+            }
+            return false;
+        };
+
+        const releaseMotionOwnership = (reason: MotionInputReleaseReason) => {
+            interruptActivePortion(reason !== "completed");
+            portionSequence += 1;
+            activeTargetIndex = null;
+            activeTargetY = null;
+            activeTargetId = null;
+            resetGesture();
         };
 
         rebuildGeometry();
+        motionInputRegistration = registerMotionInputStory({
+            canClaim: canClaimPortionedGesture,
+            id: "portion",
+            onGesture: handleMotionGesture,
+            priority: 10,
+            release: releaseMotionOwnership,
+            root,
+        });
         ScrollTrigger.addEventListener("refresh", rebuildGeometry);
         window.visualViewport?.addEventListener("resize", scheduleViewportGeometryUpdate);
         window.addEventListener("tasc:scroll-position-applied", releasePortionToStoryOwner);
-        window.addEventListener("touchstart", handleTouchStart, {
-            capture: true,
-            passive: true,
-        });
-        window.addEventListener("touchmove", handleTouchMove, {
-            capture: true,
-            passive: false,
-        });
-        window.addEventListener("touchend", handleTouchEnd, {
-            capture: true,
-            passive: true,
-        });
-        window.addEventListener("touchcancel", handleTouchEnd, {
-            capture: true,
-            passive: true,
-        });
 
         return () => {
             portionSequence += 1;
             interruptActivePortion(false);
+            releaseLenis();
+            resetGesture();
+            motionInputRegistration?.unregister();
+            motionInputRegistration = null;
             if (viewportResizeFrame !== null) {
                 window.cancelAnimationFrame(viewportResizeFrame);
                 viewportResizeFrame = null;
@@ -546,10 +637,6 @@ export function useMobilePortionedScroll({
             ScrollTrigger.removeEventListener("refresh", rebuildGeometry);
             window.visualViewport?.removeEventListener("resize", scheduleViewportGeometryUpdate);
             window.removeEventListener("tasc:scroll-position-applied", releasePortionToStoryOwner);
-            window.removeEventListener("touchstart", handleTouchStart, true);
-            window.removeEventListener("touchmove", handleTouchMove, true);
-            window.removeEventListener("touchend", handleTouchEnd, true);
-            window.removeEventListener("touchcancel", handleTouchEnd, true);
         };
     }, [enabled, lenisRef, rootRef]);
 }

@@ -646,27 +646,118 @@ const sendSwipe = async (session, direction, options) =>
     ? dispatchChromiumTouchSwipe(session.cdp, session.page, direction, options)
     : dispatchSyntheticTouchSwipe(session.page, direction, options);
 
+const dispatchSyntheticTouchBurst = async (page, directions, betweenGesturesMs) => {
+  const firstIdentifier = touchSequence + 1;
+  touchSequence += directions.length;
+  return page.evaluate(
+    async ({ signs, gapMs, identifierStart }) => {
+      const adapters = [];
+      const burstStartedAt = performance.now();
+      for (let index = 0; index < signs.length; index += 1) {
+        const sign = signs[index];
+        const x = Math.max(18, Math.round(innerWidth * 0.08));
+        const startY = sign > 0 ? Math.round(innerHeight * 0.72) : Math.round(innerHeight * 0.28);
+        const endY = startY - sign * Math.min(Math.round(innerHeight * 0.35), 96);
+        const hit = document.elementFromPoint(x, startY);
+        const target =
+          hit instanceof Element && !hit.closest("input,textarea,select,[contenteditable='true']")
+            ? hit
+            : document.querySelector(".site-shell") ?? document.body;
+        const startedAt = performance.now();
+        const events = [];
+        const makeTouch = (y) => {
+          try {
+            return new Touch({
+              identifier: identifierStart + index,
+              target,
+              clientX: x,
+              clientY: y,
+              screenX: x,
+              screenY: y,
+              pageX: x,
+              pageY: y + scrollY,
+              radiusX: 8,
+              radiusY: 8,
+              rotationAngle: 0,
+              force: 0.8,
+            });
+          } catch {
+            return {
+              identifier: identifierStart + index,
+              target,
+              clientX: x,
+              clientY: y,
+              pageX: x,
+              pageY: y + scrollY,
+            };
+          }
+        };
+        const dispatch = (type, y, ending = false) => {
+          const touch = makeTouch(y);
+          let event;
+          try {
+            event = new TouchEvent(type, {
+              bubbles: true,
+              cancelable: true,
+              composed: true,
+              touches: ending ? [] : [touch],
+              targetTouches: ending ? [] : [touch],
+              changedTouches: [touch],
+            });
+          } catch {
+            event = new Event(type, { bubbles: true, cancelable: true, composed: true });
+            Object.defineProperties(event, {
+              touches: { value: ending ? [] : [touch] },
+              targetTouches: { value: ending ? [] : [touch] },
+              changedTouches: { value: [touch] },
+            });
+          }
+          const allowed = target.dispatchEvent(event);
+          const record = { type, allowed, defaultPrevented: event.defaultPrevented };
+          events.push(record);
+          return record;
+        };
+        const dispatchOffsetMs = performance.now() - burstStartedAt;
+        dispatch("touchstart", startY);
+        const move = dispatch("touchmove", endY);
+        if (move.allowed && !move.defaultPrevented)
+          scrollBy({ top: startY - endY, left: 0, behavior: "auto" });
+        dispatch("touchend", endY, true);
+        adapters.push({
+          adapter: "webkit-synthetic-dom-touch-with-cancel-aware-scroll-fallback",
+          trusted: false,
+          limitation: "Synthetic DOM TouchEvent is not physical iOS Safari input or momentum.",
+          magnitude: 96,
+          steps: 1,
+          stepDelayMs: 0,
+          elapsedMs: performance.now() - startedAt,
+          canceledMoves: events.filter(
+            (event) => event.type === "touchmove" && event.defaultPrevented,
+          ).length,
+          events,
+          configuredGapMs: gapMs,
+          dispatchOffsetMs,
+        });
+        if (gapMs > 0 && index < signs.length - 1)
+          await new Promise((resolve) => setTimeout(resolve, gapMs));
+      }
+      return adapters;
+    },
+    {
+      signs: directions,
+      gapMs: betweenGesturesMs,
+      identifierStart: firstIdentifier,
+    },
+  );
+};
+
 const sendSwipeBurst = async (session, directions, { betweenGesturesMs = 0 } = {}) => {
   if (session.cdp) {
     return dispatchChromiumTouchBurst(session.cdp, session.page, directions, {
       betweenGesturesMs,
     });
   }
-  const adapters = [];
-  const startedAt = Date.now();
-  for (const direction of directions) {
-    const dispatchOffsetMs = Date.now() - startedAt;
-    const adapter = await dispatchSyntheticTouchSwipe(session.page, direction, {
-        magnitude: 96,
-        steps: 1,
-        stepDelayMs: 0,
-      });
-    adapters.push({ ...adapter, configuredGapMs: betweenGesturesMs, dispatchOffsetMs });
-    if (betweenGesturesMs > 0 && adapters.length < directions.length) {
-      await delay(betweenGesturesMs);
-    }
-  }
-  return adapters;
+  return dispatchSyntheticTouchBurst(session.page, directions, betweenGesturesMs);
 };
 
 const waitForPortionTerminal = async (page, expectedStartCount) => {
