@@ -6,6 +6,11 @@ import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { DOMINO_DURATION } from "@/data/runtime-media";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
+import {
+    getMotionInputOwnerId,
+    registerMotionInputStory,
+    type MotionInputRegistration,
+} from "@/lib/motion-input-bus";
 import { revealTime } from "@/lib/tasc-motion-timings";
 import { getVisualViewportHeight } from "@/lib/visibility";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -94,10 +99,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             let touchDelta = 0;
             let touchConsumed = false;
             let pendingDirection: -1 | 1 | null = null;
-            const hasForeignInputOwner = () => Boolean(root.dataset.portionedScroll || root.dataset.portionGesture) ||
-                root.dataset.servicesPinned === "true" ||
-                root.dataset.dominoPinned === "true" ||
-                root.dataset.motionInputLocked === "true";
+            let howInputRegistration: MotionInputRegistration | null = null;
+            const hasForeignInputOwner = () => {
+                const ownerId = getMotionInputOwnerId();
+                return Boolean(ownerId && ownerId !== "how");
+            };
             const accumulateDirectionalDelta = (accumulated: number, delta: number) => accumulated === 0 || Math.sign(accumulated) === Math.sign(delta) ? accumulated + delta : delta;
             const normalizeHowWheel = (event: WheelEvent) => {
                 if (event.deltaMode === WheelEvent.DOM_DELTA_LINE)
@@ -131,6 +137,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 howStepTween = null;
                 transitioning = false;
                 delete root.dataset.howWorkTransitioning;
+                howInputRegistration?.markProgress(`settled-${currentStep + 1}`);
             };
             const killHowStepTween = () => {
                 if (!howStepTween) {
@@ -194,6 +201,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const setCurrentStep = (step: number, alignScroll = true) => {
                 currentStep = Math.max(0, Math.min(howStops.length - 1, step));
                 root.dataset.howWorkStep = String(currentStep + 1);
+                howInputRegistration?.markProgress(`step-${currentStep + 1}`);
                 if (alignScroll)
                     animateHowScroll(getStepScroll(currentStep));
             };
@@ -221,12 +229,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 if (!inputListenersAttached)
                     return;
                 inputListenersAttached = false;
-                window.removeEventListener("wheel", handleWheel, true);
-                window.removeEventListener("touchstart", handleTouchStart, true);
-                window.removeEventListener("touchmove", handleTouchMove, true);
-                window.removeEventListener("touchend", handleTouchEnd, true);
-                window.removeEventListener("touchcancel", handleTouchEnd, true);
-                window.removeEventListener("keydown", handleKey, true);
+                howInputRegistration?.release("out-of-range");
                 resetWheelGesture();
                 resetTouchGesture();
             }
@@ -234,6 +237,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 inputOwner = false;
                 pendingDirection = null;
                 delete root.dataset.howWorkInputOwner;
+                howInputRegistration?.release("completed");
                 if (detach)
                     detachInputListeners();
             };
@@ -245,6 +249,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 root.dataset.howWorkInputOwner = "true";
                 root.dataset.howWorkPinned = "true";
                 root.dataset.howWorkStep = String(currentStep + 1);
+                howInputRegistration?.claim(`step-${currentStep + 1}`);
                 attachInputListeners();
                 return true;
             };
@@ -353,7 +358,6 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const ownEvent = (event: Event) => {
                 if (event.cancelable)
                     event.preventDefault();
-                event.stopImmediatePropagation();
             };
             function handleWheel(event: WheelEvent) {
                 if (event.ctrlKey)
@@ -451,12 +455,6 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 if (inputListenersAttached || disposed || inputSuppressed)
                     return;
                 inputListenersAttached = true;
-                window.addEventListener("wheel", handleWheel, { capture: true, passive: false });
-                window.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
-                window.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
-                window.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("keydown", handleKey, true);
             }
             const syncInputListeners = () => {
                 const shouldListen = !inputSuppressed && (inputRangeActive || Boolean(howTrigger?.isActive) || inputOwner);
@@ -465,6 +463,45 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 else
                     detachInputListeners();
             };
+            howInputRegistration = registerMotionInputStory({
+                id: "how",
+                priority: 80,
+                root,
+                canClaim: (gesture) => {
+                    if (!inputListenersAttached || disposed || inputSuppressed || hasForeignInputOwner())
+                        return false;
+                    if (gesture.kind === "scroll")
+                        return inputOwner;
+                    return inputOwner || inputRangeActive || Boolean(howTrigger?.isActive);
+                },
+                onGesture: ({ event, kind }) => {
+                    if (kind === "wheel")
+                        handleWheel(event as WheelEvent);
+                    else if (kind === "touchstart")
+                        handleTouchStart(event as TouchEvent);
+                    else if (kind === "touchmove")
+                        handleTouchMove(event as TouchEvent);
+                    else if (kind === "touchend" || kind === "touchcancel")
+                        handleTouchEnd();
+                    else if (kind === "keydown")
+                        handleKey(event as KeyboardEvent);
+                    return {
+                        handled: event.defaultPrevented,
+                        progress: inputOwner ? `step-${currentStep + 1}` : undefined,
+                        release: !inputOwner,
+                    };
+                },
+                release: (reason) => {
+                    inputOwner = false;
+                    pendingDirection = null;
+                    delete root.dataset.howWorkInputOwner;
+                    if (reason === "watchdog") {
+                        killHowStepTween();
+                        delete root.dataset.howWorkPinned;
+                        lenisRef.current?.start();
+                    }
+                },
+            });
             const howEntrance = gsap.fromTo(howInner, { y: 54, autoAlpha: 0 }, {
                 y: 0,
                 autoAlpha: 1,
@@ -515,11 +552,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                         }
                     },
                     onToggle: (self) => {
-                        if (self.isActive &&
-                            !root.dataset.portionedScroll &&
-                            !root.dataset.portionGesture &&
-                            root.dataset.servicesPinned !== "true" &&
-                            root.dataset.dominoPinned !== "true") {
+                        const ownerId = getMotionInputOwnerId();
+                        if (self.isActive && (!ownerId || ownerId === "how")) {
                             root.dataset.howWorkPinned = "true";
                         }
                         else {
@@ -609,6 +643,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 disposed = true;
                 inputSuppressed = true;
                 releaseInputOwner(true);
+                howInputRegistration?.unregister();
+                howInputRegistration = null;
                 killHowStepTween();
                 window.clearTimeout(wheelQuietTimer);
                 howRange?.kill();
@@ -671,6 +707,9 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             let dominoTrigger: ScrollTrigger | null = null;
             let dominoApproachTrigger: ScrollTrigger | null = null;
             let dominoReadinessTrigger: ScrollTrigger | null = null;
+            let dominoInputRangeTrigger: ScrollTrigger | null = null;
+            let dominoInputRangeActive = false;
+            let dominoInputRegistration: MotionInputRegistration | null = null;
             let syncInputListeners = () => { };
             let formHandoffTimer = 0;
             let formHandoffActive = false;
@@ -847,6 +886,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 setTitleOpacity?.(titleOpacity);
                 setTitleY?.(ascent);
                 root.dataset.dominoProgress = progress.toFixed(3);
+                dominoInputRegistration?.markProgress(`frame-${Math.floor(progress * 60)}`);
             };
             const markActive = (video: HTMLVideoElement, state: "playing" | "ready") => {
                 videos.forEach((candidate) => {
@@ -1255,7 +1295,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const commitSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
-                if ((root.dataset.portionedScroll || root.dataset.portionGesture) && navigationTarget !== "#brief")
+                if (getMotionInputOwnerId() === "portion" && navigationTarget !== "#brief")
                     return false;
                 if (navigationTarget && navigationTarget !== "#brief")
                     return false;
@@ -1308,7 +1348,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const startSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
-                if ((root.dataset.portionedScroll || root.dataset.portionGesture) && navigationTarget !== "#brief")
+                if (getMotionInputOwnerId() === "portion" && navigationTarget !== "#brief")
                     return false;
                 if (navigationTarget && navigationTarget !== "#brief")
                     return false;
@@ -1380,7 +1420,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 return true;
             };
             const startForwardFromApproach = () => {
-                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture)
+                if (locked || getMotionInputOwnerId() === "portion")
                     return forwardApproachAlignPending;
                 forwardApproachAlignPending = true;
                 const approachBoundary = Math.max(0, (dominoTrigger?.start ?? window.scrollY) - getVisualViewportHeight() * 0.5);
@@ -1543,7 +1583,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     requestDirection(forward ? 1 : -1);
             };
             const handleEntryWheel = (event: WheelEvent) => {
-                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || event.ctrlKey)
+                if (locked || getMotionInputOwnerId() === "portion" || event.ctrlKey)
                     return;
                 const delta = normalizeWheel(event);
                 if (Math.abs(delta) < 2)
@@ -1579,7 +1619,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 }
             };
             const handleEntryTouchStart = (event: TouchEvent) => {
-                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || performance.now() < postUnlockQuietUntil || !event.touches[0]) {
+                if (locked || getMotionInputOwnerId() === "portion" || performance.now() < postUnlockQuietUntil || !event.touches[0]) {
                     entryTouchY = null;
                     entryTouchDelta = 0;
                     entryTouchEpoch = -1;
@@ -1591,8 +1631,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             };
             const handleEntryTouchMove = (event: TouchEvent) => {
                 if (locked ||
-                    root.dataset.portionedScroll ||
-                    root.dataset.portionGesture ||
+                    getMotionInputOwnerId() === "portion" ||
                     entryTouchY === null ||
                     entryTouchEpoch !== gestureEpoch ||
                     performance.now() < postUnlockQuietUntil ||
@@ -1631,7 +1670,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 entryTouchEpoch = -1;
             };
             const handleEntryKey = (event: KeyboardEvent) => {
-                if (locked || root.dataset.portionedScroll || root.dataset.portionGesture || event.target instanceof Element && event.target.closest("input, textarea, select, button")) {
+                if (locked || getMotionInputOwnerId() === "portion" || event.target instanceof Element && event.target.closest("input, textarea, select, button")) {
                     return;
                 }
                 const forward = event.key === "ArrowDown" || event.key === "PageDown" || (event.key === " " && !event.shiftKey);
@@ -1849,44 +1888,81 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     }
                 },
             });
-            let inputListenersAttached = false;
-            const attachInputListeners = () => {
-                if (inputListenersAttached)
-                    return;
-                inputListenersAttached = true;
-                window.addEventListener("wheel", handleWheel, { capture: true, passive: false });
-                window.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
-                window.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
-                window.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("scroll", handleLockedScroll, { passive: true });
-                window.addEventListener("keydown", handleKey, true);
-            };
-            const detachInputListeners = () => {
-                if (!inputListenersAttached)
-                    return;
-                inputListenersAttached = false;
-                window.removeEventListener("wheel", handleWheel, true);
-                window.removeEventListener("touchstart", handleTouchStart, true);
-                window.removeEventListener("touchmove", handleTouchMove, true);
-                window.removeEventListener("touchend", handleTouchEnd, true);
-                window.removeEventListener("touchcancel", handleTouchEnd, true);
-                window.removeEventListener("scroll", handleLockedScroll);
-                window.removeEventListener("keydown", handleKey, true);
-            };
+            dominoInputRangeTrigger = ScrollTrigger.create({
+                id: "domino-input-range",
+                trigger: dominoSection,
+                start: "top 120%",
+                end: "bottom -20%",
+                refreshPriority: 4,
+                invalidateOnRefresh: true,
+                onToggle: (self) => {
+                    dominoInputRangeActive = self.isActive;
+                    if (!self.isActive && !locked)
+                        dominoInputRegistration?.release("out-of-range");
+                },
+            });
             syncInputListeners = () => {
                 if (locked)
-                    attachInputListeners();
+                    dominoInputRegistration?.claim(`frame-${Math.floor(clamp01(logicalTime / getDuration()) * 60)}`);
                 else
-                    detachInputListeners();
+                    dominoInputRegistration?.release("completed");
             };
+            dominoInputRegistration = registerMotionInputStory({
+                id: "domino",
+                priority: 70,
+                root,
+                canClaim: (gesture) => {
+                    if (disposed || root.dataset.programmaticAnchor && root.dataset.programmaticAnchor !== "#brief")
+                        return false;
+                    if (getMotionInputOwnerId() === "portion")
+                        return false;
+                    if (gesture.kind === "scroll")
+                        return locked;
+                    return locked || dominoInputRangeActive || Boolean(dominoApproachTrigger?.isActive) || Boolean(dominoTrigger?.isActive);
+                },
+                onGesture: ({ event, kind }) => {
+                    if (locked) {
+                        if (kind === "wheel")
+                            handleWheel(event as WheelEvent);
+                        else if (kind === "touchstart")
+                            handleTouchStart(event as TouchEvent);
+                        else if (kind === "touchmove")
+                            handleTouchMove(event as TouchEvent);
+                        else if (kind === "touchend" || kind === "touchcancel")
+                            handleTouchEnd();
+                        else if (kind === "keydown")
+                            handleKey(event as KeyboardEvent);
+                        else if (kind === "scroll")
+                            handleLockedScroll();
+                    }
+                    else {
+                        if (kind === "wheel")
+                            handleEntryWheel(event as WheelEvent);
+                        else if (kind === "touchstart")
+                            handleEntryTouchStart(event as TouchEvent);
+                        else if (kind === "touchmove")
+                            handleEntryTouchMove(event as TouchEvent);
+                        else if (kind === "touchend" || kind === "touchcancel")
+                            handleEntryTouchEnd();
+                        else if (kind === "keydown")
+                            handleEntryKey(event as KeyboardEvent);
+                    }
+                    const releaseEntryOwner = !locked &&
+                        (kind === "wheel" || kind === "keydown" || kind === "touchend" || kind === "touchcancel");
+                    return {
+                        handled: event.defaultPrevented,
+                        progress: locked ? `frame-${Math.floor(clamp01(logicalTime / getDuration()) * 60)}` : undefined,
+                        release: releaseEntryOwner,
+                    };
+                },
+                release: () => {
+                    if (locked)
+                        cancelSession();
+                    else
+                        resetGestureTracking();
+                },
+            });
             syncInputListeners();
-            window.addEventListener("wheel", handleEntryWheel, { capture: true, passive: false });
-            window.addEventListener("touchstart", handleEntryTouchStart, { capture: true, passive: true });
-            window.addEventListener("touchmove", handleEntryTouchMove, { capture: true, passive: false });
-            window.addEventListener("touchend", handleEntryTouchEnd, { capture: true, passive: true });
-            window.addEventListener("touchcancel", handleEntryTouchEnd, { capture: true, passive: true });
-            window.addEventListener("keydown", handleEntryKey, true);
             window.addEventListener("tasc:release-directional-domino", cancelSession);
             dominoForwardVideo.addEventListener("loadeddata", handleForwardTransportAvailable);
             dominoForwardVideo.addEventListener("canplay", handleForwardTransportAvailable);
@@ -1901,6 +1977,9 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 dominoTrigger?.kill();
                 dominoApproachTrigger?.kill();
                 dominoReadinessTrigger?.kill();
+                dominoInputRangeTrigger?.kill();
+                dominoInputRegistration?.unregister();
+                dominoInputRegistration = null;
                 window.clearTimeout(transportRetryTimer);
                 transportRetryTimer = 0;
                 transportUnavailableTimers.forEach((timer) => window.clearTimeout(timer));
@@ -1910,13 +1989,6 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 window.cancelAnimationFrame(boundaryHoldFrame);
                 boundaryHoldFrame = 0;
                 removeReadinessListeners();
-                detachInputListeners();
-                window.removeEventListener("wheel", handleEntryWheel, true);
-                window.removeEventListener("touchstart", handleEntryTouchStart, true);
-                window.removeEventListener("touchmove", handleEntryTouchMove, true);
-                window.removeEventListener("touchend", handleEntryTouchEnd, true);
-                window.removeEventListener("touchcancel", handleEntryTouchEnd, true);
-                window.removeEventListener("keydown", handleEntryKey, true);
                 window.removeEventListener("tasc:release-directional-domino", cancelSession);
                 dominoForwardVideo.removeEventListener("loadeddata", handleForwardTransportAvailable);
                 dominoForwardVideo.removeEventListener("canplay", handleForwardTransportAvailable);

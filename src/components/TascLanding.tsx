@@ -25,7 +25,18 @@ import { useLeadSubmission } from "@/hooks/useLeadSubmission";
 import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, figmaMissionLines, finalImpulseCopy, journeyCtaLabel, secondRevealCopy, servicesStoryCopy, } from "@/data/landing-content";
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
+import {
+    hasExplicitConstrainedConnectionSignal,
+    MEASURED_CONSTRAINED_MEGABITS_PER_SECOND,
+    observeFirstMediaThroughput,
+} from "@/lib/connection-profile";
 import { isMediaBufferedThrough } from "@/lib/media-buffer";
+import {
+    getMotionInputOwnerId,
+    registerMotionInputObserver,
+    registerMotionInputStory,
+    type MotionInputRegistration,
+} from "@/lib/motion-input-bus";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { getVisualViewportHeight } from "@/lib/visibility";
 import type { HeroVideoState, LensPose, MotionNavigationController, } from "@/types/landing";
@@ -161,6 +172,7 @@ export function TascLanding() {
     const [heroFallbackAnimationEligible, setHeroFallbackAnimationEligible] = useState(false);
     const [heroFallbackAnimationReady, setHeroFallbackAnimationReady] = useState(false);
     const [packedAlphaOwner, setPackedAlphaOwner] = useState<"hero" | "services">("hero");
+    const measuredConstrainedConnectionRef = useRef(false);
     const datumLead = useLeadSubmission("datum_waitlist");
     const dominoLead = useLeadSubmission("project_brief");
     const lightweightMediaMode = mobilePerformanceMode || constrainedConnection;
@@ -355,7 +367,6 @@ export function TascLanding() {
         const syncPerformanceMode = () => {
             const device = navigator as Navigator & {
                 connection?: {
-                    downlink?: number;
                     effectiveType?: string;
                     saveData?: boolean;
                 };
@@ -398,11 +409,9 @@ export function TascLanding() {
             setNativeAlphaWebMSupported(supportsNativeAlphaWebM);
             setForcePackedTransport(forcePacked);
             setMacPerformanceMode(isMacOS);
-            setConstrainedConnection(Boolean(device.connection?.saveData) ||
-                device.connection?.effectiveType === "slow-2g" ||
-                device.connection?.effectiveType === "2g" ||
-                device.connection?.effectiveType === "3g" ||
-                (typeof device.connection?.downlink === "number" && device.connection.downlink <= 1.5));
+            setConstrainedConnection(
+                hasExplicitConstrainedConnectionSignal(device) || measuredConstrainedConnectionRef.current,
+            );
             setMobilePerformanceMode(media.matches ||
                 (!isMacOS && (lowMemory || lowCpu)) ||
                 Boolean(device.connection?.saveData));
@@ -412,6 +421,19 @@ export function TascLanding() {
         media.addEventListener("change", syncPerformanceMode);
         return () => media.removeEventListener("change", syncPerformanceMode);
     }, []);
+    useEffect(() => observeFirstMediaThroughput((megabitsPerSecond) => {
+        const root = rootRef.current;
+        if (root) {
+            root.dataset.measuredMediaThroughputMbps = megabitsPerSecond.toFixed(2);
+            root.dataset.measuredConnectionProfile = megabitsPerSecond <= MEASURED_CONSTRAINED_MEGABITS_PER_SECOND
+                ? "constrained"
+                : "standard";
+        }
+        if (megabitsPerSecond <= MEASURED_CONSTRAINED_MEGABITS_PER_SECOND) {
+            measuredConstrainedConnectionRef.current = true;
+            setConstrainedConnection(true);
+        }
+    }), []);
     useEffect(() => {
         if (!motionAllowed ||
             !performanceModeResolved ||
@@ -944,12 +966,14 @@ export function TascLanding() {
         let observer: IntersectionObserver | null = null;
         let proximityFrame = 0;
         let proximityListenersAttached = false;
+        let unregisterProximityInputObserver = () => { };
         let nearbyReevaluationTimer = 0;
         function stopProximityTracking() {
             observer?.disconnect();
             observer = null;
             if (proximityListenersAttached) {
-                window.removeEventListener("scroll", scheduleProximityCheck);
+                unregisterProximityInputObserver();
+                unregisterProximityInputObserver = () => { };
                 window.removeEventListener("resize", scheduleProximityCheck);
                 proximityListenersAttached = false;
             }
@@ -990,7 +1014,10 @@ export function TascLanding() {
         const startProximityFallback = () => {
             if (proximityListenersAttached)
                 return;
-            window.addEventListener("scroll", scheduleProximityCheck, { passive: true });
+            unregisterProximityInputObserver = registerMotionInputObserver("media-proximity", ({ kind }) => {
+                if (kind === "scroll")
+                    scheduleProximityCheck();
+            });
             window.addEventListener("resize", scheduleProximityCheck, { passive: true });
             proximityListenersAttached = true;
             scheduleProximityCheck();
@@ -1329,11 +1356,11 @@ export function TascLanding() {
             programmaticNavigationRef.current = true;
             let settleCancelled = false;
             let settleFrame = 0;
+            let unregisterInputObserver = () => { };
             const removeIntentListeners = () => {
-                window.removeEventListener("wheel", cancelSettle);
-                window.removeEventListener("touchstart", cancelSettle);
+                unregisterInputObserver();
+                unregisterInputObserver = () => { };
                 window.removeEventListener("pointerdown", cancelSettle);
-                window.removeEventListener("keydown", handleNavigationKey);
             };
             const completeSettle = () => {
                 removeIntentListeners();
@@ -1355,15 +1382,17 @@ export function TascLanding() {
                 window.cancelAnimationFrame(settleFrame);
                 completeSettle();
             }
-            function handleNavigationKey(event: KeyboardEvent) {
-                if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
+            unregisterInputObserver = registerMotionInputObserver("anchor-settle", ({ event, kind }) => {
+                if (kind === "wheel" || kind === "touchstart") {
+                    cancelSettle();
+                    return;
+                }
+                if (kind === "keydown" && event instanceof KeyboardEvent &&
+                    ["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) {
                     cancelSettle();
                 }
-            }
-            window.addEventListener("wheel", cancelSettle, { passive: true });
-            window.addEventListener("touchstart", cancelSettle, { passive: true });
+            });
             window.addEventListener("pointerdown", cancelSettle, { passive: true });
-            window.addEventListener("keydown", handleNavigationKey);
             anchorSettleCleanupRef.current = cancelSettle;
             const applyPosition = (nextTop: number) => {
                 const targetTop = Math.max(0, Math.round(nextTop));
@@ -1618,6 +1647,7 @@ export function TascLanding() {
                 gsap.set(servicesMediaVisuals, { autoAlpha: 1 });
         };
         let servicesPhase: "idle" | "preparing" | "playing" | "waiting" | "releasing" | "reverse" = "idle";
+        let servicesInputRegistration: MotionInputRegistration | null = null;
         let servicesEntryDirection: 1 | -1 = 1;
         let servicesLockY = 0;
         let servicesGestureTotal = 0;
@@ -1676,8 +1706,11 @@ export function TascLanding() {
                 documentScrollDirection = delta > 0 ? 1 : -1;
             documentScrollY = nextY;
         };
-        window.addEventListener("scroll", trackDocumentScrollDirection, { passive: true });
-        cleanupCallbacks.push(() => window.removeEventListener("scroll", trackDocumentScrollDirection));
+        const unregisterDocumentDirectionObserver = registerMotionInputObserver("document-direction", ({ kind }) => {
+            if (kind === "scroll")
+                trackDocumentScrollDirection();
+        });
+        cleanupCallbacks.push(unregisterDocumentDirectionObserver);
         const managedRevealElements = new Set<HTMLElement>();
         const managedRevealTriggers = new Set<HTMLElement>();
         const registerManagedRevealElements = (elements: Iterable<HTMLElement>) => {
@@ -2084,6 +2117,8 @@ export function TascLanding() {
                     finish(false);
                     return;
                 }
+                if (media === servicesVideo && servicesInputRegistration?.isOwner())
+                    servicesInputRegistration.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
                 if (hasReachedSegmentTarget()) {
                     video.dataset.segmentState = "ready";
                     finish(true, snapToFinalFrame);
@@ -2438,7 +2473,6 @@ export function TascLanding() {
         };
         let servicesTextResolve: (() => void) | null = null;
         let servicesEntryRetryResolve: (() => void) | null = null;
-        let syncBlockingInputListeners = () => { };
         const clearServicesEntryRetry = () => {
             window.clearTimeout(servicesEntryRetryTimer);
             servicesEntryRetryTimer = 0;
@@ -2473,11 +2507,15 @@ export function TascLanding() {
             else {
                 delete root.dataset.motionInputLocked;
             }
-            syncBlockingInputListeners();
         };
         const setServicesPhase = (phase: typeof servicesPhase) => {
             servicesPhase = phase;
             root.dataset.servicesPhase = phase;
+            const progress = `${phase}:${Math.max(0, servicesStage + 1)}`;
+            if (phase === "preparing" || phase === "playing" || phase === "releasing" || phase === "reverse")
+                servicesInputRegistration?.claim(progress);
+            else
+                servicesInputRegistration?.release(phase === "waiting" ? "completed" : "out-of-range");
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
@@ -3021,7 +3059,7 @@ export function TascLanding() {
                     reason = "effect-disposed";
                 else if (servicesVideoRef.current !== entryVideo)
                     reason = "media-owner-changed";
-                else if (root.dataset.dominoPinned === "true")
+                else if (getMotionInputOwnerId() === "domino")
                     reason = "domino-active";
                 else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
                     reason = "other-navigation";
@@ -3159,7 +3197,7 @@ export function TascLanding() {
                     reason = "effect-disposed";
                 else if (servicesVideoRef.current !== entryVideo)
                     reason = "media-owner-changed";
-                else if (root.dataset.dominoPinned === "true")
+                else if (getMotionInputOwnerId() === "domino")
                     reason = "domino-active";
                 else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
                     reason = "other-navigation";
@@ -3617,20 +3655,6 @@ export function TascLanding() {
             servicesLastBlockedInputAt = 0;
             servicesBlockedDirection = 0;
         };
-        const trackServicesTouchStart = () => {
-            servicesTouchGestureActive = true;
-        };
-        const trackServicesTouchEnd = () => {
-            servicesTouchGestureActive = false;
-        };
-        window.addEventListener("touchstart", trackServicesTouchStart, { capture: true, passive: true });
-        window.addEventListener("touchend", trackServicesTouchEnd, { capture: true, passive: true });
-        window.addEventListener("touchcancel", trackServicesTouchEnd, { capture: true, passive: true });
-        cleanupCallbacks.push(() => {
-            window.removeEventListener("touchstart", trackServicesTouchStart, true);
-            window.removeEventListener("touchend", trackServicesTouchEnd, true);
-            window.removeEventListener("touchcancel", trackServicesTouchEnd, true);
-        });
         const handleKeydownCapture = (event: KeyboardEvent) => {
             const forward = event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || (event.key === " " && !event.shiftKey);
             const backward = event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home" || (event.key === " " && event.shiftKey);
@@ -3671,39 +3695,52 @@ export function TascLanding() {
                 correctNativeScroll(targetY);
         };
         if (useLegacyServicesFlow) {
-            let blockingInputAttached = false;
-            const attachBlockingInput = () => {
-                if (blockingInputAttached)
-                    return;
-                blockingInputAttached = true;
-                window.addEventListener("wheel", handleWheelCapture, { capture: true, passive: false });
-                window.addEventListener("touchstart", handleTouchStart, { capture: true, passive: true });
-                window.addEventListener("touchmove", handleTouchMove, { capture: true, passive: false });
-                window.addEventListener("touchend", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("touchcancel", handleTouchEnd, { capture: true, passive: true });
-                window.addEventListener("keydown", handleKeydownCapture, true);
-                window.addEventListener("scroll", maintainPinnedScroll, { passive: true });
-            };
-            const detachBlockingInput = () => {
-                if (!blockingInputAttached)
-                    return;
-                blockingInputAttached = false;
-                window.removeEventListener("wheel", handleWheelCapture, true);
-                window.removeEventListener("touchstart", handleTouchStart, true);
-                window.removeEventListener("touchmove", handleTouchMove, true);
-                window.removeEventListener("touchend", handleTouchEnd, true);
-                window.removeEventListener("touchcancel", handleTouchEnd, true);
-                window.removeEventListener("keydown", handleKeydownCapture, true);
-                window.removeEventListener("scroll", maintainPinnedScroll);
-            };
-            syncBlockingInputListeners = () => {
-                if (servicesActive || servicesReleasing || dominoInputLocked)
-                    attachBlockingInput();
-                else
-                    detachBlockingInput();
-            };
-            syncBlockingInputListeners();
-            cleanupCallbacks.push(detachBlockingInput);
+            servicesInputRegistration = registerMotionInputStory({
+                id: "services",
+                priority: 100,
+                root,
+                canClaim: () => !disposed && (servicesActive || servicesReleasing),
+                observe: ({ kind }) => {
+                    if (kind === "touchstart")
+                        servicesTouchGestureActive = true;
+                    else if (kind === "touchend" || kind === "touchcancel")
+                        servicesTouchGestureActive = false;
+                },
+                onGesture: ({ event, kind }) => {
+                    if (kind === "wheel")
+                        handleWheelCapture(event as WheelEvent);
+                    else if (kind === "touchstart")
+                        handleTouchStart(event as TouchEvent);
+                    else if (kind === "touchmove")
+                        handleTouchMove(event as TouchEvent);
+                    else if (kind === "touchend" || kind === "touchcancel")
+                        handleTouchEnd();
+                    else if (kind === "keydown")
+                        handleKeydownCapture(event as KeyboardEvent);
+                    else if (kind === "scroll")
+                        maintainPinnedScroll();
+                    const releaseWaitingGesture = servicesPhase === "waiting" &&
+                        (kind === "wheel" || kind === "keydown" || kind === "touchend" || kind === "touchcancel");
+                    return {
+                        handled: event.defaultPrevented,
+                        progress: servicesPhase === "waiting"
+                            ? undefined
+                            : `${servicesPhase}:${Math.max(0, servicesStage + 1)}`,
+                        release: releaseWaitingGesture,
+                    };
+                },
+                release: (reason) => {
+                    servicesTouchGestureActive = false;
+                    if ((reason === "watchdog" || reason === "superseded") &&
+                        (servicesActive || servicesReleasing || servicesOwnsLenisLock)) {
+                        releaseServicesForNavigation();
+                    }
+                },
+            });
+            cleanupCallbacks.push(() => {
+                servicesInputRegistration?.unregister();
+                servicesInputRegistration = null;
+            });
         }
         const lensMotion = compactMotion
             ? {
@@ -4121,7 +4158,7 @@ export function TascLanding() {
             });
             cleanupCallbacks.push(() => servicesApproachTrigger.kill());
             const shouldBypassServicesMotion = () => !useLegacyServicesFlow ||
-                Boolean(root.dataset.portionedScroll || root.dataset.portionGesture) ||
+                getMotionInputOwnerId() === "portion" ||
                 Boolean(servicesPortionTargetIds && !servicesPortionTargetIds.includes("services")) ||
                 (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
                 (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
@@ -4142,14 +4179,13 @@ export function TascLanding() {
             };
             const canStartServicesMotion = (trigger: ScrollTrigger) => isNearServicesTrigger(trigger) &&
                 isServicesVisuallyNear() &&
-                root.dataset.dominoPinned !== "true" &&
+                getMotionInputOwnerId() !== "domino" &&
                 !dominoInputLocked;
             const hasServicesReverseEntryIntent = (direction = 0) => {
                 if (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services")
                     return false;
                 return servicesPortionDirection < 0 ||
                     servicesLastPortionDirection < 0 ||
-                    root.dataset.portionedScroll === "reverse" ||
                     direction < 0 ||
                     documentScrollDirection < 0;
             };
@@ -4211,7 +4247,6 @@ export function TascLanding() {
                         documentScrollDirection >= 0 &&
                         servicesPortionDirection >= 0 &&
                         servicesLastPortionDirection >= 0 &&
-                        root.dataset.portionedScroll !== "reverse" &&
                         !servicesActive &&
                         !servicesReleasing &&
                         servicesPhase === "idle" &&
@@ -5268,6 +5303,7 @@ export function TascLanding() {
             motionAllowed,
             servicesPackedTransportMode,
             webkitCompatibilityMode,
+            constrainedConnection,
         ],
         revertOnUpdate: true,
     });
@@ -5327,15 +5363,18 @@ export function TascLanding() {
             scrollIdleTimer = window.setTimeout(scheduleWatchdog, 900);
         };
         watchdogTimer = window.setTimeout(scheduleWatchdog, 3000);
+        const unregisterRevealWatchdogObserver = registerMotionInputObserver("reveal-watchdog", ({ kind }) => {
+            if (kind === "scroll")
+                scheduleScrollIdleWatchdog();
+        });
         window.addEventListener("tasc:scroll-position-applied", scheduleWatchdog);
-        window.addEventListener("scroll", scheduleScrollIdleWatchdog, { passive: true });
         return () => {
             window.clearTimeout(watchdogTimer);
             window.clearTimeout(scrollIdleTimer);
             if (watchdogFrame)
                 window.cancelAnimationFrame(watchdogFrame);
+            unregisterRevealWatchdogObserver();
             window.removeEventListener("tasc:scroll-position-applied", scheduleWatchdog);
-            window.removeEventListener("scroll", scheduleScrollIdleWatchdog);
         };
     }, [motionAllowed, preloaderComplete]);
     useReversibleScrollStories({
