@@ -220,7 +220,9 @@ const readState = (page) =>
   page.evaluate(() => {
     const root = document.querySelector(".site-shell");
     const domino = document.querySelector(".domino-cta-section");
+    const dominoForm = document.querySelector(".domino-form-stage");
     const processSection = document.querySelector(".process-contact-section");
+    const footer = document.querySelector(".site-footer");
     const describe = (element) => {
       if (!(element instanceof HTMLElement)) return null;
       const rect = element.getBoundingClientRect();
@@ -232,6 +234,19 @@ const readState = (page) =>
         visibility: visibleHeight / Math.max(1, Math.min(rect.height, innerHeight)),
       };
     };
+    const describeUsability = (element) => {
+      if (!(element instanceof HTMLElement)) return null;
+      const style = getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return {
+        ...describe(element),
+        display: style.display,
+        computedVisibility: style.visibility,
+        opacity: Number.parseFloat(style.opacity),
+        pointerEvents: style.pointerEvents,
+        hasLayout: rect.width > 0 && rect.height > 0,
+      };
+    };
     return {
       t: performance.now(),
       y: scrollY,
@@ -239,7 +254,9 @@ const readState = (page) =>
       viewport: { width: innerWidth, height: innerHeight },
       root: root instanceof HTMLElement ? { ...root.dataset } : null,
       domino: describe(domino),
+      dominoForm: describeUsability(dominoForm),
       process: describe(processSection),
+      footer: describeUsability(footer),
       overflow: {
         html: getComputedStyle(document.documentElement).overflowY,
         body: getComputedStyle(document.body).overflowY,
@@ -479,6 +496,35 @@ const movePastFailedBoundary = async (page, profile, cdp, direction) => {
 };
 
 const enterHappyForward = async (page, profile, cdp, beforeCompletion) => {
+  await page.evaluate(() => {
+    const scene = document.querySelector(".domino-scene");
+    if (!(scene instanceof HTMLElement)) return;
+    const rect = scene.getBoundingClientRect();
+    const target = Math.max(0, scrollY + rect.top - innerHeight * 0.9);
+    scrollTo({ top: target, left: 0, behavior: "auto" });
+  });
+  await page.waitForTimeout(320);
+  await page.waitForFunction(
+    () => {
+      const root = document.querySelector(".site-shell");
+      const video = document.querySelector('video.domino-sequence[data-domino-direction="forward"]');
+      return root instanceof HTMLElement &&
+        video instanceof HTMLVideoElement &&
+        video.dataset.armed === "true" &&
+        root.dataset.dominoMediaPrepared === "true" &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    },
+    null,
+    { timeout: 20_000 },
+  );
+  await page.evaluate(() => {
+    const scene = document.querySelector(".domino-scene");
+    if (!(scene instanceof HTMLElement)) return;
+    const rect = scene.getBoundingClientRect();
+    const target = Math.max(0, scrollY + rect.top - innerHeight * 0.45);
+    scrollTo({ top: target, left: 0, behavior: "auto" });
+  });
+  await page.waitForTimeout(320);
   const setupSamples = [];
   for (let attempt = 0; attempt < 18; attempt += 1) {
     const state = await readState(page);
@@ -510,6 +556,11 @@ const enterHappyForward = async (page, profile, cdp, beforeCompletion) => {
 
 const evaluateFaultGate = (direction, preflight, passThrough) => {
   const rootSamples = preflight.samples.concat(passThrough.samples);
+  const knownFallback = rootSamples.some((sample) =>
+    direction > 0
+      ? sample.root?.dominoMediaFallback === "true"
+      : sample.root?.dominoReverseMediaFallback === "true",
+  );
   const lockedSamples = rootSamples.filter(
     (sample) =>
       sample.root?.motionInputLocked === "true" ||
@@ -524,11 +575,12 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
     const end = preflight.cycle.end?.t ?? preflight.cycle.start.t + PRE_FLIGHT_ASSERTION_LIMIT_MS;
     return entry.t >= preflight.cycle.start.t - 24 && entry.t <= end + 24;
   });
+  const movementOrigin = preflight.samples[0] ?? passThrough.before;
   const movement = direction > 0
-    ? passThrough.after.y - passThrough.before.y
-    : passThrough.before.y - passThrough.after.y;
+    ? passThrough.after.y - movementOrigin.y
+    : movementOrigin.y - passThrough.after.y;
   const failures = [];
-  if (!preflight.cycle) failures.push("preflight was not observed");
+  if (!preflight.cycle && !knownFallback) failures.push("preflight was not observed");
   if (preflight.cycle && !preflight.cycle.end) failures.push("preflight did not settle");
   if (
     preflight.cycle?.durationMs != null &&
@@ -547,9 +599,23 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
     failures.push("document overflow remained locked");
   }
   if (blackLockedSamples.length > 0) failures.push("a black undecoded Domino viewport was input-locked");
+  if (knownFallback && direction > 0) {
+    const form = passThrough.after.dominoForm;
+    if (
+      !form?.hasLayout ||
+      form.display === "none" ||
+      form.computedVisibility === "hidden" ||
+      !Number.isFinite(form.opacity) ||
+      form.opacity < 0.9 ||
+      form.pointerEvents === "none"
+    ) {
+      failures.push("forward fallback did not expose the Domino form");
+    }
+  }
   return {
     passed: failures.length === 0,
     failures,
+    knownFallback,
     movement,
     relevantInputs,
     lockedSamples,
@@ -664,6 +730,11 @@ const runReverseFailure = async (profile, directory) => {
   const scenario = await openScenario(profile, new Set(["reverse"]), `${profile.id}-reverse`);
   try {
     const forward = await enterHappyForward(scenario.page, profile, scenario.cdp);
+    await scenario.page.waitForFunction(
+      () => document.querySelector(".site-shell")?.getAttribute("data-domino-reverse-media-armed") === "true",
+      null,
+      { timeout: 8_000 },
+    );
     const preflight = await waitForPreflightCycle(scenario.page, profile, scenario.cdp, -1);
     const passThrough = await movePastFailedBoundary(scenario.page, profile, scenario.cdp, -1);
     await syncWebKitFaults(scenario);
