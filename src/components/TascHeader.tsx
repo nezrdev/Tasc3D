@@ -53,6 +53,8 @@ export default function TascHeader({ onNavigate }: TascHeaderProps) {
         onNavigate(href);
     }, [closeMenuImmediately, onNavigate]);
     useEffect(() => {
+        if (!open)
+            return;
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === "Escape") {
                 setOpen(false);
@@ -82,7 +84,7 @@ export default function TascHeader({ onNavigate }: TascHeaderProps) {
             window.removeEventListener("resize", handleResize);
             window.removeEventListener("scroll", handleScroll);
         };
-    }, []);
+    }, [open]);
     useGSAP(() => {
         const panel = headerRef.current?.querySelector<HTMLElement>(".mobile-menu-panel");
         const cards = gsap.utils.toArray<HTMLElement>(".mobile-menu-card", headerRef.current ?? undefined);

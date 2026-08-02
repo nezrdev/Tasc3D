@@ -28,10 +28,7 @@ export type MediaOrchestratorState = {
   heroVideoEligible: boolean;
   heroVideoState: HeroVideoState;
   interactiveGalaxyArmed: boolean;
-  lowerMediaWarmDeadlineReached: boolean;
   packedAlphaOwner: PackedAlphaOwner;
-  processMapArmed: boolean;
-  servicesCompleteStoryPrepared: boolean;
   servicesMediaArmed: boolean;
   servicesMediaFallback: boolean;
   servicesMediaPrepared: boolean;
@@ -56,10 +53,7 @@ const INITIAL_MEDIA_STATE: MediaOrchestratorState = {
   heroVideoEligible: false,
   heroVideoState: "pending",
   interactiveGalaxyArmed: false,
-  lowerMediaWarmDeadlineReached: false,
   packedAlphaOwner: "hero",
-  processMapArmed: false,
-  servicesCompleteStoryPrepared: false,
   servicesMediaArmed: false,
   servicesMediaFallback: false,
   servicesMediaPrepared: false,
@@ -75,10 +69,7 @@ type MediaAction =
     }
   | { type: "services/armed" }
   | { type: "services/fallback-activated" }
-  | {
-      completeStoryPrepared: boolean;
-      type: "services/recovered";
-    }
+  | { type: "services/recovered" }
   | { type: "services/warm-reset" }
   | { type: "datum/warm-reset" }
   | { type: "domino/warm-reset" }
@@ -97,9 +88,7 @@ type MediaAction =
   | { type: "hero/playback-ready" }
   | { type: "hero/playback-fallback" }
   | { type: "services/first-segment-prepared" }
-  | { type: "services/complete-story-prepared" }
   | { type: "services/prepared-invalidated" }
-  | { type: "lower-media/warm-deadline-reached" }
   | {
       owner: PackedAlphaOwner;
       type: "packed-alpha/owner-selected";
@@ -147,15 +136,11 @@ const mediaReducer = (
       });
     case "services/recovered":
       return patchState(state, {
-        servicesCompleteStoryPrepared:
-          state.servicesCompleteStoryPrepared || action.completeStoryPrepared,
         servicesMediaFallback: false,
         servicesMediaPrepared: true,
       });
     case "services/warm-reset":
       return patchState(state, {
-        lowerMediaWarmDeadlineReached: false,
-        servicesCompleteStoryPrepared: false,
         servicesMediaFallback: false,
         servicesMediaPrepared: false,
       });
@@ -224,12 +209,8 @@ const mediaReducer = (
         servicesMediaFallback: false,
         servicesMediaPrepared: true,
       });
-    case "services/complete-story-prepared":
-      return patchState(state, { servicesCompleteStoryPrepared: true });
     case "services/prepared-invalidated":
       return patchState(state, { servicesMediaPrepared: false });
-    case "lower-media/warm-deadline-reached":
-      return patchState(state, { lowerMediaWarmDeadlineReached: true });
     case "packed-alpha/owner-selected":
       return patchState(state, { packedAlphaOwner: action.owner });
   }
@@ -284,12 +265,6 @@ export const useMediaOrchestrator = () => {
           type: "media/value-changed",
           value: true,
         }),
-      armProcessMap: () =>
-        dispatch({
-          key: "processMapArmed",
-          type: "media/value-changed",
-          value: true,
-        }),
       armServices: () => dispatch({ type: "services/armed" }),
       armVisionLogo: () =>
         dispatch({
@@ -305,21 +280,13 @@ export const useMediaOrchestrator = () => {
         dispatch({ type: "hero/playback-fallback" }),
       markHeroPlaybackReady: () =>
         dispatch({ type: "hero/playback-ready" }),
-      markLowerMediaWarmDeadlineReached: () =>
-        dispatch({ type: "lower-media/warm-deadline-reached" }),
-      markServicesCompleteStoryPrepared: () =>
-        dispatch({ type: "services/complete-story-prepared" }),
       markServicesFirstSegmentPrepared: () =>
         dispatch({ type: "services/first-segment-prepared" }),
       markDominoFallback: (direction: DominoDirection) =>
         dispatch({ direction, type: "domino/fallback" }),
       markDominoPrepared: (direction: DominoDirection) =>
         dispatch({ direction, type: "domino/prepared" }),
-      recoverServices: (completeStoryPrepared: boolean) =>
-        dispatch({
-          completeStoryPrepared,
-          type: "services/recovered",
-        }),
+      recoverServices: () => dispatch({ type: "services/recovered" }),
       resetDatumWarmState: () => dispatch({ type: "datum/warm-reset" }),
       resetDominoWarmState: () => dispatch({ type: "domino/warm-reset" }),
       resetServicesWarmState: () =>
@@ -372,16 +339,7 @@ export const useMediaOrchestrator = () => {
         dispatch,
         "interactiveGalaxyArmed",
       ),
-      setLowerMediaWarmDeadlineReached: createMediaSetter(
-        dispatch,
-        "lowerMediaWarmDeadlineReached",
-      ),
       setPackedAlphaOwner: createMediaSetter(dispatch, "packedAlphaOwner"),
-      setProcessMapArmed: createMediaSetter(dispatch, "processMapArmed"),
-      setServicesCompleteStoryPrepared: createMediaSetter(
-        dispatch,
-        "servicesCompleteStoryPrepared",
-      ),
       setServicesMediaArmed: createMediaSetter(
         dispatch,
         "servicesMediaArmed",
