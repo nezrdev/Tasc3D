@@ -17,6 +17,7 @@ import { ServicesSection } from "@/components/sections/ServicesSection";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 import SitePreloader from "@/components/SitePreloader";
 import TascHeader from "@/components/TascHeader";
+import { useMediaOrchestrator } from "@/hooks/useMediaOrchestrator";
 import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
 import type { GalaxyHandle } from "@/components/Galaxy";
@@ -37,7 +38,7 @@ import {
 } from "@/lib/motion-input-bus";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { getVisualViewportHeight } from "@/lib/visibility";
-import type { HeroVideoState, LensPose, MotionNavigationController, } from "@/types/landing";
+import type { LensPose, MotionNavigationController, } from "@/types/landing";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 const Galaxy = dynamic(() => import("@/components/Galaxy"), { ssr: false });
 const GALAXY_SHARED_PROPS = {
@@ -179,8 +180,6 @@ export function TascLanding() {
     const [motionAllowed, setMotionAllowed] = useState(false);
     const [motionPreferenceResolved, setMotionPreferenceResolved] = useState(false);
     const [performanceModeResolved, setPerformanceModeResolved] = useState(false);
-    const [galaxyStatus, setGalaxyStatus] = useState<"pending" | "ready" | "unavailable">("pending");
-    const servicesGalaxyStatus = galaxyStatus;
     const [mobilePerformanceMode, setMobilePerformanceMode] = useState(() => initialRuntimeProfile.mobilePerformance);
     const [macPerformanceMode, setMacPerformanceMode] = useState(() => initialRuntimeProfile.macPerformance);
     const [webkitCompatibilityMode, setWebkitCompatibilityMode] = useState(() => initialRuntimeProfile.webkitCompatibility);
@@ -190,34 +189,53 @@ export function TascLanding() {
     const [forcePackedTransport, setForcePackedTransport] = useState(() => initialRuntimeProfile.forcePackedTransport);
     const [constrainedConnection, setConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
     const [explicitConstrainedConnection, setExplicitConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
-    const [servicesMediaArmed, setServicesMediaArmed] = useState(false);
-    const [servicesStopPostersArmed, setServicesStopPostersArmed] = useState(false);
-    const [servicesMediaFallback, setServicesMediaFallback] = useState(false);
-    const [datumMediaArmed, setDatumMediaArmed] = useState(false);
-    const [dominoMediaArmed, setDominoMediaArmed] = useState(false);
-    const [dominoReverseMediaArmed, setDominoReverseMediaArmed] = useState(false);
-    const [servicesMediaPrepared, setServicesMediaPrepared] = useState(false);
-    const [, setServicesCompleteStoryPrepared] = useState(false);
-    const [datumMediaPrepared, setDatumMediaPrepared] = useState(false);
-    const [datumMediaFallback, setDatumMediaFallback] = useState(false);
-    const [dominoForwardPrepared, setDominoForwardPrepared] = useState(false);
-    const [dominoReversePrepared, setDominoReversePrepared] = useState(false);
-    const [dominoForwardFallback, setDominoForwardFallback] = useState(false);
-    const [dominoReverseFallback, setDominoReverseFallback] = useState(false);
-    const [lowerMediaWarmDeadlineReached, setLowerMediaWarmDeadlineReached] = useState(false);
-    const [processMapArmed, setProcessMapArmed] = useState(false);
-    const [visionLogoArmed, setVisionLogoArmed] = useState(false);
-    const [clientsFlareArmed, setClientsFlareArmed] = useState(false);
     const [preloaderComplete, setPreloaderComplete] = useState(false);
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
     const [heroIntroReady, setHeroIntroReady] = useState(false);
-    const [interactiveGalaxyArmed, setInteractiveGalaxyArmed] = useState(false);
-    const [heroVideoState, setHeroVideoState] = useState<HeroVideoState>("pending");
-    const [heroVideoEligible, setHeroVideoEligible] = useState(false);
-    const [heroFallbackAnimationEligible, setHeroFallbackAnimationEligible] = useState(false);
-    const [heroFallbackAnimationReady, setHeroFallbackAnimationReady] = useState(false);
-    const [packedAlphaOwner, setPackedAlphaOwner] = useState<"hero" | "services">("hero");
+    const {
+        actions: mediaActions,
+        setters: {
+            setDatumMediaFallback,
+            setDatumMediaPrepared,
+            setDominoForwardFallback,
+            setDominoForwardPrepared,
+            setDominoReverseFallback,
+            setDominoReversePrepared,
+            setGalaxyStatus,
+            setHeroFallbackAnimationEligible,
+            setHeroFallbackAnimationReady,
+            setServicesStopPostersArmed,
+            setVisionLogoArmed,
+        },
+        state: {
+            clientsFlareArmed,
+            datumMediaArmed,
+            datumMediaFallback,
+            datumMediaPrepared,
+            dominoForwardFallback,
+            dominoForwardPrepared,
+            dominoMediaArmed,
+            dominoReverseFallback,
+            dominoReverseMediaArmed,
+            dominoReversePrepared,
+            galaxyStatus,
+            heroFallbackAnimationEligible,
+            heroFallbackAnimationReady,
+            heroVideoEligible,
+            heroVideoState,
+            interactiveGalaxyArmed,
+            lowerMediaWarmDeadlineReached,
+            packedAlphaOwner,
+            processMapArmed,
+            servicesMediaArmed,
+            servicesMediaFallback,
+            servicesMediaPrepared,
+            servicesStopPostersArmed,
+            visionLogoArmed,
+        },
+    } = useMediaOrchestrator();
+    const servicesGalaxyStatus = galaxyStatus;
     const constrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
     const explicitConstrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
     const viewportMetricsRef = useRef({
@@ -306,7 +324,7 @@ export function TascLanding() {
         const video = servicesVideoRef.current;
         const activeStage = Math.min(SERVICES_KEYFRAME_STOPS.length, Math.max(1, Number(root?.dataset.servicesActive ?? 1) || 1));
         video?.pause();
-        setServicesStopPostersArmed(true);
+        mediaActions.activateServicesFallback();
         if (video)
             video.dataset.segmentState = "fallback";
         if (root) {
@@ -314,8 +332,7 @@ export function TascLanding() {
             root.dataset.servicesMediaFallback = "true";
             root.dataset.servicesStaticStop = String(activeStage);
         }
-        setServicesMediaFallback(true);
-    }, []);
+    }, [mediaActions]);
     const recoverServicesMedia = useCallback(() => {
         const root = rootRef.current;
         const video = servicesVideoRef.current;
@@ -331,17 +348,16 @@ export function TascLanding() {
         if (video.dataset.segmentState === "fallback")
             video.dataset.segmentState = "idle";
         root.dataset.servicesFirstSegmentWarm = "true";
-        setServicesMediaPrepared(true);
-        if (isMediaBufferedThrough(video, SERVICES_COMPLETE_STORY_BUFFER_END)) {
+        const completeStoryPrepared = isMediaBufferedThrough(video, SERVICES_COMPLETE_STORY_BUFFER_END);
+        if (completeStoryPrepared) {
             root.dataset.servicesCompleteStoryWarm = "true";
-            setServicesCompleteStoryPrepared(true);
         }
-        setServicesMediaFallback(false);
-    }, []);
+        mediaActions.recoverServices(completeStoryPrepared);
+    }, [mediaActions]);
     const armDominoReverseMedia = useCallback(() => {
         rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
-        setDominoReverseMediaArmed(true);
-    }, []);
+        mediaActions.armDominoReverse();
+    }, [mediaActions]);
     const reportDominoSourceError = useCallback((direction: "forward" | "reverse") => {
         dominoPendingSourceErrorsRef.current[direction] = true;
         const reporter = dominoSourceErrorReporterRef.current;
@@ -387,9 +403,9 @@ export function TascLanding() {
     useEffect(() => {
         if (!motionPreferenceResolved || motionAllowed)
             return;
-        const armFrame = window.requestAnimationFrame(() => setVisionLogoArmed(true));
+        const armFrame = window.requestAnimationFrame(mediaActions.armVisionLogo);
         return () => window.cancelAnimationFrame(armFrame);
-    }, [motionAllowed, motionPreferenceResolved]);
+    }, [mediaActions, motionAllowed, motionPreferenceResolved]);
     const resetToTop = useCallback(() => {
         window.scrollTo({ top: 0, left: 0, behavior: "auto" });
         document.documentElement.scrollTop = 0;
@@ -613,7 +629,7 @@ export function TascLanding() {
             if (armed)
                 return;
             armed = true;
-            setInteractiveGalaxyArmed(true);
+            mediaActions.armInteractiveGalaxy();
         };
         const idleTimer = window.setTimeout(armInteractiveGalaxy, webkitCompatibilityMode ? 1800 : 850);
         window.addEventListener("pointermove", armInteractiveGalaxy, {
@@ -626,6 +642,7 @@ export function TascLanding() {
         };
     }, [
         mobilePerformanceMode,
+        mediaActions,
         motionAllowed,
         performanceModeResolved,
         preloaderComplete,
@@ -722,38 +739,28 @@ export function TascLanding() {
         if (!motionAllowed) {
             root?.removeAttribute("data-hero-video-poster-fallback");
             const stateFrame = window.requestAnimationFrame(() => {
-                setHeroVideoEligible(false);
-                setHeroFallbackAnimationEligible(false);
-                setHeroFallbackAnimationReady(false);
-                setHeroVideoState("fallback");
+                mediaActions.configureHero("reduced");
             });
             return () => {
                 window.cancelAnimationFrame(stateFrame);
             };
         }
         const stateFrame = window.requestAnimationFrame(() => {
-            setHeroFallbackAnimationReady(false);
             if (useStaticHero) {
                 root?.setAttribute("data-hero-video-poster-fallback", "true");
-                setHeroFallbackAnimationEligible(false);
-                setHeroVideoState("fallback");
-                setHeroVideoEligible(false);
+                mediaActions.configureHero("poster");
             }
             else if (needsAnimatedFallback) {
                 root?.setAttribute("data-hero-video-poster-fallback", "true");
-                setHeroFallbackAnimationEligible(true);
-                setHeroVideoState("fallback");
-                setHeroVideoEligible(false);
+                mediaActions.configureHero("animated-fallback");
             }
             else {
                 root?.removeAttribute("data-hero-video-poster-fallback");
-                setHeroFallbackAnimationEligible(false);
-                setHeroVideoState("pending");
-                setHeroVideoEligible(true);
+                mediaActions.configureHero("video");
             }
         });
         return () => window.cancelAnimationFrame(stateFrame);
-    }, [constrainedConnection, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
+    }, [constrainedConnection, mediaActions, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
     useEffect(() => {
         if (!preloaderComplete ||
             !motionAllowed ||
@@ -781,7 +788,7 @@ export function TascLanding() {
                     : null;
             if (!nextOwner)
                 return;
-            setPackedAlphaOwner((current) => current === nextOwner ? current : nextOwner);
+            mediaActions.selectPackedAlphaOwner(nextOwner);
         };
         const scheduleSync = () => {
             if (frame)
@@ -806,6 +813,7 @@ export function TascLanding() {
         };
     }, [
         heroFallbackAnimationEligible,
+        mediaActions,
         motionAllowed,
         preloaderComplete,
         servicesPackedTransportMode,
@@ -858,7 +866,7 @@ export function TascLanding() {
             delete root?.dataset.servicesFirstSegmentWarm;
             delete root?.dataset.servicesCompleteStoryWarm;
             delete root?.dataset.servicesStartFrameDecoded;
-            setServicesMediaPrepared(false);
+            mediaActions.invalidateServicesPrepared();
             video.load();
         }
         else if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
@@ -876,6 +884,7 @@ export function TascLanding() {
         servicesTransportReason,
         servicesTransportKey,
         servicesVideoSource,
+        mediaActions,
     ]);
     useEffect(() => {
         const root = rootRef.current;
@@ -916,7 +925,7 @@ export function TascLanding() {
                 media.dataset.segmentState = "ready";
             }
             shell.dataset.servicesCompleteStoryWarm = "true";
-            setServicesCompleteStoryPrepared(true);
+            mediaActions.markServicesCompleteStoryPrepared();
         };
         const completeFirstSegmentWarmup = () => {
             if (firstSegmentSettled || disposed)
@@ -934,8 +943,7 @@ export function TascLanding() {
             }
             shell.dataset.servicesFirstSegmentWarm = "true";
             delete shell.dataset.servicesWarmupBlocked;
-            setServicesMediaPrepared(true);
-            setServicesMediaFallback(false);
+            mediaActions.markServicesFirstSegmentPrepared();
         };
         function inspectWarmState() {
             if (disposed || completeStorySettled)
@@ -1034,6 +1042,7 @@ export function TascLanding() {
         preloaderRevealStarted,
         servicesMediaArmed,
         servicesVideoSource,
+        mediaActions,
         webkitCompatibilityMode,
     ]);
     useEffect(() => {
@@ -1042,29 +1051,22 @@ export function TascLanding() {
             delete rootRef.current?.dataset.servicesFirstSegmentWarm;
             delete rootRef.current?.dataset.servicesCompleteStoryWarm;
             delete rootRef.current?.dataset.servicesWarmupBlocked;
-            setServicesMediaPrepared(false);
-            setServicesCompleteStoryPrepared(false);
-            setServicesMediaFallback(false);
-            setLowerMediaWarmDeadlineReached(false);
+            mediaActions.resetServicesWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [servicesVideoSource]);
+    }, [mediaActions, servicesVideoSource]);
     useEffect(() => {
         const resetFrame = window.requestAnimationFrame(() => {
-            setDatumMediaPrepared(false);
-            setDatumMediaFallback(false);
+            mediaActions.resetDatumWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [datumVideoSource]);
+    }, [datumVideoSource, mediaActions]);
     useEffect(() => {
         const resetFrame = window.requestAnimationFrame(() => {
-            setDominoForwardPrepared(false);
-            setDominoReversePrepared(false);
-            setDominoForwardFallback(false);
-            setDominoReverseFallback(false);
+            mediaActions.resetDominoWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [dominoTransportKey]);
+    }, [dominoTransportKey, mediaActions]);
     useEffect(() => {
         if (!motionPreferenceResolved || !performanceModeResolved)
             return;
@@ -1072,11 +1074,12 @@ export function TascLanding() {
             return;
         if (!heroDecoderLaneReleased || !servicesWarmSettled)
             return;
-        const warmDeadline = window.setTimeout(() => setLowerMediaWarmDeadlineReached(true), constrainedConnection ? (mobilePerformanceMode ? 9000 : 7000) : mobilePerformanceMode ? 6000 : 4500);
+        const warmDeadline = window.setTimeout(mediaActions.markLowerMediaWarmDeadlineReached, constrainedConnection ? (mobilePerformanceMode ? 9000 : 7000) : mobilePerformanceMode ? 6000 : 4500);
         return () => window.clearTimeout(warmDeadline);
     }, [
         constrainedConnection,
         heroDecoderLaneReleased,
+        mediaActions,
         mobilePerformanceMode,
         motionAllowed,
         motionPreferenceResolved,
@@ -1089,27 +1092,26 @@ export function TascLanding() {
         const armDeepLinkedMedia = () => {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
-                setVisionLogoArmed(true);
+                mediaActions.armVisionLogo();
             if (hash === "#clients" || hash === "#services")
-                setClientsFlareArmed(true);
+                mediaActions.armClientsFlare();
             if (hash === "#services") {
-                setServicesMediaArmed(true);
-                setServicesStopPostersArmed(true);
+                mediaActions.armServices();
             }
             if (hash === "#datum" || hash === "#brief") {
-                setDatumMediaArmed(true);
-                setDominoMediaArmed(true);
+                mediaActions.armDatum();
+                mediaActions.armDomino();
             }
             if (hash === "#process" || hash === "#contact") {
-                setDatumMediaArmed(true);
-                setDominoMediaArmed(true);
-                setProcessMapArmed(true);
+                mediaActions.armDatum();
+                mediaActions.armDomino();
+                mediaActions.armProcessMap();
             }
         };
         armDeepLinkedMedia();
         window.addEventListener("hashchange", armDeepLinkedMedia);
         return () => window.removeEventListener("hashchange", armDeepLinkedMedia);
-    }, [motionPreferenceResolved, performanceModeResolved]);
+    }, [mediaActions, motionPreferenceResolved, performanceModeResolved]);
     useEffect(() => {
         if (!motionPreferenceResolved || !preloaderComplete)
             return;
@@ -1119,19 +1121,18 @@ export function TascLanding() {
         const armFromHash = () => {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
-                setVisionLogoArmed(true);
+                mediaActions.armVisionLogo();
             if (hash === "#clients" || hash === "#services")
-                setClientsFlareArmed(true);
+                mediaActions.armClientsFlare();
             if (hash === "#services") {
-                setServicesMediaArmed(true);
-                setServicesStopPostersArmed(true);
+                mediaActions.armServices();
             }
             if (hash === "#datum")
-                setDatumMediaArmed(true);
+                mediaActions.armDatum();
             if (hash === "#brief")
-                setDominoMediaArmed(true);
+                mediaActions.armDomino();
             if (hash === "#process" || hash === "#contact") {
-                setProcessMapArmed(true);
+                mediaActions.armProcessMap();
             }
         };
         armFromHash();
@@ -1142,13 +1143,12 @@ export function TascLanding() {
                 targets.set(target, arm);
         };
         register(".services-story-section", () => {
-            setServicesMediaArmed(true);
-            setServicesStopPostersArmed(true);
+            mediaActions.armServices();
         });
-        register(".figma-clients-section", () => setClientsFlareArmed(true));
-        register(".datum-motion-section", () => setDatumMediaArmed(true));
-        register(".domino-cta-section", () => setDominoMediaArmed(true));
-        register(".process-contact-section", () => setProcessMapArmed(true));
+        register(".figma-clients-section", mediaActions.armClientsFlare);
+        register(".datum-motion-section", mediaActions.armDatum);
+        register(".domino-cta-section", mediaActions.armDomino);
+        register(".process-contact-section", mediaActions.armProcessMap);
         const getArmMargin = () => {
             const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
             return mobilePerformanceMode || constrainedConnection
@@ -1235,7 +1235,7 @@ export function TascLanding() {
         }
         nearbyReevaluationTimer = window.setTimeout(startProximityFallback, 10000);
         return stopProximityTracking;
-    }, [constrainedConnection, mobilePerformanceMode, motionPreferenceResolved, preloaderComplete]);
+    }, [constrainedConnection, mediaActions, mobilePerformanceMode, motionPreferenceResolved, preloaderComplete]);
     useEffect(() => {
         if (!dominoMediaArmed)
             return;
@@ -1267,12 +1267,10 @@ export function TascLanding() {
                 return;
             clearRetryLadder(video);
             if (video === forwardVideo) {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
+                mediaActions.markDominoPrepared("forward");
             }
             else {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
+                mediaActions.markDominoPrepared("reverse");
             }
         };
         const warmVideo = (video: HTMLVideoElement) => {
@@ -1312,13 +1310,11 @@ export function TascLanding() {
         const handleForwardPrepared = () => markPrepared(forwardVideo);
         const handleReversePrepared = () => markPrepared(reverseVideo);
         const handleForwardError = () => {
-            setDominoForwardPrepared(false);
-            setDominoForwardFallback(true);
+            mediaActions.markDominoFallback("forward");
             scheduleColdMediaRetry(forwardVideo);
         };
         const handleReverseError = () => {
-            setDominoReversePrepared(false);
-            setDominoReverseFallback(true);
+            mediaActions.markDominoFallback("reverse");
             scheduleColdMediaRetry(reverseVideo);
         };
         const reportSourceError = (direction: "forward" | "reverse") => {
@@ -1368,7 +1364,7 @@ export function TascLanding() {
             reverseVideo.removeEventListener("error", handleReverseError, true);
             window.removeEventListener("pageshow", handlePageShow);
         };
-    }, [dominoMediaArmed, dominoReverseMediaArmed, dominoTransportKey]);
+    }, [dominoMediaArmed, dominoReverseMediaArmed, dominoTransportKey, mediaActions]);
     useEffect(() => {
         if (!motionAllowed || !heroVideoEligible) {
             return;
@@ -1421,7 +1417,7 @@ export function TascLanding() {
             readyReleased = true;
             stopChecks();
             rootRef.current?.removeAttribute("data-hero-video-poster-fallback");
-            setHeroVideoState("ready");
+            mediaActions.markHeroPlaybackReady();
         };
         const fallBackToPoster = () => {
             if (cancelled) {
@@ -1431,7 +1427,7 @@ export function TascLanding() {
             readyReleased = false;
             stopChecks();
             video.pause();
-            setHeroVideoState("fallback");
+            mediaActions.markHeroPlaybackFallback();
         };
         const requestWarmFrame = () => {
             if (cancelled ||
@@ -1494,21 +1490,20 @@ export function TascLanding() {
             video.removeEventListener("error", fallBackToPoster);
             stopChecks();
         };
-    }, [heroVideoEligible, motionAllowed]);
+    }, [heroVideoEligible, mediaActions, motionAllowed]);
     const handleAnchorNavigate = useCallback((href: string, options?: { replaceHistory?: boolean }) => {
         const replaceHistory = options?.replaceHistory !== false;
         if (href === "#services") {
-            setServicesMediaArmed(true);
-            setServicesStopPostersArmed(true);
+            mediaActions.armServices();
         }
         if (VISION_LOGO_DEEP_LINKS.has(href))
-            setVisionLogoArmed(true);
+            mediaActions.armVisionLogo();
         if (href === "#datum")
-            setDatumMediaArmed(true);
+            mediaActions.armDatum();
         if (href === "#brief")
-            setDominoMediaArmed(true);
+            mediaActions.armDomino();
         if (href === "#process" || href === "#contact")
-            setProcessMapArmed(true);
+            mediaActions.armProcessMap();
         if (!motionAllowed) {
             const target = href === "#top"
                 ? document.documentElement
@@ -1685,7 +1680,7 @@ export function TascLanding() {
         }
         const resolveTargetTop = () => target.getBoundingClientRect().top + window.scrollY + headerOffset;
         scrollToPosition(resolveTargetTop(), resolveTargetTop);
-    }, [motionAllowed]);
+    }, [mediaActions, motionAllowed]);
     useLayoutEffect(() => {
         const root = rootRef.current;
         const clientsSection = root?.querySelector<HTMLElement>(".figma-clients-section");
