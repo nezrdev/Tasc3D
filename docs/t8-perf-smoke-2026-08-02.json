@@ -1,0 +1,895 @@
+{
+  "schemaVersion": 4,
+  "generatedAt": "2026-08-02T12:18:59.006Z",
+  "source": {
+    "revision": "2570c5d0088b07b9ac0d34f13dc35c721d1f2d52",
+    "tree": "a31ea439e715319c6620027a4f952c7220746b1b",
+    "branch": "task/t8-motion-lifecycle",
+    "dirty": true,
+    "statusPorcelain": [
+      "M docs/memory.md",
+      " M docs/tasks.md",
+      " M next-env.d.ts",
+      " M package.json",
+      " M scripts/t7-motion-input-qa.mjs",
+      " M scripts/verify-mobile-portioned-scroll.mjs",
+      " M src/app/layout.tsx",
+      " M src/components/TascLanding.tsx",
+      " M src/hooks/useMobilePortionedScroll.ts",
+      "?? docs/mobile-portions-on-t8-2026-08-02.json",
+      "?? docs/t12-on-t8-browser-seam-qa-2026-08-02.json/",
+      "?? docs/t7-on-t8-motion-input-qa-2026-08-02.json",
+      "?? docs/t8-motion-lifecycle-qa-2026-08-02.json",
+      "?? docs/t8-perf-smoke-2026-08-02.json",
+      "?? scripts/t8-motion-lifecycle-qa.mjs"
+    ],
+    "trackedFileCount": 147,
+    "url": "http://127.0.0.1:3120/",
+    "serverSource": "external",
+    "productionBuild": true
+  },
+  "methodology": {
+    "coldContext": true,
+    "serviceWorkers": "blocked",
+    "cpuThrottle": "disabled",
+    "startupObservationMs": 15000,
+    "readinessTimeoutMs": 60000,
+    "firstScrollBoundary": "first scroll input issued by this harness after startup observation and readiness wait",
+    "revealContract": "all app anchors plus a coalesced ten-step top-to-bottom fast-scroll sequence; only scoped reveal-managed/completed elements are hard-gated",
+    "webkitNetworkCaveat": "Throttled WebKit uses buffered route fulfillment and is approximate; it is not equivalent to physical Safari streaming.",
+    "syntheticWebKitPolicy": "Approximate throttled WebKit performance budgets are advisory; functional reveal-contract failures remain hard failures. Physical Safari is the final external acceptance boundary.",
+    "physicalDeviceBoundary": "Playwright WebKit on Windows is not iPhone Safari, iPhone Chrome, Android Chrome, or macOS Safari acceptance."
+  },
+  "matrix": {
+    "preset": "smoke",
+    "selected": {
+      "profiles": [
+        "mobile-390"
+      ],
+      "networks": [
+        "normal"
+      ],
+      "engines": [
+        "chromium"
+      ]
+    },
+    "caseCount": 1
+  },
+  "structuralFailures": [],
+  "acceptanceFailures": [],
+  "advisories": [],
+  "results": [
+    {
+      "id": "chromium-mobile-390-normal",
+      "configuration": {
+        "engine": "chromium",
+        "profile": "mobile-390",
+        "network": "normal"
+      },
+      "status": "measured",
+      "error": null,
+      "environment": {
+        "browserVersion": "151.0.7922.34",
+        "operatingSystem": "win32 10.0.26200",
+        "nodeVersion": "v24.11.0",
+        "headless": true,
+        "profile": {
+          "width": 390,
+          "height": 844,
+          "deviceScaleFactor": 3,
+          "isMobile": true,
+          "hasTouch": true,
+          "platform": "mobile"
+        },
+        "network": {
+          "latencyMs": 0,
+          "downloadBytesPerSecond": -1,
+          "uploadBytesPerSecond": -1,
+          "effectiveType": "4g",
+          "downlinkMbps": null,
+          "rttMs": null
+        },
+        "cpuThrottle": null
+      },
+      "metrics": {
+        "lcp": {
+          "status": "measured",
+          "value": 256,
+          "unit": "ms",
+          "candidate": {
+            "startTime": 256,
+            "renderTime": 256,
+            "loadTime": 64.40000000596046,
+            "size": 102400,
+            "url": "http://127.0.0.1:3120/media/hero-earth-poster-1080-20260715.webp",
+            "selector": "span.lens-poster"
+          }
+        },
+        "fcp": {
+          "status": "measured",
+          "value": 256,
+          "unit": "ms"
+        },
+        "tti": {
+          "status": "approximate",
+          "value": 823.1,
+          "unit": "ms",
+          "method": "legacy 5-second long-task quiet window; not Lighthouse TTI and not a hard cross-engine gate"
+        },
+        "tbt": {
+          "status": "approximate",
+          "value": 118,
+          "unit": "ms",
+          "window": "FCP to legacy quiet-window TTI",
+          "method": "sum of each long task's blocking portion after its first 50 ms, clipped to the FCP-to-TTI window",
+          "blockingTime0To7sMs": 118
+        },
+        "cls": {
+          "status": "measured",
+          "value": 0,
+          "sessionWindow": "1-second gap, 5-second maximum"
+        },
+        "bytesBeforeFirstScroll": {
+          "status": "measured",
+          "value": 2781057,
+          "unit": "bytes",
+          "definition": "sum of PerformanceResourceTiming.transferSize for completed requests before first harness scroll input",
+          "completedTransferSizeBytes": 2781057,
+          "zeroTransferEntries": 0,
+          "inflightRequestCountAtBoundary": 0,
+          "eventualBytesForCompletedRequestsBeforeFirstScroll": 2815334,
+          "eventualBytesForRequestsStartedBeforeFirstScroll": 2815334,
+          "chromiumEncodedBytesReceivedBeforeFirstScroll": {
+            "status": "measured",
+            "value": 2774291,
+            "unit": "bytes"
+          },
+          "caveat": null
+        },
+        "nonHeroBytesBeforeFirstScroll": {
+          "status": "measured",
+          "value": 710015,
+          "unit": "bytes",
+          "definition": "startup transfer before first harness scroll excluding only the active Hero video transport; Hero poster, fonts, scripts, styles and all other resources remain included",
+          "hardBudgetBytes": 1500000,
+          "withinHardBudget": true,
+          "excludedHeroVideoUrls": [
+            "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm"
+          ],
+          "observedHeroTransportCount": 1,
+          "completedTransferSizeBytes": 710015,
+          "inflightRequestCountAtBoundary": 0,
+          "eventualBytesForCompletedRequestsBeforeFirstScroll": 743538,
+          "caveat": null
+        },
+        "heroVideoBytesBeforeFirstScroll": {
+          "status": "measured",
+          "value": 2071042,
+          "unit": "bytes",
+          "definition": "active approved-quality Hero video transport before first harness scroll; reported separately and never hidden from the total",
+          "completedTransferSizeBytes": 2071042,
+          "inflightRequestCountAtBoundary": 0,
+          "eventualBytesForCompletedRequestsBeforeFirstScroll": 2071796,
+          "urls": [
+            "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm"
+          ],
+          "transportCount": 1,
+          "failedUrls": []
+        },
+        "videoRequestsBeforeFirstScroll": {
+          "status": "measured",
+          "value": [
+            "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm"
+          ],
+          "count": 1,
+          "resourceTimingUrls": [
+            "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm"
+          ],
+          "requests": [
+            {
+              "url": "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm",
+              "method": "GET",
+              "resourceType": "media",
+              "video": true,
+              "range": "bytes=0-",
+              "completedBeforeFirstInput": true,
+              "startedBeforeFirstInput": true,
+              "failed": false,
+              "inflightAtBoundary": false,
+              "sizes": {
+                "requestBodySize": 0,
+                "requestHeadersSize": 697,
+                "responseBodySize": 2070742,
+                "responseHeadersSize": 357
+              }
+            }
+          ]
+        },
+        "preloaderRevealMs": {
+          "status": "measured",
+          "value": 1408.9,
+          "unit": "ms",
+          "definition": "navigation start to visible Hero surface (main readiness or root CSS fail-open)",
+          "preloaderCompleteMs": 1439.3,
+          "preloaderHiddenMs": 1408.9,
+          "preloaderRevealPath": "soft-deadline-reveal",
+          "softDeadlineMs": 1070.7,
+          "cssFailOpenMs": null,
+          "hardFailOpenMs": null
+        },
+        "longTasks": {
+          "status": "measured",
+          "value": [
+            {
+              "start": 533.6,
+              "duration": 124
+            },
+            {
+              "start": 729.1,
+              "duration": 94
+            }
+          ],
+          "windowMs": 15000,
+          "durationSumMs": 218,
+          "durationSum0To7sMs": 218
+        },
+        "total": {
+          "status": "measured",
+          "value": 218,
+          "unit": "ms",
+          "definition": "sum of long-task durations during the first 15 seconds"
+        },
+        "scrollFrameBudget": {
+          "status": "measured",
+          "value": {
+            "thresholdMs": 16.7,
+            "totalFrames": 141,
+            "overBudgetFrames": 77,
+            "ratio": 0.5461,
+            "calibratedCadenceMs": 16.7,
+            "calibratedSlowThresholdMs": 25.05,
+            "calibratedSlowFrames": 20,
+            "calibratedSlowRatio": 0.1418,
+            "p50Ms": 16.7,
+            "p95Ms": 33.4,
+            "p99Ms": 50,
+            "maxMs": 50.1
+          }
+        },
+        "webglContexts": {
+          "status": "measured",
+          "value": 1,
+          "createdTotal": 1,
+          "peakConnectedNonLost": 1,
+          "renderer": {
+            "vendor": "Google Inc. (Google)",
+            "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+          }
+        },
+        "webglContextLost": {
+          "status": "measured",
+          "value": 0,
+          "definition": "unexpected WebGL context losses that were not restored",
+          "intentionalReleaseEvents": 0,
+          "unexpectedLost": 0,
+          "unexpectedRestored": 0
+        },
+        "hiddenInViewport": {
+          "status": "measured",
+          "value": 16,
+          "definition": "all hidden or opacity-zero non-aria-hidden elements intersecting the viewport",
+          "revealContractMaximum": 0,
+          "revealContractAtOrAboveMaximum": 0,
+          "revealContractElementMaximum": 41,
+          "specializedRevealContractMaximum": 0,
+          "motionReadyObserved": true,
+          "revealContractSelectors": "[data-reveal-managed='true'],[data-reveal-complete='true']",
+          "specializedMotionSelector": ".services-story-section,.how-work-motion-section,.datum-motion-section,.domino-cta-section",
+          "samples": [
+            {
+              "anchor": "#top",
+              "found": true,
+              "hidden": {
+                "anchor": "#top",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 6,
+                "allDiagnostic": [
+                  {
+                    "selector": "div.second-stage",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 0,
+                      "y": 0,
+                      "width": 390,
+                      "height": 844
+                    }
+                  },
+                  {
+                    "selector": "div.second-copy.vision-reveal-copy",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 14,
+                      "y": 178,
+                      "width": 362,
+                      "height": 149.828125
+                    }
+                  },
+                  {
+                    "selector": "p.vision-reveal-label",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 149,
+                      "y": 200,
+                      "width": 92,
+                      "height": 36.765625
+                    }
+                  },
+                  {
+                    "selector": "p.vision-reveal-body",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 17,
+                      "y": 254.765625,
+                      "width": 356,
+                      "height": 95.0625
+                    }
+                  },
+                  {
+                    "selector": "div.second-media.vision-logo-media",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 36.13999938964844,
+                      "y": 729.3993530273438,
+                      "width": 317.719970703125,
+                      "height": 200.1612548828125
+                    }
+                  },
+                  {
+                    "selector": "img.vision-logo-image",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 42.494407653808594,
+                      "y": 801.0825805664062,
+                      "width": 305.0111999511719,
+                      "height": 192.15478515625
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#clients",
+              "found": true,
+              "hidden": {
+                "anchor": "#clients",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 16,
+                "allDiagnostic": [
+                  {
+                    "selector": "div.lens-stage.lens-stage-ready",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 116.68156433105469,
+                      "y": 218.554931640625,
+                      "width": 281.42120361328125,
+                      "height": 281.421142578125
+                    }
+                  },
+                  {
+                    "selector": "video.lens-video",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 116.68156433105469,
+                      "y": 218.554931640625,
+                      "width": 281.42120361328125,
+                      "height": 281.421142578125
+                    }
+                  },
+                  {
+                    "selector": "article.figma-client-card.figma-client-card-brand",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 26,
+                      "y": 450,
+                      "width": 338,
+                      "height": 635.203125
+                    }
+                  },
+                  {
+                    "selector": "h3",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 485,
+                      "width": 300,
+                      "height": 69.875
+                    }
+                  },
+                  {
+                    "selector": "div.figma-client-copy-block",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 567.875,
+                      "width": 300,
+                      "height": 190.265625
+                    }
+                  },
+                  {
+                    "selector": "p.figma-client-label",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 579.875,
+                      "width": 300,
+                      "height": 16.515625
+                    }
+                  },
+                  {
+                    "selector": "div.figma-client-key-text",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 592.390625,
+                      "width": 300,
+                      "height": 165.75
+                    }
+                  },
+                  {
+                    "selector": "p",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 606.390625,
+                      "width": 300,
+                      "height": 36.9375
+                    }
+                  },
+                  {
+                    "selector": "p",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 649.328125,
+                      "width": 300,
+                      "height": 36.9375
+                    }
+                  },
+                  {
+                    "selector": "p",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 692.265625,
+                      "width": 300,
+                      "height": 36.9375
+                    }
+                  },
+                  {
+                    "selector": "p",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 735.203125,
+                      "width": 300,
+                      "height": 36.9375
+                    }
+                  },
+                  {
+                    "selector": "div.figma-client-copy-block",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 783.140625,
+                      "width": 300,
+                      "height": 283.0625
+                    }
+                  },
+                  {
+                    "selector": "p.figma-client-label",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 795.140625,
+                      "width": 300,
+                      "height": 16.515625
+                    }
+                  },
+                  {
+                    "selector": "ul.figma-client-moment-list",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 807.65625,
+                      "width": 300,
+                      "height": 258.546875
+                    }
+                  },
+                  {
+                    "selector": "li",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 45,
+                      "y": 823.65625,
+                      "width": 300,
+                      "height": 54.34375
+                    }
+                  },
+                  {
+                    "selector": "span",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 96,
+                      "y": 833.65625,
+                      "width": 236,
+                      "height": 34.34375
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#services",
+              "found": true,
+              "hidden": {
+                "anchor": "#services",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 1,
+                "allDiagnostic": [
+                  {
+                    "selector": "section#work.how-work-motion-section.glass-editorial-section",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 0,
+                      "y": 842.875,
+                      "width": 390,
+                      "height": 844
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#work",
+              "found": true,
+              "hidden": {
+                "anchor": "#work",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 1,
+                "allDiagnostic": [
+                  {
+                    "selector": "section#work.how-work-motion-section.glass-editorial-section",
+                    "opacity": "0.254223",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 0,
+                      "y": 842.875,
+                      "width": 390,
+                      "height": 844
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#datum",
+              "found": true,
+              "hidden": {
+                "anchor": "#datum",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 1,
+                "allDiagnostic": [
+                  {
+                    "selector": "section#work.how-work-motion-section.glass-editorial-section",
+                    "opacity": "0.0733371",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 0,
+                      "y": 842.875,
+                      "width": 390,
+                      "height": 844
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#brief",
+              "found": true,
+              "hidden": {
+                "anchor": "#brief",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 6,
+                "allDiagnostic": [
+                  {
+                    "selector": "video.domino-sequence.domino-sequence-forward",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 67.265625,
+                      "width": 390,
+                      "height": 506.390625
+                    }
+                  },
+                  {
+                    "selector": "video.domino-sequence.domino-sequence-reverse",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 67.265625,
+                      "width": 390,
+                      "height": 506.390625
+                    }
+                  },
+                  {
+                    "selector": "h2.domino-video-title",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 16,
+                      "y": 421.75,
+                      "width": 358,
+                      "height": 80.84375
+                    }
+                  },
+                  {
+                    "selector": "div.domino-form-stage",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 637.75,
+                      "width": 390,
+                      "height": 412.125
+                    }
+                  },
+                  {
+                    "selector": "p.domino-body.domino-body-primary.stagger-reveal-item",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 27.5,
+                      "y": 716.75,
+                      "width": 335,
+                      "height": 78.875
+                    }
+                  },
+                  {
+                    "selector": "p.domino-body.domino-body-signal.stagger-reveal-item",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 27.5,
+                      "y": 813.625,
+                      "width": 335,
+                      "height": 19.71875
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#process",
+              "found": true,
+              "hidden": {
+                "anchor": "#process",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 0,
+                "allDiagnostic": []
+              }
+            },
+            {
+              "anchor": "#contact",
+              "found": true,
+              "hidden": {
+                "anchor": "#contact",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 2,
+                "allDiagnostic": [
+                  {
+                    "selector": "video.domino-sequence.domino-sequence-forward",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 781.265625,
+                      "width": 390,
+                      "height": 506.390625
+                    }
+                  },
+                  {
+                    "selector": "video.domino-sequence.domino-sequence-reverse",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 781.265625,
+                      "width": 390,
+                      "height": 506.390625
+                    }
+                  }
+                ]
+              }
+            },
+            {
+              "anchor": "#fast-scroll-10",
+              "found": true,
+              "hidden": {
+                "anchor": "#fast-scroll-10",
+                "expected": [],
+                "expectedAtOrAbove": [],
+                "contractCount": 41,
+                "specializedContractCount": 0,
+                "motionReady": true,
+                "allCount": 6,
+                "allDiagnostic": [
+                  {
+                    "selector": "video.domino-sequence.domino-sequence-reverse",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 67.265625,
+                      "width": 390,
+                      "height": 506.390625
+                    }
+                  },
+                  {
+                    "selector": "div.domino-form-stage",
+                    "opacity": "0",
+                    "visibility": "visible",
+                    "rect": {
+                      "x": 0,
+                      "y": 564.75,
+                      "width": 390,
+                      "height": 412.125
+                    }
+                  },
+                  {
+                    "selector": "p.domino-body.domino-body-primary.stagger-reveal-item",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 27.5,
+                      "y": 643.75,
+                      "width": 335,
+                      "height": 78.875
+                    }
+                  },
+                  {
+                    "selector": "p.domino-body.domino-body-signal.stagger-reveal-item",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 27.5,
+                      "y": 740.625,
+                      "width": 335,
+                      "height": 19.71875
+                    }
+                  },
+                  {
+                    "selector": "div.domino-impulse-row.stagger-reveal-item",
+                    "opacity": "0",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 21.5,
+                      "y": 796.34375,
+                      "width": 347,
+                      "height": 106
+                    }
+                  },
+                  {
+                    "selector": "input#domino-email",
+                    "opacity": "1",
+                    "visibility": "hidden",
+                    "rect": {
+                      "x": 22.5,
+                      "y": 797.34375,
+                      "width": 345,
+                      "height": 52
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "jsHeapPeak": {
+          "status": "measured",
+          "value": 16903756,
+          "unit": "bytes",
+          "samples": 72,
+          "p95Bytes": 10404889
+        },
+        "firstHarnessScrollInputMs": 15068.2,
+        "readiness": {
+          "ready": true,
+          "waitedMs": 61
+        },
+        "capabilities": {
+          "paint": true,
+          "lcp": true,
+          "cls": true,
+          "longtask": true,
+          "jsHeap": true,
+          "weakRef": true
+        },
+        "networkMode": {
+          "mode": "cdp-cache-disabled",
+          "approximate": false
+        },
+        "viewport": {
+          "width": 390,
+          "height": 844,
+          "deviceScaleFactor": 3,
+          "isMobile": true,
+          "hasTouch": true,
+          "platform": "mobile"
+        },
+        "diagnostics": {
+          "consoleErrors": [],
+          "pageErrors": [],
+          "requestFailures": [],
+          "badResponses": []
+        }
+      }
+    }
+  ]
+}

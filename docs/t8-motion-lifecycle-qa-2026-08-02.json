@@ -1,0 +1,314 @@
+{
+  "generatedAt": "2026-08-02T12:25:58.330Z",
+  "passed": true,
+  "checks": [
+    {
+      "name": "bootstrap publishes the ready marker after the complete profile",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "React profile state uses lazy bootstrap initializers",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "connection classification is a one-way latch and measured throughput cannot swap Services",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "mobile profile uses an exact greater-than 80px hysteresis",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "main GSAP runtime has one event-gated initializer without profile reversion",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "Services keys are transport-only and same-transport swaps call load",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "chromium profile rotation preserves one runtime and one Services node",
+      "passed": true,
+      "detail": {
+        "name": "chromium",
+        "passed": true,
+        "errors": [],
+        "states": {
+          "initial": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 0,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          },
+          "atEighty": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 0,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          },
+          "mobile": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 1,
+            "mobile": "true",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "mobile",
+            "spacerCount": 4
+          },
+          "returnAtEighty": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 1,
+            "mobile": "true",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "mobile",
+            "spacerCount": 4
+          },
+          "desktop": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 2,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          }
+        }
+      }
+    },
+    {
+      "name": "webkit profile rotation preserves one runtime and one Services node",
+      "passed": true,
+      "detail": {
+        "name": "webkit",
+        "passed": true,
+        "errors": [],
+        "states": {
+          "initial": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 0,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          },
+          "atEighty": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 0,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          },
+          "mobile": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 1,
+            "mobile": "true",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "mobile",
+            "spacerCount": 4
+          },
+          "returnAtEighty": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 1,
+            "mobile": "true",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "mobile",
+            "spacerCount": 4
+          },
+          "desktop": {
+            "constrained": "false",
+            "initCount": 1,
+            "loadCount": 2,
+            "mobile": "false",
+            "measuredConnectionProfile": null,
+            "nestedSpacers": 0,
+            "nodeId": "1",
+            "sameNode": true,
+            "sourceProfile": "desktop",
+            "spacerCount": 4
+          }
+        }
+      }
+    }
+  ],
+  "browserResults": [
+    {
+      "name": "chromium",
+      "passed": true,
+      "errors": [],
+      "states": {
+        "initial": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 0,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        },
+        "atEighty": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 0,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        },
+        "mobile": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 1,
+          "mobile": "true",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "mobile",
+          "spacerCount": 4
+        },
+        "returnAtEighty": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 1,
+          "mobile": "true",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "mobile",
+          "spacerCount": 4
+        },
+        "desktop": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 2,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        }
+      }
+    },
+    {
+      "name": "webkit",
+      "passed": true,
+      "errors": [],
+      "states": {
+        "initial": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 0,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        },
+        "atEighty": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 0,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        },
+        "mobile": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 1,
+          "mobile": "true",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "mobile",
+          "spacerCount": 4
+        },
+        "returnAtEighty": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 1,
+          "mobile": "true",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "mobile",
+          "spacerCount": 4
+        },
+        "desktop": {
+          "constrained": "false",
+          "initCount": 1,
+          "loadCount": 2,
+          "mobile": "false",
+          "measuredConnectionProfile": null,
+          "nestedSpacers": 0,
+          "nodeId": "1",
+          "sameNode": true,
+          "sourceProfile": "desktop",
+          "spacerCount": 4
+        }
+      }
+    }
+  ]
+}

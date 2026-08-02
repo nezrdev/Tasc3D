@@ -78,15 +78,41 @@ const webkitCompatibilityBootstrap = `
   try {
     var ua = navigator.userAgent || "";
     var forced = new URLSearchParams(location.search).get("webkitCompat") === "1";
+    var forcePacked = new URLSearchParams(location.search).get("forcePacked") === "1";
     var appleWebKit = /AppleWebKit/i.test(ua) && !/(Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android)/i.test(ua);
     var macOS = /Macintosh|Mac OS X/i.test(ua) || /^Mac/i.test(navigator.platform || "");
     var iOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    if (forced || macOS || iOS) {
-      document.documentElement.setAttribute("data-tasc-macos", "true");
-    }
-    if (forced || appleWebKit || iOS) {
-      document.documentElement.setAttribute("data-tasc-webkit", "true");
-    }
+    var edge = /\\bEdg(?:A|iOS)?\\//i.test(ua);
+    var appleWebView = /AppleWebKit/i.test(ua) && !/(Safari|Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android)/i.test(ua);
+    var knownChromiumAlpha = /(?:Chrome|Chromium)\\//i.test(ua) && !edge && !/\\b(?:OPR|SamsungBrowser)\\//i.test(ua) && !iOS && !appleWebView;
+    var codecProbe = document.createElement("video");
+    var packedH264 = codecProbe.canPlayType('video/mp4; codecs="avc1.4D401F"') !== "";
+    var nativeAlphaWebM = knownChromiumAlpha && codecProbe.canPlayType('video/webm; codecs="vp9"') !== "";
+    var connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    var constrained = !!(connection && (connection.saveData === true || connection.effectiveType === "slow-2g" || connection.effectiveType === "2g"));
+    var reducedMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    var coarsePointer = !!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches);
+    var viewportWidth = Math.max(1, document.documentElement.clientWidth || (window.visualViewport && window.visualViewport.width) || window.innerWidth || 1);
+    var viewportHeight = Math.max(1, document.documentElement.clientHeight || (window.visualViewport && window.visualViewport.height) || window.innerHeight || 1);
+    var lowMemory = typeof navigator.deviceMemory === "number" && navigator.deviceMemory <= 4;
+    var lowCpu = typeof navigator.hardwareConcurrency === "number" && navigator.hardwareConcurrency <= 4;
+    var webkit = forced || appleWebKit || iOS || appleWebView;
+    var macPerformance = forced || macOS || iOS;
+    var mobilePerformance = viewportWidth <= 900 || coarsePointer || (!macPerformance && (lowMemory || lowCpu)) || !!(connection && connection.saveData);
+    var root = document.documentElement;
+    root.dataset.tascMotionAllowed = String(!reducedMotion);
+    root.dataset.tascMobilePerformance = String(mobilePerformance);
+    root.dataset.tascMacos = String(macPerformance);
+    root.dataset.tascWebkit = String(webkit);
+    root.dataset.tascEdgeAlpha = String(edge);
+    root.dataset.tascPackedH264Supported = String(packedH264);
+    root.dataset.tascNativeAlphaWebmSupported = String(nativeAlphaWebM);
+    root.dataset.tascForcePacked = String(forcePacked);
+    root.dataset.tascConstrainedConnection = String(constrained);
+    root.dataset.tascCoarsePointer = String(coarsePointer);
+    root.dataset.tascViewportWidth = String(Math.round(viewportWidth));
+    root.dataset.tascViewportHeight = String(Math.round(viewportHeight));
+    root.dataset.tascProfileReady = "true";
   } catch (error) {}
 `;
 const preloaderNavigationFailOpen = `
