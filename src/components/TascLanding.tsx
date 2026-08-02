@@ -20,6 +20,10 @@ import TascHeader from "@/components/TascHeader";
 import { useMediaOrchestrator } from "@/hooks/useMediaOrchestrator";
 import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
+import {
+    useServicesStory,
+    type ServicesStoryInputRuntime,
+} from "@/hooks/useServicesStory";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
@@ -33,8 +37,6 @@ import { isMediaBufferedThrough } from "@/lib/media-buffer";
 import {
     getMotionInputOwnerId,
     registerMotionInputObserver,
-    registerMotionInputStory,
-    type MotionInputRegistration,
 } from "@/lib/motion-input-bus";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { getVisualViewportHeight } from "@/lib/visibility";
@@ -93,7 +95,6 @@ const VISION_LOGO_DEEP_LINKS = new Set([
     "#contact",
 ]);
 const SERVICES_PLAYBACK_RATE = 1;
-const SERVICES_INPUT_QUIET_MS = 140;
 const SERVICES_ENTRY_GATE_MS = 120;
 const SERVICES_POST_STAGE_GATE_MS = 150;
 const MEDIA_SEGMENT_GRACE_MS = 700;
@@ -193,6 +194,7 @@ export function TascLanding() {
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
     const [heroIntroReady, setHeroIntroReady] = useState(false);
+    const createServicesStoryInput = useServicesStory();
     const {
         actions: mediaActions,
         setters: {
@@ -1836,6 +1838,7 @@ export function TascLanding() {
         let servicesRunToken = 0;
         let servicesActive = false;
         let servicesReleasing = false;
+        let servicesStoryInput: ServicesStoryInputRuntime | null = null;
         const lockClientsServicesHandoffAtServices = () => {
             const handoff = clientsServicesHandoff;
             const trigger = handoff?.scrollTrigger;
@@ -1851,18 +1854,11 @@ export function TascLanding() {
                 gsap.set(servicesMediaVisuals, { autoAlpha: 1 });
         };
         let servicesPhase: "idle" | "preparing" | "playing" | "waiting" | "releasing" | "reverse" = "idle";
-        let servicesInputRegistration: MotionInputRegistration | null = null;
         let servicesEntryDirection: 1 | -1 = 1;
         let servicesLockY = 0;
-        let servicesGestureTotal = 0;
         let servicesGateUntil = 0;
         let servicesEntryInputIgnoreUntil = 0;
-        let servicesLastBlockedInputAt = 0;
-        let servicesBlockedDirection: 1 | -1 | 0 = 0;
         let servicesTransitionDirection: 1 | -1 | 0 = 0;
-        let servicesPendingDirection: 1 | -1 | 0 = 0;
-        let servicesPendingMagnitude = 0;
-        let servicesPendingTimer = 0;
         let servicesPortionDirection: 1 | -1 | 0 = 0;
         let servicesLastPortionDirection: 1 | -1 | 0 = 0;
         let documentScrollY = window.scrollY;
@@ -1890,10 +1886,6 @@ export function TascLanding() {
         let servicesMediaRetryFailures = 0;
         let servicesMediaRetryStartedAt = 0;
         let servicesOwnsLenisLock = false;
-        let touchY: number | null = null;
-        let servicesTouchGestureActive = false;
-        let servicesIgnoreCurrentTouch = false;
-        let servicesTouchStartedAtSettledStop = false;
         let dominoRunToken = 0;
         let dominoInputLocked = false;
         let dominoCompleted = false;
@@ -2321,8 +2313,8 @@ export function TascLanding() {
                     finish(false);
                     return;
                 }
-                if (media === servicesVideo && servicesInputRegistration?.isOwner())
-                    servicesInputRegistration.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
+                if (media === servicesVideo && servicesStoryInput?.isOwner())
+                    servicesStoryInput.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
                 if (hasReachedSegmentTarget()) {
                     video.dataset.segmentState = "ready";
                     finish(true, snapToFinalFrame);
@@ -2717,9 +2709,9 @@ export function TascLanding() {
             root.dataset.servicesPhase = phase;
             const progress = `${phase}:${Math.max(0, servicesStage + 1)}`;
             if (phase === "preparing" || phase === "playing" || phase === "releasing" || phase === "reverse")
-                servicesInputRegistration?.claim(progress);
+                servicesStoryInput?.claim(progress);
             else
-                servicesInputRegistration?.release(phase === "waiting" ? "completed" : "out-of-range");
+                servicesStoryInput?.release(phase === "waiting" ? "completed" : "out-of-range");
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
@@ -2737,24 +2729,10 @@ export function TascLanding() {
             }
             setMotionInputState();
         };
-        const clearServicesPendingIntent = () => {
-            window.clearTimeout(servicesPendingTimer);
-            servicesPendingTimer = 0;
-            servicesPendingDirection = 0;
-            servicesPendingMagnitude = 0;
-        };
-        const queueServicesIntent = (direction: 1 | -1, gestureMagnitude = 160, threshold = 18, allowTransitionDirection = false) => {
-            if (servicesTransitionDirection === 0)
-                return;
-            if (direction === servicesTransitionDirection && !allowTransitionDirection)
-                return;
-            if (servicesPendingDirection !== 0 && servicesPendingDirection !== direction) {
-                servicesPendingMagnitude = 0;
-            }
-            servicesPendingMagnitude += Math.abs(gestureMagnitude);
-            if (servicesPendingMagnitude >= threshold)
-                servicesPendingDirection = direction;
-        };
+        const clearServicesPendingIntent = () => servicesStoryInput?.clearPendingIntent();
+        const flushServicesPendingIntent = () => servicesStoryInput?.flushPendingIntent();
+        const resetServicesBlockedInput = () => servicesStoryInput?.resetBlockedInput();
+        const resetServicesGestureTotal = () => servicesStoryInput?.resetGestureTotal();
         const stopServicesTextTimeline = () => {
             window.clearTimeout(servicesTextWatchdog);
             servicesTextWatchdog = 0;
@@ -2873,7 +2851,7 @@ export function TascLanding() {
             const from = nextStage === 0 ? 0 : SERVICES_KEYFRAME_STOPS[nextStage - 1];
             const to = SERVICES_KEYFRAME_STOPS[nextStage];
             const segmentDuration = (to - from) / SERVICES_PLAYBACK_RATE;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesPhase("preparing");
             setMotionInputState();
@@ -3015,9 +2993,8 @@ export function TascLanding() {
             servicesActive = false;
             servicesReleasing = true;
             servicesTransitionDirection = 0;
-            servicesGestureTotal = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
+            resetServicesGestureTotal();
+            resetServicesBlockedInput();
             clearServicesPendingIntent();
             setServicesPhase("releasing");
             delete root.dataset.servicesPinned;
@@ -3058,7 +3035,7 @@ export function TascLanding() {
             const token = ++servicesRunToken;
             beginServicesMediaAttempt("forward:exit");
             setServicesPhase("releasing");
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             const exitMediaReady = root.dataset.servicesMediaFallback === "true"
                 ? false
                 : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
@@ -3166,8 +3143,7 @@ export function TascLanding() {
             servicesReleasing = false;
             servicesTransitionDirection = 0;
             servicesGateUntil = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
+            resetServicesBlockedInput();
             clearServicesPendingIntent();
             resetServicesPortionState();
             setServicesPhase("idle");
@@ -3204,7 +3180,7 @@ export function TascLanding() {
             root.dataset.servicesEntryDirection = "forward";
             root.dataset.servicesEntrySource = entrySource;
             servicesLockY = lockY;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_ENTRY_GATE_MS;
             servicesTransitionDirection = 1;
             clearServicesPendingIntent();
@@ -3341,10 +3317,10 @@ export function TascLanding() {
             root.dataset.servicesEntryDirection = "reverse";
             root.dataset.servicesEntrySource = entrySource;
             servicesLockY = lockY;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
             servicesEntryInputIgnoreUntil = performance.now() + 320;
-            servicesIgnoreCurrentTouch = servicesTouchGestureActive;
+            servicesStoryInput?.ignoreCurrentTouchGesture();
             servicesTransitionDirection = -1;
             clearServicesPendingIntent();
             setServicesEntryPoster(false);
@@ -3484,7 +3460,7 @@ export function TascLanding() {
             root.dataset.servicesReverseTransport = "continuous";
             const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
             servicesTransitionDirection = -1;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesStaticStop(servicesStage);
             delete root.dataset.servicesMediaDecoded;
@@ -3655,10 +3631,10 @@ export function TascLanding() {
         };
         const requestServicesDirection = (direction: 1 | -1) => {
             if (!servicesActive || servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
-                servicesGestureTotal = 0;
+                resetServicesGestureTotal();
                 return;
             }
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             if (direction < 0) {
                 if (servicesStage > 0) {
                     void runServicesReverseStage(servicesStage - 1);
@@ -3674,276 +3650,30 @@ export function TascLanding() {
                 void releaseServicesForward();
             }
         };
-        function flushServicesPendingIntent() {
-            window.clearTimeout(servicesPendingTimer);
-            servicesPendingTimer = 0;
-            if (!servicesActive || servicesPhase !== "waiting" || servicesPendingDirection === 0)
-                return;
-            const delay = Math.max(0, servicesGateUntil - performance.now());
-            servicesPendingTimer = window.setTimeout(() => {
-                servicesPendingTimer = 0;
-                if (!servicesActive || servicesPhase !== "waiting" || servicesPendingDirection === 0)
-                    return;
-                const direction = servicesPendingDirection;
-                servicesPendingDirection = 0;
-                servicesPendingMagnitude = 0;
-                servicesBlockedDirection = 0;
-                servicesLastBlockedInputAt = 0;
-                requestServicesDirection(direction);
-            }, delay);
-        }
-        const isEditableTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
-        const normalizeWheelDelta = (event: WheelEvent) => {
-            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE)
-                return event.deltaY * 16;
-            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE)
-                return event.deltaY * window.innerHeight;
-            return event.deltaY;
-        };
-        const handleWheelCapture = (event: WheelEvent) => {
-            if (event.ctrlKey)
-                return;
-            if (isMacRuntime() && servicesActive && !servicesReleasing && servicesTrigger && !servicesTrigger.isActive) {
-                releaseServicesForNavigation();
-                return;
-            }
-            if (servicesReleasing) {
-                event.preventDefault();
-                return;
-            }
-            if (dominoInputLocked) {
-                event.preventDefault();
-                return;
-            }
-            if (!servicesActive)
-                return;
-            event.preventDefault();
-            const now = performance.now();
-            const delta = normalizeWheelDelta(event);
-            if (Math.abs(delta) < 0.01)
-                return;
-            const direction = delta >= 0 ? 1 : -1;
-            const gestureThreshold = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 12 : 18;
-            if (now < servicesEntryInputIgnoreUntil) {
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (servicesPhase !== "waiting") {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), gestureThreshold);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                return;
-            }
-            if (now < servicesGateUntil) {
-                servicesGestureTotal = 0;
-                const deliberatePostStageGesture = Math.abs(delta) >= 72;
-                queueServicesIntent(direction, Math.abs(delta), gestureThreshold, deliberatePostStageGesture);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                flushServicesPendingIntent();
-                return;
-            }
-            if (direction === servicesBlockedDirection &&
-                now - servicesLastBlockedInputAt < SERVICES_INPUT_QUIET_MS) {
-                servicesGestureTotal = 0;
-                return;
-            }
-            servicesBlockedDirection = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesGestureTotal += delta;
-            if (Math.abs(servicesGestureTotal) >= gestureThreshold) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
-            }
-        };
-        const handleTouchStart = (event: TouchEvent) => {
-            servicesTouchGestureActive = true;
-            if (performance.now() < servicesEntryInputIgnoreUntil)
-                servicesIgnoreCurrentTouch = true;
-            servicesTouchStartedAtSettledStop =
-                servicesActive && !servicesReleasing && servicesPhase === "waiting";
-            if (servicesActive && !servicesReleasing) {
-                servicesGestureTotal = 0;
-                servicesLastBlockedInputAt = 0;
-                servicesBlockedDirection = 0;
-            }
-            touchY = (servicesActive || servicesReleasing || dominoInputLocked) && event.touches[0]
-                ? event.touches[0].clientY
-                : null;
-        };
-        const handleTouchMove = (event: TouchEvent) => {
-            if (servicesReleasing) {
-                if (event.cancelable)
-                    event.preventDefault();
-                return;
-            }
-            if (dominoInputLocked) {
-                if (event.cancelable)
-                    event.preventDefault();
-                return;
-            }
-            if (!servicesActive || !event.touches[0])
-                return;
-            const nextY = event.touches[0].clientY;
-            if (servicesIgnoreCurrentTouch) {
-                if (event.cancelable)
-                    event.preventDefault();
-                touchY = nextY;
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (touchY === null) {
-                if (event.cancelable)
-                    event.preventDefault();
-                touchY = nextY;
-                correctNativeScroll(servicesLockY);
-                return;
-            }
-            const delta = touchY - nextY;
-            touchY = nextY;
-            if (event.cancelable)
-                event.preventDefault();
-            const now = performance.now();
-            const direction = delta >= 0 ? 1 : -1;
-            if (now < servicesEntryInputIgnoreUntil) {
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (servicesPhase !== "waiting") {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), 10);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                return;
-            }
-            if (now < servicesGateUntil) {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), 10, servicesTouchStartedAtSettledStop);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                flushServicesPendingIntent();
-                return;
-            }
-            if (direction === servicesBlockedDirection &&
-                now - servicesLastBlockedInputAt < SERVICES_INPUT_QUIET_MS) {
-                servicesGestureTotal = 0;
-                return;
-            }
-            servicesBlockedDirection = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesGestureTotal += delta;
-            if (Math.abs(servicesGestureTotal) >= 10) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
-            }
-        };
-        const handleTouchEnd = () => {
-            const ignoredEntryGesture = servicesIgnoreCurrentTouch;
-            servicesTouchGestureActive = false;
-            servicesIgnoreCurrentTouch = false;
-            touchY = null;
-            servicesGestureTotal = 0;
-            if (!ignoredEntryGesture &&
-                servicesTouchStartedAtSettledStop &&
-                servicesActive &&
-                servicesPhase === "waiting" &&
-                servicesPendingDirection !== 0) {
-                flushServicesPendingIntent();
-            }
-            else {
-                clearServicesPendingIntent();
-            }
-            servicesTouchStartedAtSettledStop = false;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
-        };
-        const handleKeydownCapture = (event: KeyboardEvent) => {
-            const forward = event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || (event.key === " " && !event.shiftKey);
-            const backward = event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home" || (event.key === " " && event.shiftKey);
-            if (!forward && !backward)
-                return;
-            if (isEditableTarget(event.target))
-                return;
-            if (servicesReleasing) {
-                event.preventDefault();
-                return;
-            }
-            if (servicesActive) {
-                event.preventDefault();
-                if (!event.repeat) {
-                    const direction = forward ? 1 : -1;
-                    if (servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
-                        queueServicesIntent(direction, 160, 18, servicesPhase === "waiting");
-                        if (servicesPhase === "waiting")
-                            flushServicesPendingIntent();
-                    }
-                    else {
-                        requestServicesDirection(direction);
-                    }
-                }
-                return;
-            }
-            if (dominoInputLocked) {
-                event.preventDefault();
-            }
-        };
-        const maintainPinnedScroll = () => {
-            const targetY = servicesActive && !servicesReleasing
-                ? servicesLockY
-                : dominoInputLocked
-                    ? dominoLockY
-                    : null;
-            if (targetY !== null)
-                correctNativeScroll(targetY);
-        };
         if (useLegacyServicesFlow) {
-            servicesInputRegistration = registerMotionInputStory({
-                id: "services",
-                priority: 100,
+            servicesStoryInput = createServicesStoryInput({
                 root,
-                canClaim: () => !disposed && (servicesActive || servicesReleasing),
-                observe: ({ kind }) => {
-                    if (kind === "touchstart")
-                        servicesTouchGestureActive = true;
-                    else if (kind === "touchend" || kind === "touchcancel")
-                        servicesTouchGestureActive = false;
-                },
-                onGesture: ({ event, kind }) => {
-                    if (kind === "wheel")
-                        handleWheelCapture(event as WheelEvent);
-                    else if (kind === "touchstart")
-                        handleTouchStart(event as TouchEvent);
-                    else if (kind === "touchmove")
-                        handleTouchMove(event as TouchEvent);
-                    else if (kind === "touchend" || kind === "touchcancel")
-                        handleTouchEnd();
-                    else if (kind === "keydown")
-                        handleKeydownCapture(event as KeyboardEvent);
-                    else if (kind === "scroll")
-                        maintainPinnedScroll();
-                    const releaseWaitingGesture = servicesPhase === "waiting" &&
-                        (kind === "wheel" || kind === "keydown" || kind === "touchend" || kind === "touchcancel");
-                    return {
-                        handled: event.defaultPrevented,
-                        progress: servicesPhase === "waiting"
-                            ? undefined
-                            : `${servicesPhase}:${Math.max(0, servicesStage + 1)}`,
-                        release: releaseWaitingGesture,
-                    };
-                },
-                release: (reason) => {
-                    servicesTouchGestureActive = false;
-                    if ((reason === "watchdog" || reason === "superseded") &&
-                        (servicesActive || servicesReleasing || servicesOwnsLenisLock)) {
-                        releaseServicesForNavigation();
-                    }
-                },
+                isDisposed: () => disposed,
+                isMacRuntime,
+                isDominoInputLocked: () => dominoInputLocked,
+                isServicesActive: () => servicesActive,
+                isServicesReleasing: () => servicesReleasing,
+                servicesOwnsLenisLock: () => servicesOwnsLenisLock,
+                getServicesPhase: () => servicesPhase,
+                getServicesStage: () => servicesStage,
+                getServicesGateUntil: () => servicesGateUntil,
+                getServicesEntryInputIgnoreUntil: () => servicesEntryInputIgnoreUntil,
+                getServicesTransitionDirection: () => servicesTransitionDirection,
+                getServicesLockY: () => servicesLockY,
+                getDominoLockY: () => dominoLockY,
+                getServicesTriggerActive: () => servicesTrigger ? servicesTrigger.isActive : null,
+                correctNativeScroll,
+                releaseServicesForNavigation,
+                requestServicesDirection,
             });
             cleanupCallbacks.push(() => {
-                servicesInputRegistration?.unregister();
-                servicesInputRegistration = null;
+                servicesStoryInput?.dispose();
+                servicesStoryInput = null;
             });
         }
         const lensMotion = compactMotion
@@ -4489,8 +4219,7 @@ export function TascLanding() {
                     servicesReleasing = false;
                     servicesTransitionDirection = 0;
                     servicesGateUntil = 0;
-                    servicesLastBlockedInputAt = 0;
-                    servicesBlockedDirection = 0;
+                    resetServicesBlockedInput();
                     clearServicesPendingIntent();
                     setServicesPhase("idle");
                     showServicesIdlePreview();
@@ -4668,8 +4397,7 @@ export function TascLanding() {
                     mediaRunCancels.get(servicesVideo)?.();
                 stopServicesTextTimeline();
                 clearServicesPendingIntent();
-                servicesLastBlockedInputAt = 0;
-                servicesBlockedDirection = 0;
+                resetServicesBlockedInput();
                 pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[targetStage]);
                 setServicesPanel(targetStage);
                 servicesGateUntil = 0;

@@ -17,6 +17,8 @@ const maxLines = typeof args["max-lines"] === "string" ? Number(args["max-lines"
 const landingPath = path.join(root, "src/components/TascLanding.tsx");
 const landingSource = readFileSync(landingPath, "utf8");
 const landingLines = landingSource.split(/\r?\n/).length;
+const servicesStoryPath = path.join(root, "src/hooks/useServicesStory.ts");
+const servicesStorySource = readFileSync(servicesStoryPath, "utf8");
 const sectionContracts = [
   ["HeroSection", "HeroSection.tsx", '<section id="main-content" className="hero-motion"'],
   ["ServicesSection", "ServicesSection.tsx", '<div className="services-story-overlap-shell">'],
@@ -45,7 +47,10 @@ check(
 );
 check(
   "T7 and T8 runtime ownership remains centralized",
-  landingSource.includes('registerMotionInputStory({') &&
+  servicesStorySource.includes('registerMotionInputStory({') &&
+    servicesStorySource.includes('id: "services"') &&
+    servicesStorySource.includes("priority: 100") &&
+    !servicesStorySource.includes("useGSAP(") &&
     landingSource.includes('window.addEventListener("tasc:motion-runtime-request"') &&
     landingSource.includes('window.addEventListener("tasc:motion-runtime-disable"') &&
     (landingSource.match(/useGSAP\(/g) ?? []).length === 1,
