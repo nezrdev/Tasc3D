@@ -28,11 +28,6 @@ const roboto = localFont({
             style: "normal",
         },
         {
-            path: "./fonts/roboto/Roboto-Medium.woff2",
-            weight: "500",
-            style: "normal",
-        },
-        {
             path: "./fonts/roboto/Roboto-Bold.woff2",
             weight: "700",
             style: "normal",
@@ -55,16 +50,6 @@ const suisse = localFont({
             style: "normal",
         },
         {
-            path: "./fonts/suisse/suisseintl-medium.woff2",
-            weight: "500",
-            style: "normal",
-        },
-        {
-            path: "./fonts/suisse/SuisseIntl-SemiBold.woff2",
-            weight: "600",
-            style: "normal",
-        },
-        {
             path: "./fonts/suisse/SuisseIntl-Bold.woff2",
             weight: "700",
             style: "normal",
@@ -72,7 +57,7 @@ const suisse = localFont({
     ],
     variable: "--font-suisse",
     display: "swap",
-    preload: false,
+    preload: true,
 });
 const webkitCompatibilityBootstrap = `
   try {
