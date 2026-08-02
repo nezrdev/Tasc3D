@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-02T16:22:51.827Z",
+  "runId": "2026-08-02T16-12-45-284Z-16776",
+  "preset": "journey",
+  "baseUrl": "http://127.0.0.1:3120/",
+  "caseCount": 4,
+  "passedCount": 4,
+  "failedCount": 0,
+  "advisoryCount": 1,
+  "crossCaseSpeed": [
+    {
+      "input": "wheel",
+      "cache": "cold",
+      "network": "normal",
+      "chromiumMedianNormalizedStep": 0.56,
+      "webkitMedianNormalizedStep": 0.56,
+      "ratio": 1,
+      "passed": true
+    },
+    {
+      "input": "touch",
+      "cache": "cold",
+      "network": "normal",
+      "chromiumMedianNormalizedStep": 1.4727488151658767,
+      "webkitMedianNormalizedStep": 1.5088862559241707,
+      "ratio": 1.0245374094931619,
+      "passed": true
+    }
+  ],
+  "cases": [
+    {
+      "id": "001-chromium-mac-wheel-cold-normal-r1",
+      "passed": true,
+      "advisories": [
+        "journey: decoded-frame drop ratio stays below 25 percent"
+      ]
+    },
+    {
+      "id": "002-chromium-mobile-touch-cold-normal-r1",
+      "passed": true,
+      "advisories": []
+    },
+    {
+      "id": "003-webkit-mac-wheel-cold-normal-r1",
+      "passed": true,
+      "advisories": []
+    },
+    {
+      "id": "004-webkit-mobile-touch-cold-normal-r1",
+      "passed": true,
+      "advisories": []
+    }
+  ]
+}
