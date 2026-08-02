@@ -7,3 +7,4 @@ This folder is working memory and verification evidence for the TASC 3D site. It
 - `perf-*.json` and `cross-device-*.json` are verification artifacts.
 - `t5-physical-safari-acceptance.md` is the real Apple hardware acceptance runbook.
 - `t7-verification-2026-08-02.md` records the unified input-owner verification and carried final-matrix work.
+- `t8-verification-2026-08-02.md` records the stable runtime/profile lifecycle and its regression evidence.

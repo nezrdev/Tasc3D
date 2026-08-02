@@ -57,6 +57,9 @@ const requestedUrl = typeof args.url === "string"
 const headed = args.headed === true;
 const outputPath = typeof args.output === "string" ? path.resolve(ROOT, args.output) : null;
 const staticOnly = args.static === true;
+const requestedEngines = typeof args.engines === "string"
+  ? new Set(args.engines.split(",").map((value) => value.trim()).filter(Boolean))
+  : null;
 
 if (!requestedUrl && !staticOnly) {
   throw new Error(
@@ -91,6 +94,7 @@ const requiredSource = (relative) => {
 
 const busSource = requiredSource("src/lib/motion-input-bus.ts");
 const connectionSource = requiredSource("src/lib/connection-profile.ts");
+const layoutSource = requiredSource("src/app/layout.tsx");
 const landingSource = requiredSource("src/components/TascLanding.tsx");
 const reversibleSource = requiredSource("src/hooks/useReversibleScrollStories.ts");
 const portionSource = requiredSource("src/hooks/useMobilePortionedScroll.ts");
@@ -240,9 +244,9 @@ const runStaticContracts = () => {
     "export const readResourceThroughputMegabitsPerSecond",
   );
   const initialPerformanceProfile = sliceBetween(
-    landingSource,
-    "const syncPerformanceMode = () => {",
-    "syncPerformanceMode();",
+    layoutSource,
+    "const webkitCompatibilityBootstrap = `",
+    "const preloaderNavigationFailOpen = `",
   );
   check(
     "initial constrained profile accepts only saveData, slow-2g, and 2g",
@@ -251,7 +255,9 @@ const runStaticContracts = () => {
       explicitConnectionSignal.includes('effectiveType === "2g"') &&
       !explicitConnectionSignal.includes("downlink") &&
       !/["']3g["']/.test(explicitConnectionSignal) &&
-      initialPerformanceProfile.includes("hasExplicitConstrainedConnectionSignal(device)") &&
+      initialPerformanceProfile.includes('connection.saveData === true') &&
+      initialPerformanceProfile.includes('connection.effectiveType === "slow-2g"') &&
+      initialPerformanceProfile.includes('connection.effectiveType === "2g"') &&
       !initialPerformanceProfile.includes("downlink") &&
       !/effectiveType\s*===\s*["']3g["']/.test(initialPerformanceProfile),
   );
@@ -331,7 +337,7 @@ const verifyBuildIdentity = async (baseUrl) => {
 const browserConfigurations = [
   { name: "chromium-desktop", browserType: chromium },
   { name: "webkit-desktop", browserType: webkit },
-];
+].filter(({ name }) => !requestedEngines || requestedEngines.has(name.split("-")[0]));
 
 const installInstrumentation = async (context) => {
   await context.addInitScript(({ maxJumpRatio }) => {
@@ -502,7 +508,8 @@ const waitForSiteReady = async (page, baseUrl, caseName) => {
   }, null, { timeout: READY_TIMEOUT_MS });
   const cookieButton = page.getByRole("button", { name: /accept cookies/i });
   if (await cookieButton.isVisible({ timeout: 1_500 }).catch(() => false)) {
-    await cookieButton.click({ timeout: 3_000 });
+    await cookieButton.evaluate((button) => button.click());
+    await page.waitForTimeout(100);
   }
   await page.waitForTimeout(250);
 };
@@ -669,7 +676,27 @@ const runBrowserCase = async (configuration, baseUrl) => {
         { ...mediaProfile, firstSelectedServiceMedia, requests: servicesRequests },
       );
     } catch (error) {
-      check("Services forward/reverse journey completes", false, error instanceof Error ? error.message : String(error));
+      const debugState = await page.evaluate(() => {
+        const root = document.querySelector(".site-shell");
+        const video = document.querySelector(".services-story-video-wrap video");
+        return {
+          active: root?.dataset.servicesActive ?? null,
+          constrained: document.documentElement.dataset.tascConstrainedConnection ?? null,
+          measuredConnectionProfile: root?.dataset.measuredConnectionProfile ?? null,
+          mediaPrepared: root?.dataset.servicesMediaPrepared ?? null,
+          owner: root?.dataset.motionInputOwner ?? null,
+          phase: root?.dataset.servicesPhase ?? null,
+          source: root?.dataset.servicesSource ?? null,
+          sourceProfile: root?.dataset.servicesSourceProfile ?? null,
+          videoCurrentSrc: video?.currentSrc ?? null,
+          videoError: video?.error?.code ?? null,
+          videoReadyState: video?.readyState ?? null,
+        };
+      }).catch(() => null);
+      check("Services forward/reverse journey completes", false, {
+        error: error instanceof Error ? error.message : String(error),
+        state: debugState,
+      });
     } finally {
       if (page) await page.evaluate(() => window.__t7QaControl?.endScroll()).catch(() => undefined);
     }

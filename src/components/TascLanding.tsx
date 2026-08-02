@@ -107,12 +107,59 @@ const SERVICES_REVERSE_STOP_FRAME_SIGNATURE = SERVICES_REVERSE_STOP_FRAMES.join(
 const SERVICES_REVERSE_STOP_TIME_LABELS = SERVICES_REVERSE_STOP_FRAMES.map((frame) => `${frame}/${RUNTIME_MEDIA.services.fps}`);
 const SERVICES_REVERSE_STOP_TIME_SIGNATURE = SERVICES_REVERSE_STOP_TIME_LABELS.join(",");
 const SERVICES_HAS_CONTINUOUS_REVERSE = SERVICES_REVERSE_KEYFRAME_STOPS.length === SERVICES_KEYFRAME_STOPS.length;
+const MOBILE_PROFILE_WIDTH = 900;
+const MOBILE_PROFILE_HYSTERESIS_PX = 80;
+type RuntimePerformanceProfile = {
+    constrainedConnection: boolean;
+    edgeAlphaCompatibility: boolean;
+    forcePackedTransport: boolean;
+    macPerformance: boolean;
+    mobilePerformance: boolean;
+    nativeAlphaWebMSupported: boolean;
+    packedH264Supported: boolean;
+    webkitCompatibility: boolean;
+};
+type InitialRuntimeProfile = RuntimePerformanceProfile & {
+    coarsePointer: boolean;
+    motionAllowed: boolean;
+    ready: boolean;
+    viewportHeight: number;
+    viewportWidth: number;
+};
+const readBootstrapBoolean = (key: string, fallback: boolean) => {
+    if (typeof document === "undefined")
+        return fallback;
+    const value = document.documentElement.dataset[key];
+    return value === undefined ? fallback : value === "true";
+};
+const readBootstrapNumber = (key: string, fallback: number) => {
+    if (typeof document === "undefined")
+        return fallback;
+    const value = Number(document.documentElement.dataset[key]);
+    return Number.isFinite(value) && value > 0 ? value : fallback;
+};
+const readInitialRuntimeProfile = (): InitialRuntimeProfile => ({
+    ready: readBootstrapBoolean("tascProfileReady", false),
+    motionAllowed: readBootstrapBoolean("tascMotionAllowed", false),
+    mobilePerformance: readBootstrapBoolean("tascMobilePerformance", false),
+    macPerformance: readBootstrapBoolean("tascMacos", false),
+    webkitCompatibility: readBootstrapBoolean("tascWebkit", false),
+    edgeAlphaCompatibility: readBootstrapBoolean("tascEdgeAlpha", false),
+    packedH264Supported: readBootstrapBoolean("tascPackedH264Supported", true),
+    nativeAlphaWebMSupported: readBootstrapBoolean("tascNativeAlphaWebmSupported", true),
+    forcePackedTransport: readBootstrapBoolean("tascForcePacked", false),
+    constrainedConnection: readBootstrapBoolean("tascConstrainedConnection", false),
+    coarsePointer: readBootstrapBoolean("tascCoarsePointer", false),
+    viewportWidth: readBootstrapNumber("tascViewportWidth", 1280),
+    viewportHeight: readBootstrapNumber("tascViewportHeight", 800),
+});
 const ensurePreloadAuto = (video: HTMLVideoElement | null) => {
     if (!video || video.preload === "auto" || video.dataset.armed !== "true")
         return;
     video.preload = "auto";
 };
 export function TascLanding() {
+    const [initialRuntimeProfile] = useState(readInitialRuntimeProfile);
     const rootRef = useRef<HTMLElement | null>(null);
     const primaryGalaxyRef = useRef<GalaxyHandle | null>(null);
     const interactiveGalaxyRef = useRef<GalaxyHandle | null>(null);
@@ -136,14 +183,15 @@ export function TascLanding() {
     const [performanceModeResolved, setPerformanceModeResolved] = useState(false);
     const [galaxyStatus, setGalaxyStatus] = useState<"pending" | "ready" | "unavailable">("pending");
     const servicesGalaxyStatus = galaxyStatus;
-    const [mobilePerformanceMode, setMobilePerformanceMode] = useState(false);
-    const [macPerformanceMode, setMacPerformanceMode] = useState(false);
-    const [webkitCompatibilityMode, setWebkitCompatibilityMode] = useState(false);
-    const [edgeAlphaCompatibilityMode, setEdgeAlphaCompatibilityMode] = useState(false);
-    const [packedH264Supported, setPackedH264Supported] = useState(true);
-    const [nativeAlphaWebMSupported, setNativeAlphaWebMSupported] = useState(true);
-    const [forcePackedTransport, setForcePackedTransport] = useState(false);
-    const [constrainedConnection, setConstrainedConnection] = useState(false);
+    const [mobilePerformanceMode, setMobilePerformanceMode] = useState(() => initialRuntimeProfile.mobilePerformance);
+    const [macPerformanceMode, setMacPerformanceMode] = useState(() => initialRuntimeProfile.macPerformance);
+    const [webkitCompatibilityMode, setWebkitCompatibilityMode] = useState(() => initialRuntimeProfile.webkitCompatibility);
+    const [edgeAlphaCompatibilityMode, setEdgeAlphaCompatibilityMode] = useState(() => initialRuntimeProfile.edgeAlphaCompatibility);
+    const [packedH264Supported, setPackedH264Supported] = useState(() => initialRuntimeProfile.packedH264Supported);
+    const [nativeAlphaWebMSupported, setNativeAlphaWebMSupported] = useState(() => initialRuntimeProfile.nativeAlphaWebMSupported);
+    const [forcePackedTransport, setForcePackedTransport] = useState(() => initialRuntimeProfile.forcePackedTransport);
+    const [constrainedConnection, setConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
+    const [explicitConstrainedConnection, setExplicitConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
     const [servicesMediaArmed, setServicesMediaArmed] = useState(false);
     const [servicesStopPostersArmed, setServicesStopPostersArmed] = useState(false);
     const [servicesMediaFallback, setServicesMediaFallback] = useState(false);
@@ -172,17 +220,44 @@ export function TascLanding() {
     const [heroFallbackAnimationEligible, setHeroFallbackAnimationEligible] = useState(false);
     const [heroFallbackAnimationReady, setHeroFallbackAnimationReady] = useState(false);
     const [packedAlphaOwner, setPackedAlphaOwner] = useState<"hero" | "services">("hero");
-    const measuredConstrainedConnectionRef = useRef(false);
+    const constrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
+    const explicitConstrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
+    const viewportMetricsRef = useRef({
+        height: initialRuntimeProfile.viewportHeight,
+        width: initialRuntimeProfile.viewportWidth,
+    });
+    const stableMobileViewportWidthRef = useRef(initialRuntimeProfile.viewportWidth);
+    const stableMobilePerformanceModeRef = useRef(initialRuntimeProfile.mobilePerformance);
+    const runtimeProfileRef = useRef<RuntimePerformanceProfile>({
+        constrainedConnection: initialRuntimeProfile.constrainedConnection,
+        edgeAlphaCompatibility: initialRuntimeProfile.edgeAlphaCompatibility,
+        forcePackedTransport: initialRuntimeProfile.forcePackedTransport,
+        macPerformance: initialRuntimeProfile.macPerformance,
+        mobilePerformance: initialRuntimeProfile.mobilePerformance,
+        nativeAlphaWebMSupported: initialRuntimeProfile.nativeAlphaWebMSupported,
+        packedH264Supported: initialRuntimeProfile.packedH264Supported,
+        webkitCompatibility: initialRuntimeProfile.webkitCompatibility,
+    });
+    const motionRuntimeGateRef = useRef({
+        allowed: false,
+        revealStarted: false,
+    });
+    const servicesSourceStateRef = useRef<{
+        node: HTMLVideoElement | null;
+        source: string;
+        transport: string;
+    }>({ node: null, source: "", transport: "" });
     const datumLead = useLeadSubmission("datum_waitlist");
     const dominoLead = useLeadSubmission("project_brief");
     const lightweightMediaMode = mobilePerformanceMode || constrainedConnection;
+    const servicesLightweightMediaMode = mobilePerformanceMode || explicitConstrainedConnection;
     const servicesPackedTransportMode =
         packedH264Supported &&
             (forcePackedTransport ||
                 webkitCompatibilityMode ||
                 edgeAlphaCompatibilityMode ||
                 !nativeAlphaWebMSupported);
-    const servicesTransportProfile = lightweightMediaMode ? "mobile" : "desktop";
+    const servicesTransportProfile = servicesLightweightMediaMode ? "mobile" : "desktop";
     const servicesTransportFormat = servicesPackedTransportMode ? "packed-alpha-h264" : "native-alpha-webm";
     const servicesTransportReason = servicesPackedTransportMode
         ? forcePackedTransport
@@ -202,6 +277,32 @@ export function TascLanding() {
         : servicesTransportProfile === "mobile"
             ? SERVICES_VIDEO_MOBILE_WEBM
             : SERVICES_VIDEO_WEBM;
+    const servicesTransportKey = servicesPackedTransportMode ? "packed-alpha-h264" : "native-alpha-webm";
+    useLayoutEffect(() => {
+        runtimeProfileRef.current = {
+            constrainedConnection,
+            edgeAlphaCompatibility: edgeAlphaCompatibilityMode,
+            forcePackedTransport,
+            macPerformance: macPerformanceMode,
+            mobilePerformance: mobilePerformanceMode,
+            nativeAlphaWebMSupported,
+            packedH264Supported,
+            webkitCompatibility: webkitCompatibilityMode,
+        };
+        motionRuntimeGateRef.current.allowed = motionAllowed;
+        motionRuntimeGateRef.current.revealStarted = preloaderRevealStarted;
+    }, [
+        constrainedConnection,
+        edgeAlphaCompatibilityMode,
+        forcePackedTransport,
+        macPerformanceMode,
+        mobilePerformanceMode,
+        motionAllowed,
+        nativeAlphaWebMSupported,
+        packedH264Supported,
+        preloaderRevealStarted,
+        webkitCompatibilityMode,
+    ]);
     const activateServicesMediaFallback = useCallback(() => {
         const root = rootRef.current;
         const video = servicesVideoRef.current;
@@ -319,6 +420,14 @@ export function TascLanding() {
         return () => media.removeEventListener("change", syncMotionPreference);
     }, []);
     useEffect(() => {
+        if (!motionPreferenceResolved)
+            return;
+        const eventName = motionAllowed && preloaderRevealStarted
+            ? "tasc:motion-runtime-request"
+            : "tasc:motion-runtime-disable";
+        window.dispatchEvent(new Event(eventName));
+    }, [motionAllowed, motionPreferenceResolved, preloaderRevealStarted]);
+    useEffect(() => {
         let cancelled = false;
         const criticalImages = [
             HERO_LENS_POSTER,
@@ -363,64 +472,117 @@ export function TascLanding() {
         };
     }, []);
     useEffect(() => {
-        const media = window.matchMedia("(max-width: 900px), (pointer: coarse)");
-        const syncPerformanceMode = () => {
-            const device = navigator as Navigator & {
-                connection?: {
-                    effectiveType?: string;
-                    saveData?: boolean;
-                };
-                deviceMemory?: number;
+        const device = navigator as Navigator & {
+            connection?: {
+                addEventListener?: (type: "change", listener: () => void) => void;
+                effectiveType?: string;
+                removeEventListener?: (type: "change", listener: () => void) => void;
+                saveData?: boolean;
             };
-            const lowMemory = typeof device.deviceMemory === "number" && device.deviceMemory <= 4;
-            const lowCpu = typeof device.hardwareConcurrency === "number" && device.hardwareConcurrency <= 4;
-            const userAgent = navigator.userAgent;
-            const codecProbe = document.createElement("video");
-            const supportsPackedH264 = codecProbe.canPlayType('video/mp4; codecs="avc1.4D401F"') !== "";
-            const isEdge = /\bEdg(?:A|iOS)?\//i.test(userAgent);
-            const isSafari = /^((?!chrome|android|crios|fxios|edg|opr).)*safari/i.test(userAgent);
-            const isIOS = /iPad|iPhone|iPod/i.test(userAgent) ||
-                (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-            const isAppleWebView = /AppleWebKit/i.test(userAgent) &&
-                !/(Safari|Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android)/i.test(userAgent);
-            const isKnownChromiumAlphaRuntime =
-                /(?:Chrome|Chromium)\//i.test(userAgent) &&
-                !isEdge &&
-                !/\b(?:OPR|SamsungBrowser)\//i.test(userAgent) &&
-                !isIOS &&
-                !isAppleWebView;
-            const supportsNativeAlphaWebM = isKnownChromiumAlphaRuntime &&
-                codecProbe.canPlayType('video/webm; codecs="vp9"') !== "";
-            const searchParams = new URLSearchParams(window.location.search);
-            const forceWebKitCompatibility = searchParams.get("webkitCompat") === "1";
-            const forcePacked = searchParams.get("forcePacked") === "1";
-            const isAppleWebKit = document.documentElement.dataset.tascWebkit === "true" ||
-                forceWebKitCompatibility ||
-                isSafari ||
-                isIOS ||
-                isAppleWebView;
-            const isMacOS = document.documentElement.dataset.tascMacos === "true" ||
-                /Macintosh|Mac OS X/i.test(userAgent) ||
-                /^Mac/i.test(navigator.platform || "") ||
-                isIOS;
+            deviceMemory?: number;
+        };
+        const coarsePointer = window.matchMedia("(pointer: coarse)");
+        const userAgent = navigator.userAgent;
+        const codecProbe = document.createElement("video");
+        const supportsPackedH264 = codecProbe.canPlayType('video/mp4; codecs="avc1.4D401F"') !== "";
+        const isEdge = /\bEdg(?:A|iOS)?\//i.test(userAgent);
+        const isSafari = /^((?!chrome|android|crios|fxios|edg|opr).)*safari/i.test(userAgent);
+        const isIOS = /iPad|iPhone|iPod/i.test(userAgent) ||
+            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+        const isAppleWebView = /AppleWebKit/i.test(userAgent) &&
+            !/(Safari|Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android)/i.test(userAgent);
+        const isKnownChromiumAlphaRuntime =
+            /(?:Chrome|Chromium)\//i.test(userAgent) &&
+            !isEdge &&
+            !/\b(?:OPR|SamsungBrowser)\//i.test(userAgent) &&
+            !isIOS &&
+            !isAppleWebView;
+        const supportsNativeAlphaWebM = isKnownChromiumAlphaRuntime &&
+            codecProbe.canPlayType('video/webm; codecs="vp9"') !== "";
+        const searchParams = new URLSearchParams(window.location.search);
+        const forceWebKitCompatibility = searchParams.get("webkitCompat") === "1";
+        const forcePacked = searchParams.get("forcePacked") === "1";
+        const isAppleWebKit = document.documentElement.dataset.tascWebkit === "true" ||
+            forceWebKitCompatibility ||
+            isSafari ||
+            isIOS ||
+            isAppleWebView;
+        const isMacOS = document.documentElement.dataset.tascMacos === "true" ||
+            /Macintosh|Mac OS X/i.test(userAgent) ||
+            /^Mac/i.test(navigator.platform || "") ||
+            isIOS;
+        const lowMemory = typeof device.deviceMemory === "number" && device.deviceMemory <= 4;
+        const lowCpu = typeof device.hardwareConcurrency === "number" && device.hardwareConcurrency <= 4;
+        let resizeFrame = 0;
+        let forceNextSync = false;
+        const readViewport = () => ({
+            height: Math.max(1, document.documentElement.clientHeight || window.visualViewport?.height || window.innerHeight),
+            width: Math.max(1, document.documentElement.clientWidth || window.visualViewport?.width || window.innerWidth),
+        });
+        const syncPerformanceMode = (forceViewportProfile = false) => {
+            const viewport = readViewport();
+            viewportMetricsRef.current = viewport;
+            document.documentElement.dataset.tascViewportWidth = String(Math.round(viewport.width));
+            document.documentElement.dataset.tascViewportHeight = String(Math.round(viewport.height));
+            const nextMobileMode = coarsePointer.matches ||
+                viewport.width <= MOBILE_PROFILE_WIDTH ||
+                (!isMacOS && (lowMemory || lowCpu)) ||
+                device.connection?.saveData === true;
+            const widthMoved = Math.abs(viewport.width - stableMobileViewportWidthRef.current);
+            const mobileModeChanged = nextMobileMode !== stableMobilePerformanceModeRef.current;
+            const shouldSwitchMobileMode = mobileModeChanged &&
+                (forceViewportProfile || widthMoved > MOBILE_PROFILE_HYSTERESIS_PX);
+            if (shouldSwitchMobileMode) {
+                stableMobileViewportWidthRef.current = viewport.width;
+                stableMobilePerformanceModeRef.current = nextMobileMode;
+            }
+            if (forceViewportProfile || shouldSwitchMobileMode) {
+                document.documentElement.dataset.tascMobilePerformance = String(nextMobileMode);
+                setMobilePerformanceMode(nextMobileMode);
+            }
             setWebkitCompatibilityMode(isAppleWebKit);
             setEdgeAlphaCompatibilityMode(isEdge);
             setPackedH264Supported(supportsPackedH264);
             setNativeAlphaWebMSupported(supportsNativeAlphaWebM);
             setForcePackedTransport(forcePacked);
             setMacPerformanceMode(isMacOS);
-            setConstrainedConnection(
-                hasExplicitConstrainedConnectionSignal(device) || measuredConstrainedConnectionRef.current,
-            );
-            setMobilePerformanceMode(media.matches ||
-                (!isMacOS && (lowMemory || lowCpu)) ||
-                Boolean(device.connection?.saveData));
+            if (!explicitConstrainedConnectionLatchRef.current && hasExplicitConstrainedConnectionSignal(device)) {
+                explicitConstrainedConnectionLatchRef.current = true;
+                setExplicitConstrainedConnection(true);
+                if (!constrainedConnectionLatchRef.current) {
+                    constrainedConnectionLatchRef.current = true;
+                    setConstrainedConnection(true);
+                }
+            }
             setPerformanceModeResolved(true);
         };
-        syncPerformanceMode();
-        media.addEventListener("change", syncPerformanceMode);
-        return () => media.removeEventListener("change", syncPerformanceMode);
-    }, []);
+        const scheduleSync = (forceViewportProfile = false) => {
+            forceNextSync = forceNextSync || forceViewportProfile;
+            if (resizeFrame)
+                return;
+            resizeFrame = window.requestAnimationFrame(() => {
+                resizeFrame = 0;
+                const forceProfile = forceNextSync;
+                forceNextSync = false;
+                syncPerformanceMode(forceProfile);
+            });
+        };
+        const scheduleViewportSync = () => scheduleSync(false);
+        const scheduleSignalSync = () => scheduleSync(true);
+        syncPerformanceMode(!initialRuntimeProfile.ready);
+        window.addEventListener("resize", scheduleViewportSync, { passive: true });
+        window.visualViewport?.addEventListener("resize", scheduleViewportSync, { passive: true });
+        coarsePointer.addEventListener("change", scheduleSignalSync);
+        device.connection?.addEventListener?.("change", scheduleSignalSync);
+        return () => {
+            if (resizeFrame)
+                window.cancelAnimationFrame(resizeFrame);
+            window.removeEventListener("resize", scheduleViewportSync);
+            window.visualViewport?.removeEventListener("resize", scheduleViewportSync);
+            coarsePointer.removeEventListener("change", scheduleSignalSync);
+            device.connection?.removeEventListener?.("change", scheduleSignalSync);
+        };
+    }, [initialRuntimeProfile.ready]);
     useEffect(() => observeFirstMediaThroughput((megabitsPerSecond) => {
         const root = rootRef.current;
         if (root) {
@@ -430,8 +592,11 @@ export function TascLanding() {
                 : "standard";
         }
         if (megabitsPerSecond <= MEASURED_CONSTRAINED_MEGABITS_PER_SECOND) {
-            measuredConstrainedConnectionRef.current = true;
-            setConstrainedConnection(true);
+            if (!constrainedConnectionLatchRef.current) {
+                constrainedConnectionLatchRef.current = true;
+                document.documentElement.dataset.tascConstrainedConnection = "true";
+                setConstrainedConnection(true);
+            }
         }
     }), []);
     useEffect(() => {
@@ -664,13 +829,43 @@ export function TascLanding() {
         root?.setAttribute("data-services-reverse-stop-frames", SERVICES_REVERSE_STOP_FRAME_SIGNATURE);
         root?.setAttribute("data-services-reverse-stop-times", SERVICES_REVERSE_STOP_TIME_SIGNATURE);
         root?.setAttribute("data-services-reverse-fps", String(RUNTIME_MEDIA.services.fps));
-        if (video)
+        if (video) {
             video.dataset.armed = servicesMediaArmed ? "true" : "false";
+            if (!video.dataset.servicesNodeId) {
+                const nextNodeId = Number(root?.dataset.servicesVideoNodeSequence ?? 0) + 1;
+                video.dataset.servicesNodeId = String(nextNodeId);
+                root?.setAttribute("data-services-video-node-sequence", String(nextNodeId));
+            }
+            root?.setAttribute("data-services-video-node-id", video.dataset.servicesNodeId);
+        }
         if (!motionAllowed || !servicesMediaArmed || !video)
             return;
+        const previousSourceState = servicesSourceStateRef.current;
+        const sameTransportSourceChange = previousSourceState.node === video &&
+            previousSourceState.transport === servicesTransportKey &&
+            previousSourceState.source !== "" &&
+            previousSourceState.source !== servicesVideoSource;
+        servicesSourceStateRef.current = {
+            node: video,
+            source: servicesVideoSource,
+            transport: servicesTransportKey,
+        };
         video.dataset.segmentState = "idle";
-        if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
+        if (sameTransportSourceChange) {
+            video.pause();
+            video.src = servicesVideoSource;
+            const loadCount = Number(root?.dataset.servicesVideoLoadCount ?? 0) + 1;
+            root?.setAttribute("data-services-video-load-count", String(loadCount));
+            root?.setAttribute("data-services-video-source-swapped", "true");
+            delete root?.dataset.servicesFirstSegmentWarm;
+            delete root?.dataset.servicesCompleteStoryWarm;
+            delete root?.dataset.servicesStartFrameDecoded;
+            setServicesMediaPrepared(false);
             video.load();
+        }
+        else if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+            video.load();
+        }
     }, [
         forcePackedTransport,
         motionAllowed,
@@ -681,6 +876,7 @@ export function TascLanding() {
         servicesTransportFormat,
         servicesTransportProfile,
         servicesTransportReason,
+        servicesTransportKey,
         servicesVideoSource,
     ]);
     useEffect(() => {
@@ -1564,27 +1760,42 @@ export function TascLanding() {
     }, []);
     useGSAP(() => {
         const root = rootRef.current;
-        if (!root || !preloaderRevealStarted || !motionAllowed) {
+        if (!root) {
             return;
         }
+        let runtimeInitialized = false;
+        let runtimeCleanup: (() => void) | null = null;
+        const createMotionRuntime = () => {
+        if (runtimeInitialized ||
+            !motionRuntimeGateRef.current.revealStarted ||
+            !motionRuntimeGateRef.current.allowed) {
+            return;
+        }
+        runtimeInitialized = true;
+        root.dataset.motionRuntimeInitCount = String(Number(root.dataset.motionRuntimeInitCount ?? 0) + 1);
+        root.dataset.motionRuntimeInitialized = "true";
+        const isMobileRuntime = () => runtimeProfileRef.current.mobilePerformance;
+        const isMacRuntime = () => runtimeProfileRef.current.macPerformance;
+        const isWebKitRuntime = () => runtimeProfileRef.current.webkitCompatibility;
+        const isConstrainedRuntime = () => runtimeProfileRef.current.constrainedConnection;
+        const getRuntimeViewport = () => viewportMetricsRef.current;
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const compactMotion = window.matchMedia("(max-width: 640px)").matches;
         const useLegacyServicesFlow = true;
         const useAutonomousDatumFlow = true;
         const useReversibleHowFlow = true;
         const useReversibleDominoFlow = true;
-        let stableHeroViewportWidth = window.innerWidth;
-        let stableHeroViewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+        let stableHeroViewportWidth = getRuntimeViewport().width;
+        let stableHeroViewportHeight = getRuntimeViewport().height;
         const getStableHeroPinDistance = () => {
-            const nextWidth = window.innerWidth;
-            const nextHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+            const { height: nextHeight, width: nextWidth } = getRuntimeViewport();
             const isRealViewportChange = Math.abs(nextWidth - stableHeroViewportWidth) > 80 ||
                 Math.abs(nextHeight - stableHeroViewportHeight) > Math.max(180, stableHeroViewportHeight * 0.28);
             if (isRealViewportChange) {
                 stableHeroViewportWidth = nextWidth;
                 stableHeroViewportHeight = nextHeight;
             }
-            const pinMultiplier = macPerformanceMode ? 2.05 : mobilePerformanceMode ? 2.15 : 2.45;
+            const pinMultiplier = isMacRuntime() ? 2.05 : isMobileRuntime() ? 2.15 : 2.45;
             return Math.round(stableHeroViewportHeight * pinMultiplier);
         };
         const lensVideo = root.querySelector<HTMLVideoElement>(".lens-video");
@@ -1596,7 +1807,7 @@ export function TascLanding() {
             const servicesNode = root.querySelector<HTMLElement>(".services-story-section");
             if (!servicesNode)
                 return false;
-            const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+            const viewportHeight = getRuntimeViewport().height;
             const margin = viewportHeight * viewportMargin;
             const servicesSpacer = servicesNode.closest<HTMLElement>(".pin-spacer-services-reversible");
             const rect = (servicesSpacer ?? servicesNode).getBoundingClientRect();
@@ -1764,8 +1975,8 @@ export function TascLanding() {
                     saveData?: boolean;
                 };
             }).connection;
-            const slowTransport = mobilePerformanceMode ||
-                constrainedConnection ||
+            const slowTransport = isMobileRuntime() ||
+                isConstrainedRuntime() ||
                 connection?.saveData === true ||
                 connection?.effectiveType === "3g";
             const elapsed = performance.now() - servicesMediaRetryStartedAt;
@@ -1904,7 +2115,7 @@ export function TascLanding() {
                     media.currentTime >= startProbe - 0.2 &&
                     media.currentTime <= targetProbe + 0.2;
                 const warmedServicesSegmentReady = media === servicesVideo &&
-                    webkitCompatibilityMode &&
+                    isWebKitRuntime() &&
                     media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
                     ((targetProbe <= SERVICES_FIRST_SEGMENT_BUFFER_END + 0.05 &&
                         root.dataset.servicesFirstSegmentWarm === "true") ||
@@ -1972,8 +2183,8 @@ export function TascLanding() {
                     saveData?: boolean;
                 };
             }).connection;
-            const slowNetwork = mobilePerformanceMode ||
-                constrainedConnection ||
+            const slowNetwork = isMobileRuntime() ||
+                isConstrainedRuntime() ||
                 connection?.saveData === true ||
                 connection?.effectiveType === "3g";
             timeout = window.setTimeout(() => finish(hasWarmFrame()), slowNetwork ? 2800 : 4000);
@@ -2058,7 +2269,7 @@ export function TascLanding() {
             video.addEventListener("error", fail, { once: true });
             if (video.dataset.armed === "true" && video.networkState === HTMLMediaElement.NETWORK_EMPTY)
                 video.load();
-            timeout = window.setTimeout(() => finish(hasDecodedFirstSegment()), mobilePerformanceMode || constrainedConnection ? 16000 : 12000);
+            timeout = window.setTimeout(() => finish(hasDecodedFirstSegment()), isMobileRuntime() || isConstrainedRuntime() ? 16000 : 12000);
             inspect();
         });
         const playMediaSegment = (video: HTMLVideoElement | null, from: number, to: number, playbackRate: number, isCurrent: () => boolean, revealLiveFrame = true, snapToFinalFrame = true, skipInitialSeek = false, watchdogGraceMs = MEDIA_SEGMENT_GRACE_MS) => new Promise<boolean>((resolve) => {
@@ -2442,18 +2653,18 @@ export function TascLanding() {
             gsap.set(".process-contact-bg", { y: 0, autoAlpha: 1 });
             return;
         }
-        const lenisPhysicalEventsTarget = macPerformanceMode ? document.createElement("div") : window;
+        const lenisPhysicalEventsTarget = isMacRuntime() ? document.createElement("div") : window;
         const lenis = new Lenis({
             eventsTarget: lenisPhysicalEventsTarget,
-            duration: macPerformanceMode ? 0.62 : mobilePerformanceMode ? 0.72 : 0.96,
+            duration: isMacRuntime() ? 0.62 : isMobileRuntime() ? 0.72 : 0.96,
             easing: (t: number) => Math.min(1, 1.001 - 2 ** (-10 * t)),
-            smoothWheel: !macPerformanceMode,
-            virtualScroll: () => !macPerformanceMode,
-            wheelMultiplier: macPerformanceMode ? 1 : mobilePerformanceMode ? 0.38 : 0.35,
-            touchMultiplier: mobilePerformanceMode ? 1 : 0.9,
+            smoothWheel: !isMacRuntime(),
+            virtualScroll: () => !isMacRuntime(),
+            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.38 : 0.35,
+            touchMultiplier: isMobileRuntime() ? 1 : 0.9,
         });
         lenisRef.current = lenis;
-        root.dataset.wheelScrollRate = macPerformanceMode ? "native" : "lenis";
+        root.dataset.wheelScrollRate = isMacRuntime() ? "native" : "lenis";
         let rafId = 0;
         const raf = (time: number) => {
             lenis.raf(time);
@@ -2673,7 +2884,7 @@ export function TascLanding() {
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesPhase("preparing");
             setMotionInputState();
-            if (webkitCompatibilityMode &&
+            if (isWebKitRuntime() &&
                 servicesVideo &&
                 Math.abs(servicesVideo.currentTime - from) > 0.12) {
                 if (servicesStage >= 0)
@@ -3306,13 +3517,13 @@ export function TascLanding() {
                 return;
             }
             const reverseReadyTarget = reverseTo;
-            const reverseBufferStart = webkitCompatibilityMode &&
+            const reverseBufferStart = isWebKitRuntime() &&
                 servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
                 ? legacyFrom
                 : reverseFrom;
             const reverseMediaReady = root.dataset.servicesMediaFallback === "true"
                 ? false
-                : await ensureServicesPlayable(servicesVideo, reverseReadyTarget, () => token === servicesRunToken && servicesActive, reverseBufferStart, !webkitCompatibilityMode);
+                : await ensureServicesPlayable(servicesVideo, reverseReadyTarget, () => token === servicesRunToken && servicesActive, reverseBufferStart, !isWebKitRuntime());
             if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
             if (!reverseMediaReady && root.dataset.servicesMediaFallback !== "true") {
@@ -3403,7 +3614,7 @@ export function TascLanding() {
                 }
             }
             root.dataset.servicesVideoDirection = "reverse-playback";
-            const mediaTransition: Promise<boolean> = playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive, true, true, continueFromWarmSeam, mobilePerformanceMode ? 2200 : MEDIA_SEGMENT_GRACE_MS);
+            const mediaTransition: Promise<boolean> = playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive, true, true, continueFromWarmSeam, isMobileRuntime() ? 2200 : MEDIA_SEGMENT_GRACE_MS);
             const textTransition = animateServicesReversePanel(nextStage, segmentDuration);
             const [mediaCompleted] = await Promise.all([mediaTransition, textTransition]);
             if (token !== servicesRunToken || !servicesActive || disposed)
@@ -3499,7 +3710,7 @@ export function TascLanding() {
         const handleWheelCapture = (event: WheelEvent) => {
             if (event.ctrlKey)
                 return;
-            if (macPerformanceMode && servicesActive && !servicesReleasing && servicesTrigger && !servicesTrigger.isActive) {
+            if (isMacRuntime() && servicesActive && !servicesReleasing && servicesTrigger && !servicesTrigger.isActive) {
                 releaseServicesForNavigation();
                 return;
             }
@@ -3766,7 +3977,7 @@ export function TascLanding() {
                 trigger: ".hero-motion",
                 start: "top top",
                 end: () => `+=${getStableHeroPinDistance()}`,
-                scrub: macPerformanceMode ? 0.1 : mobilePerformanceMode ? 0.12 : 0.18,
+                scrub: isMacRuntime() ? 0.1 : isMobileRuntime() ? 0.12 : 0.18,
                 pin: true,
                 anticipatePin: 1,
                 refreshPriority: 40,
@@ -3917,8 +4128,8 @@ export function TascLanding() {
                     trigger: clientsInner ?? clientsSection,
                     start: "top 96%",
                     end: "top -10%",
-                    scrub: mobilePerformanceMode ? false : macPerformanceMode ? 0.08 : 0.24,
-                    toggleActions: mobilePerformanceMode ? "play none none reverse" : undefined,
+                    scrub: isMobileRuntime() ? false : isMacRuntime() ? 0.08 : 0.24,
+                    toggleActions: isMobileRuntime() ? "play none none reverse" : undefined,
                     invalidateOnRefresh: true,
                     onUpdate: (self) => setClientsEntranceMoving(self.progress > 0 && self.progress < 1),
                     onScrubComplete: () => setClientsEntranceMoving(false),
@@ -4125,18 +4336,18 @@ export function TascLanding() {
                 primaryGalaxyRef.current?.setActive(true);
                 primaryGalaxyRef.current?.setMotion(active
                     ? {
-                        density: mobilePerformanceMode || webkitCompatibilityMode ? 0.72 : 1,
-                        glowIntensity: mobilePerformanceMode ? 0.1 : 0.12,
-                        starSpeed: mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08,
-                        speed: mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44,
-                        rotationSpeed: mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15,
+                        density: isMobileRuntime() || isWebKitRuntime() ? 0.72 : 1,
+                        glowIntensity: isMobileRuntime() ? 0.1 : 0.12,
+                        starSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.86 : 1.08,
+                        speed: isMobileRuntime() || isWebKitRuntime() ? 1.08 : 1.44,
+                        rotationSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.1 : 0.15,
                     }
                     : {
-                        density: mobilePerformanceMode || webkitCompatibilityMode ? 0.72 : 1.3,
+                        density: isMobileRuntime() || isWebKitRuntime() ? 0.72 : 1.3,
                         glowIntensity: 0.12,
-                        starSpeed: mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08,
-                        speed: mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44,
-                        rotationSpeed: mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15,
+                        starSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.86 : 1.08,
+                        speed: isMobileRuntime() || isWebKitRuntime() ? 1.08 : 1.44,
+                        rotationSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.1 : 0.15,
                     });
                 interactiveGalaxyRef.current?.setActive(!active);
                 interactiveGalaxyRef.current?.setInteractionEnabled(!active);
@@ -5294,18 +5505,66 @@ export function TascLanding() {
             servicesControllerRef.current = null;
             dominoControllerRef.current = null;
         };
+        };
+        const initializeMotionRuntime = () => {
+            let manualCleanup: (() => void) | null = null;
+            let telemetryFrame = 0;
+            const scrollTriggerBaseline = new Set(ScrollTrigger.getAll());
+            const runtimeContext = gsap.context(() => {
+                const cleanup = createMotionRuntime();
+                if (typeof cleanup === "function")
+                    manualCleanup = cleanup;
+            }, root);
+            if (!manualCleanup) {
+                runtimeContext.revert();
+                return;
+            }
+            telemetryFrame = window.requestAnimationFrame(() => {
+                telemetryFrame = window.requestAnimationFrame(() => {
+                    telemetryFrame = 0;
+                    root.dataset.motionRuntimeScrollTriggerCount = String(ScrollTrigger.getAll().length);
+                });
+            });
+            return () => {
+                if (telemetryFrame)
+                    window.cancelAnimationFrame(telemetryFrame);
+                telemetryFrame = 0;
+                const cleanup = manualCleanup as (() => void) | null;
+                manualCleanup = null;
+                cleanup?.();
+                runtimeContext.revert();
+                ScrollTrigger.getAll()
+                    .filter((trigger) => !scrollTriggerBaseline.has(trigger))
+                    .forEach((trigger) => trigger.kill(false));
+                const residualRuntimeTriggers = ScrollTrigger.getAll()
+                    .filter((trigger) => !scrollTriggerBaseline.has(trigger));
+                root.dataset.motionRuntimeResidualScrollTriggerCount = String(residualRuntimeTriggers.length);
+                root.dataset.motionRuntimeScrollTriggerCountAfterCleanup = String(ScrollTrigger.getAll().length);
+                delete root.dataset.motionRuntimeScrollTriggerCount;
+            };
+        };
+        const requestMotionRuntime = () => {
+            const cleanup = initializeMotionRuntime();
+            if (typeof cleanup === "function")
+                runtimeCleanup = cleanup;
+        };
+        const disableMotionRuntime = () => {
+            const cleanup = runtimeCleanup;
+            runtimeCleanup = null;
+            cleanup?.();
+            runtimeInitialized = false;
+            delete root.dataset.motionRuntimeInitialized;
+        };
+        requestMotionRuntime();
+        window.addEventListener("tasc:motion-runtime-request", requestMotionRuntime);
+        window.addEventListener("tasc:motion-runtime-disable", disableMotionRuntime);
+        return () => {
+            window.removeEventListener("tasc:motion-runtime-request", requestMotionRuntime);
+            window.removeEventListener("tasc:motion-runtime-disable", disableMotionRuntime);
+            disableMotionRuntime();
+        };
     }, {
         scope: rootRef,
-        dependencies: [
-            macPerformanceMode,
-            mobilePerformanceMode,
-            preloaderRevealStarted,
-            motionAllowed,
-            servicesPackedTransportMode,
-            webkitCompatibilityMode,
-            constrainedConnection,
-        ],
-        revertOnUpdate: true,
     });
     useEffect(() => {
         if (!preloaderComplete || !motionAllowed)
@@ -5482,8 +5741,10 @@ export function TascLanding() {
       {!preloaderComplete ? (<SitePreloader ready={preloaderReady} onRevealStart={() => {
                 if (!window.location.hash)
                     resetToTop();
+                motionRuntimeGateRef.current.revealStarted = true;
                 setPreloaderRevealStarted(true);
                 setHeroIntroReady(true);
+                window.dispatchEvent(new Event("tasc:motion-runtime-request"));
             }} onComplete={() => {
                 setPreloaderComplete(true);
             }}/>) : null}
@@ -5651,7 +5912,7 @@ export function TascLanding() {
             <span className="services-story-stop-posters">
               {SERVICES_STOP_POSTERS.map((poster, index) => (<span className="services-story-stop-poster" data-services-stop={index + 1} key={poster} style={servicesStopPostersArmed ? { backgroundImage: `url("${poster}")` } : undefined}/>))}
             </span>
-            {motionAllowed && servicesPackedTransportMode ? (<PackedAlphaVideo key={servicesVideoSource} ref={servicesVideoRef} armed={servicesMediaArmed} compositeActive={packedAlphaOwner === "services"} className="services-story-video services-story-video-packed" videoClassName="packed-alpha-video-source" src={servicesVideoSource} outputWidth={lightweightMediaMode
+            {motionAllowed && servicesPackedTransportMode ? (<PackedAlphaVideo key={servicesTransportKey} ref={servicesVideoRef} armed={servicesMediaArmed} compositeActive={packedAlphaOwner === "services"} className="services-story-video services-story-video-packed" videoClassName="packed-alpha-video-source" src={servicesVideoSource} outputWidth={lightweightMediaMode
                 ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.width
                 : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.width} outputHeight={lightweightMediaMode
                 ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.height
@@ -5660,7 +5921,7 @@ export function TascLanding() {
             }} onFirstFrame={() => {
                 rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
                 recoverServicesMedia();
-            }} onReady={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : motionAllowed ? (<video key={servicesVideoSource} ref={servicesVideoRef} className="services-story-video" data-armed={servicesMediaArmed ? "true" : "false"} src={servicesMediaArmed ? servicesVideoSource : undefined} muted playsInline preload={servicesMediaArmed ? "auto" : "none"} poster={servicesMediaArmed ? SERVICES_SEQUENCE_POSTER : undefined} disablePictureInPicture tabIndex={-1} onLoadedMetadata={() => {
+            }} onReady={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : motionAllowed ? (<video key={servicesTransportKey} ref={servicesVideoRef} className="services-story-video" data-armed={servicesMediaArmed ? "true" : "false"} src={servicesMediaArmed ? servicesVideoSource : undefined} muted playsInline preload={servicesMediaArmed ? "auto" : "none"} poster={servicesMediaArmed ? SERVICES_SEQUENCE_POSTER : undefined} disablePictureInPicture tabIndex={-1} onLoadedMetadata={() => {
                 rootRef.current?.setAttribute("data-services-video-format", "native-alpha-webm");
             }} onLoadedData={() => {
                 rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");

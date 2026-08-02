@@ -6,20 +6,19 @@
 - T13: lead submission timing across devices.
 - T12: Services to How pin/anchor seam stabilization is locally verified.
 - T7: unified motion input ownership, explicit/observed connection classification, and focused Chromium/WebKit journey QA are implemented.
+- T8: runtime profile bootstrap, stable-baseline viewport hysteresis, stable Services media identity, controlled late measured-throughput isolation, and dynamic reduced-motion teardown/restart are implemented and locally verified.
 
 ## Remaining Goal Scope
 
-- T8: stabilize transport selection and video key hysteresis.
 - T9: decompose landing implementation into smaller atomic commits without behavior drift.
 - T10: remove dead code/assets and close A20-A23.
 - T11: full final gate across build, browser journeys, performance, cross-device/network evidence and handoff.
 
 ## Carried Performance Findings
 
-- Reduce WebKit normal-network preloader reveal from 2829–3113 ms to at most 2500 ms.
-- Restore all reveal-managed content for `webkit-mobile-large-430-1mbps`.
+- Re-run the full 24-case matrix after T9/T10; earlier T12 WebKit normal-network preloader and `webkit-mobile-large-430-1mbps` reveal issues must be confirmed closed in T11.
 - Treat throttled WebKit byte/reveal measurements as advisories, but keep functional hidden-content failures blocking.
-- Eliminate the refresh/render stall seen by the mobile portion harness at the 430 px Clients/Services transition and bring WebKit rapid-retarget terminal timing under the existing 1620 ms ceiling without weakening the 420 ms motion contract.
+- Keep browser QA single-server and serial around `.next`; concurrent rebuilds or duplicate `next start` processes can invalidate build identity and produce false `ERR_CONNECTION_REFUSED`.
 
 ## External Boundary
 
