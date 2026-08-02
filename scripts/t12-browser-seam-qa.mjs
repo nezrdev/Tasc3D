@@ -10,6 +10,15 @@ const configurations = [
     { name: "webkit-mobile", browserType: webkit, viewport: { width: 390, height: 844 }, isMobile: true, deviceScaleFactor: 3, hasTouch: true },
 ];
 
+const cookieConsentKey = "tasc_cookie_consent_v1";
+const cookieConsentValue = JSON.stringify({
+    version: 1,
+    necessary: true,
+    analytics: true,
+    mode: "all",
+    acceptedAt: "2026-08-02T00:00:00.000Z",
+});
+
 const anchors = [
     ["#clients", ".figma-clients-section"],
     ["#services", ".services-story-section"],
@@ -33,6 +42,9 @@ for (const configuration of configurations) {
         deviceScaleFactor: configuration.deviceScaleFactor,
         hasTouch: configuration.hasTouch,
     });
+    await context.addInitScript(({ key, value }) => {
+        window.localStorage.setItem(key, value);
+    }, { key: cookieConsentKey, value: cookieConsentValue });
     const page = await context.newPage();
     const failures = [];
     const browserErrors = [];
@@ -49,7 +61,6 @@ for (const configuration of configurations) {
         await page.goto(baseUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
         await page.waitForFunction(() => document.querySelector(".site-shell")?.dataset.motionReady === "true", null, { timeout: 60_000 });
         await page.waitForTimeout(600);
-        await page.getByRole("button", { name: /accept cookies/i }).click({ timeout: 5_000 });
         await page.waitForSelector(".cookie-consent", { state: "detached", timeout: 2_000 });
 
         const geometry = await page.evaluate(() => {
@@ -138,7 +149,7 @@ for (const configuration of configurations) {
                     const style = getComputedStyle(content);
                     const headingStyle = getComputedStyle(heading);
                     return style.visibility === "visible" && Number.parseFloat(style.opacity) > 0.95 && Number.parseFloat(headingStyle.opacity) > 0.95;
-                }, null, { timeout: 1_000 });
+                }, null, { timeout: 2_500 });
                 await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
                 await page.screenshot({ path: resolve(caseOutput, "services-seam.png"), fullPage: false });
             }

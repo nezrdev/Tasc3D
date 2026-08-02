@@ -856,6 +856,20 @@
   transition: opacity 240ms ease;
 }
 
+.site-shell[data-domino-playback="complete"] .domino-form-stage .domino-body,
+.site-shell[data-domino-playback="complete"] .domino-form-stage .domino-impulse-row,
+.site-shell[data-domino-playback="complete"] .domino-form-stage .domino-privacy-row {
+  visibility: visible !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+.site-shell[data-domino-playback="complete"] .domino-form-stage .domino-impulse-form {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
 .domino-form-stage .domino-copy,
 .site-shell:has(.cookie-consent.is-compact) .domino-form-stage .domino-copy {
   position: relative !important;

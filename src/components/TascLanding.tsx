@@ -1607,7 +1607,13 @@ export function TascLanding() {
             }
         }
         if (href === "#work") {
-            const resolveWorkTop = () => getPinnedStoryStart("how-work-reversible", ".how-work-motion-section");
+            const resolveWorkTop = () => {
+                const sectionTop = getSectionTop(".how-work-motion-section");
+                const triggerTop = getPinnedStoryStart("how-work-reversible", ".how-work-motion-section");
+                if (sectionTop !== null && (triggerTop === null || triggerTop < sectionTop - 4))
+                    return sectionTop;
+                return triggerTop;
+            };
             const top = resolveWorkTop();
             if (top !== null) {
                 scrollToPosition(top, resolveWorkTop);
@@ -4171,12 +4177,9 @@ export function TascLanding() {
                 },
                 onRefresh: (self) => {
                     syncServicesPinCompensation();
-                    if (servicesActive && (!isNearServicesTrigger(self) || !isServicesVisuallyNear(1.5))) {
-                        releaseServicesForNavigation();
-                        return;
-                    }
                     if (servicesActive) {
                         servicesLockY = servicesEntryDirection < 0 ? self.end - 1 : self.start + 1;
+                        correctNativeScroll(servicesLockY);
                     }
                 },
             });

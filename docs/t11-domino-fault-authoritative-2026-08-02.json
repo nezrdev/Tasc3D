@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-02T20:05:18.301Z",
+  "baseUrl": "http://127.0.0.1:3151/",
+  "preflightContractMs": 1200,
+  "timerToleranceMs": 40,
+  "preflightAssertionLimitMs": 1240,
+  "passed": true,
+  "totals": {
+    "scenarios": 8,
+    "passed": 8,
+    "failed": 0
+  },
+  "results": [
+    {
+      "id": "chromium-desktop-forward-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 900.7999999970198,
+      "movement": 2253,
+      "faultedKinds": [
+        "forward",
+        "reverse"
+      ],
+      "faultModes": [
+        "network-abort"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/chromium-desktop/forward-failure-final.png"
+    },
+    {
+      "id": "chromium-desktop-reverse-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 910.6999999880791,
+      "movement": 2087,
+      "faultedKinds": [
+        "reverse"
+      ],
+      "faultModes": [
+        "network-abort"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/chromium-desktop/reverse-failure-final.png"
+    },
+    {
+      "id": "chromium-mobile-forward-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 910.8999999910593,
+      "movement": 775,
+      "faultedKinds": [
+        "forward",
+        "reverse"
+      ],
+      "faultModes": [
+        "network-abort"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/chromium-mobile/forward-failure-final.png"
+    },
+    {
+      "id": "chromium-mobile-reverse-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 900.7999999970198,
+      "movement": 1695,
+      "faultedKinds": [
+        "reverse"
+      ],
+      "faultModes": [
+        "network-abort"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/chromium-mobile/reverse-failure-final.png"
+    },
+    {
+      "id": "webkit-desktop-forward-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 904,
+      "movement": 904,
+      "faultedKinds": [
+        "forward",
+        "reverse"
+      ],
+      "faultModes": [
+        "webkit-media-state-fault"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/webkit-desktop/forward-failure-final.png"
+    },
+    {
+      "id": "webkit-desktop-reverse-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 904,
+      "movement": 1466,
+      "faultedKinds": [
+        "reverse"
+      ],
+      "faultModes": [
+        "webkit-media-state-fault"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/webkit-desktop/reverse-failure-final.png"
+    },
+    {
+      "id": "webkit-mobile-forward-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 913,
+      "movement": 407,
+      "faultedKinds": [
+        "forward",
+        "reverse"
+      ],
+      "faultModes": [
+        "webkit-media-state-fault"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/webkit-mobile/forward-failure-final.png"
+    },
+    {
+      "id": "webkit-mobile-reverse-failure",
+      "passed": true,
+      "failures": [],
+      "preflightMs": 908,
+      "movement": 651,
+      "faultedKinds": [
+        "reverse"
+      ],
+      "faultModes": [
+        "webkit-media-state-fault"
+      ],
+      "screenshot": "output/playwright/t11-t6-fault-tightened-final-v2/webkit-mobile/reverse-failure-final.png"
+    }
+  ]
+}

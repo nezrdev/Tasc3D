@@ -1,0 +1,157 @@
+{
+  "generatedAt": "2026-08-02T19:09:12.017Z",
+  "baseUrl": "http://127.0.0.1:3151/",
+  "passed": true,
+  "passedCases": 4,
+  "totalCases": 4,
+  "results": [
+    {
+      "name": "chromium-desktop",
+      "engine": "chromium",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mobile": false,
+      "passed": true,
+      "durationMs": 6268,
+      "failures": [],
+      "browserErrors": [],
+      "initialConsent": null,
+      "storedConsent": {
+        "version": 1,
+        "necessary": true,
+        "analytics": true,
+        "mode": "all",
+        "acceptedAt": "2026-08-02T19:08:51.538Z"
+      },
+      "contact": {
+        "hash": "#contact",
+        "scrollY": 8605,
+        "top": 84,
+        "bottom": 601,
+        "visible": true,
+        "rendered": true,
+        "pendingAnchor": null,
+        "portionTarget": null,
+        "dominoPlayback": "ready",
+        "dominoProgress": "0.000",
+        "dominoPinned": null,
+        "dominoTop": 635,
+        "processTop": -802
+      },
+      "screenshot": "C:\\workflow\\Freelance\\projects\\tasc-3d-site\\worktrees\\t8-motion-lifecycle\\docs\\t11-first-visit-smoke-2026-08-02\\chromium-desktop.png"
+    },
+    {
+      "name": "chromium-mobile",
+      "engine": "chromium",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "mobile": true,
+      "passed": true,
+      "durationMs": 3872,
+      "failures": [],
+      "browserErrors": [],
+      "initialConsent": null,
+      "storedConsent": {
+        "version": 1,
+        "necessary": true,
+        "analytics": true,
+        "mode": "all",
+        "acceptedAt": "2026-08-02T19:08:55.756Z"
+      },
+      "contact": {
+        "hash": "#contact",
+        "scrollY": 8846,
+        "top": 84,
+        "bottom": 726,
+        "visible": true,
+        "rendered": true,
+        "pendingAnchor": null,
+        "portionTarget": null,
+        "dominoPlayback": "ready",
+        "dominoProgress": "0.000",
+        "dominoPinned": null,
+        "dominoTop": 726,
+        "processTop": -859
+      },
+      "screenshot": "C:\\workflow\\Freelance\\projects\\tasc-3d-site\\worktrees\\t8-motion-lifecycle\\docs\\t11-first-visit-smoke-2026-08-02\\chromium-mobile.png"
+    },
+    {
+      "name": "webkit-desktop",
+      "engine": "webkit",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "mobile": false,
+      "passed": true,
+      "durationMs": 4178,
+      "failures": [],
+      "browserErrors": [],
+      "initialConsent": null,
+      "storedConsent": {
+        "version": 1,
+        "necessary": true,
+        "analytics": true,
+        "mode": "all",
+        "acceptedAt": "2026-08-02T19:09:00.383Z"
+      },
+      "contact": {
+        "hash": "#contact",
+        "scrollY": 8245,
+        "top": 84,
+        "bottom": 601,
+        "visible": true,
+        "rendered": true,
+        "pendingAnchor": null,
+        "portionTarget": null,
+        "dominoPlayback": "ready",
+        "dominoProgress": "0.000",
+        "dominoPinned": null,
+        "dominoTop": 635,
+        "processTop": -802
+      },
+      "screenshot": "C:\\workflow\\Freelance\\projects\\tasc-3d-site\\worktrees\\t8-motion-lifecycle\\docs\\t11-first-visit-smoke-2026-08-02\\webkit-desktop.png"
+    },
+    {
+      "name": "webkit-mobile",
+      "engine": "webkit",
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "mobile": true,
+      "passed": true,
+      "durationMs": 10041,
+      "failures": [],
+      "browserErrors": [],
+      "initialConsent": null,
+      "storedConsent": {
+        "version": 1,
+        "necessary": true,
+        "analytics": true,
+        "mode": "all",
+        "acceptedAt": "2026-08-02T19:09:05.687Z"
+      },
+      "contact": {
+        "hash": "#contact",
+        "scrollY": 8760,
+        "top": 84,
+        "bottom": 726,
+        "visible": true,
+        "rendered": true,
+        "pendingAnchor": null,
+        "portionTarget": null,
+        "dominoPlayback": "ready",
+        "dominoProgress": "0.000",
+        "dominoPinned": null,
+        "dominoTop": 726,
+        "processTop": -858
+      },
+      "screenshot": "C:\\workflow\\Freelance\\projects\\tasc-3d-site\\worktrees\\t8-motion-lifecycle\\docs\\t11-first-visit-smoke-2026-08-02\\webkit-mobile.png"
+    }
+  ]
+}
