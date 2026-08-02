@@ -171,48 +171,34 @@ const installWebKitMediaFault = async (context, blockedKinds) => {
       if (!/domino-cta-(?:forward|reverse)-/i.test(source)) return null;
       return /domino-cta-reverse/i.test(source) ? "reverse" : "forward";
     };
-    const inject = (element, value) => {
-      const kind = kindFor(value);
-      if (!kind || !blockedSet.has(kind)) return value;
-      injections.push({ kind, originalUrl: String(value), at: performance.now() });
-      element.setAttribute("data-t6-fault-injected", kind);
-      return "data:video/mp4;base64,AAAA";
-    };
-    const nativeSetAttribute = Element.prototype.setAttribute;
-    Element.prototype.setAttribute = function setAttribute(name, value) {
-      const nextValue = this.tagName === "SOURCE" && name.toLowerCase() === "src"
-        ? inject(this, value)
-        : value;
-      return nativeSetAttribute.call(this, name, nextValue);
-    };
-    const sourceDescriptor = Object.getOwnPropertyDescriptor(HTMLSourceElement.prototype, "src");
-    if (sourceDescriptor?.get && sourceDescriptor.set) {
-      Object.defineProperty(HTMLSourceElement.prototype, "src", {
-        configurable: sourceDescriptor.configurable,
-        enumerable: sourceDescriptor.enumerable,
-        get: sourceDescriptor.get,
-        set(value) {
-          sourceDescriptor.set.call(this, inject(this, value));
-        },
-      });
-    }
-    const inspect = (root) => {
-      if (!(root instanceof Element)) return;
-      const sources = root.matches("source") ? [root] : [...root.querySelectorAll("source")];
-      for (const source of sources) {
-        const value = source.getAttribute("src");
-        const kind = kindFor(value);
-        if (!kind || !blockedSet.has(kind)) continue;
-        nativeSetAttribute.call(source, "src", inject(source, value));
-        source.closest("video")?.load();
+    const arm = () => {
+      for (const video of document.querySelectorAll("video.domino-sequence")) {
+        const source = video.currentSrc || video.querySelector("source")?.getAttribute("src") || "";
+        const kind = video.getAttribute("data-domino-direction") || kindFor(source);
+        if (!kind || !blockedSet.has(kind) || video.hasAttribute("data-t6-fault-injected")) continue;
+        injections.push({
+          at: performance.now(),
+          kind,
+          mode: "webkit-media-state-fault",
+          originalUrl: String(source),
+        });
+        video.setAttribute("data-t6-fault-injected", kind);
+        Object.defineProperty(video, "readyState", {
+          configurable: true,
+          get: () => HTMLMediaElement.HAVE_NOTHING,
+        });
+        Object.defineProperty(video, "networkState", {
+          configurable: true,
+          get: () => HTMLMediaElement.NETWORK_NO_SOURCE,
+        });
       }
     };
-    new MutationObserver((records) => {
-      for (const record of records) {
-        if (record.type === "attributes") inspect(record.target);
-        for (const node of record.addedNodes) inspect(node);
-      }
-    }).observe(document, { subtree: true, childList: true, attributes: true, attributeFilter: ["src"] });
+    Object.defineProperty(window, "__t6ArmMediaFaults", {
+      value: arm,
+      configurable: false,
+      enumerable: false,
+      writable: false,
+    });
   }, { blocked: [...blockedKinds] });
 };
 
@@ -303,6 +289,33 @@ const waitForProcess = async (page) => {
     { timeout: SITE_TIMEOUT_MS },
   );
   await page.waitForTimeout(450);
+};
+
+const waitForForwardMediaReady = async (page) => {
+  await page.waitForFunction(
+    () => {
+      const root = document.querySelector(".site-shell");
+      const video = document.querySelector('video.domino-sequence[data-domino-direction="forward"]');
+      return root instanceof HTMLElement &&
+        video instanceof HTMLVideoElement &&
+        root.dataset.dominoQuarterReady === "true" &&
+        video.dataset.armed === "true" &&
+        video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+    },
+    null,
+    { timeout: 20_000 },
+  );
+};
+
+const positionBeforeForwardBoundary = async (page) => {
+  await page.evaluate(() => {
+    const scene = document.querySelector(".domino-scene");
+    if (!(scene instanceof HTMLElement)) return;
+    const rect = scene.getBoundingClientRect();
+    const target = Math.max(0, scrollY + rect.top - innerHeight * 0.9);
+    scrollTo({ top: target, left: 0, behavior: "auto" });
+  });
+  await page.waitForTimeout(320);
 };
 
 const dispatchSyntheticTouchSwipe = async (page, direction, magnitude) =>
@@ -447,6 +460,16 @@ const waitForPreflightCycle = async (page, profile, cdp, direction) => {
   const inputs = [];
   const startedAt = Date.now();
   let cycle = null;
+  if (direction > 0 && profile.browserType === webkit) {
+    await page.evaluate(() => {
+      const scene = document.querySelector(".domino-scene");
+      if (!(scene instanceof HTMLElement)) return;
+      const rect = scene.getBoundingClientRect();
+      const target = Math.max(0, scrollY + rect.top - innerHeight * 0.45);
+      scrollTo({ top: target, left: 0, behavior: "auto" });
+    });
+    await page.waitForTimeout(48);
+  }
   for (let attempt = 0; attempt < 8 && !cycle; attempt += 1) {
     inputs.push(await sendInput(page, profile, cdp, direction, attempt < 3 ? 0.3 : 0.48));
     const settleUntil = Date.now() + 380;
@@ -486,8 +509,12 @@ const movePastFailedBoundary = async (page, profile, cdp, direction) => {
     const state = await readState(page);
     samples.push(state);
     const moved = direction > 0 ? state.y - before.y : before.y - state.y;
-    const passed = direction > 0 ? state.domino?.bottom < 0 : state.domino?.top > state.viewport.height;
-    if (moved >= state.viewport.height * 0.55 && passed) break;
+    const passed = direction > 0
+      ? state.domino?.bottom < 0 || state.y >= state.maxY - 2
+      : state.domino?.top > state.viewport.height || state.y <= 2;
+    const available = direction > 0 ? state.maxY - before.y : before.y;
+    const required = Math.min(state.viewport.height * 0.55, Math.max(0, available - 2));
+    if (moved >= required && passed) break;
   }
   await page.waitForTimeout(1_650);
   const after = await readState(page);
@@ -579,8 +606,16 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
   const movement = direction > 0
     ? passThrough.after.y - movementOrigin.y
     : movementOrigin.y - passThrough.after.y;
+  const availableMovement = direction > 0
+    ? passThrough.after.maxY - movementOrigin.y
+    : movementOrigin.y;
+  const requiredMovement = Math.min(
+    passThrough.after.viewport.height * 0.55,
+    Math.max(0, availableMovement - 2),
+  );
+  const mediaFailureSamples = rootSamples.filter((sample) => sample.root?.dominoMediaFailure);
   const failures = [];
-  if (!preflight.cycle && !knownFallback) failures.push("preflight was not observed");
+  if (!preflight.cycle) failures.push("preflight was not observed");
   if (preflight.cycle && !preflight.cycle.end) failures.push("preflight did not settle");
   if (
     preflight.cycle?.durationMs != null &&
@@ -591,7 +626,7 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
     );
   }
   if (lockedSamples.length > 0) failures.push("failed media captured the motion input lock");
-  if (movement < passThrough.after.viewport.height * 0.55) failures.push("document did not move past the failed boundary");
+  if (movement < requiredMovement) failures.push("document did not move through the reachable failed boundary");
   if (passThrough.after.root?.dominoPinned === "true") failures.push("data-domino-pinned remained stuck");
   if (passThrough.after.root?.motionInputLocked === "true") failures.push("data-motion-input-locked remained stuck");
   if (passThrough.after.root?.dominoPreflight) failures.push("data-domino-preflight remained stuck");
@@ -599,6 +634,7 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
     failures.push("document overflow remained locked");
   }
   if (blackLockedSamples.length > 0) failures.push("a black undecoded Domino viewport was input-locked");
+  if (mediaFailureSamples.length === 0) failures.push("explicit Domino media failure terminal was not observed");
   if (knownFallback && direction > 0) {
     const form = passThrough.after.dominoForm;
     if (
@@ -612,10 +648,17 @@ const evaluateFaultGate = (direction, preflight, passThrough) => {
       failures.push("forward fallback did not expose the Domino form");
     }
   }
+  if (direction > 0 && passThrough.after.root?.dominoPlayback !== "complete") {
+    failures.push("forward failure did not release to the complete/form boundary");
+  }
+  if (direction < 0 && passThrough.after.root?.dominoPlayback !== "start") {
+    failures.push("reverse failure did not release to the start/Process boundary");
+  }
   return {
     passed: failures.length === 0,
     failures,
     knownFallback,
+    mediaFailureSamples,
     movement,
     relevantInputs,
     lockedSamples,
@@ -644,7 +687,7 @@ const openScenario = async (profile, blockedKinds, id) => {
     const requestUrl = route.request().url();
     const kind = injectedMediaKind(requestUrl);
     if (/\/media\/domino-cta-/i.test(requestUrl)) routedMedia.push({ kind, url: requestUrl });
-    if (kind && blockedKinds.has(kind)) {
+    if (profile.browserType !== webkit && kind && blockedKinds.has(kind)) {
       aborted.push({ kind, url: requestUrl, at: Date.now() });
       await route.abort("failed");
       return;
@@ -680,6 +723,11 @@ const openScenario = async (profile, blockedKinds, id) => {
   };
 };
 
+const armWebKitMediaFaults = async (scenario) => {
+  if (!scenario.webkitSourceFault) return;
+  await scenario.page.evaluate(() => window.__t6ArmMediaFaults?.());
+};
+
 const syncWebKitFaults = async (scenario) => {
   if (!scenario.webkitSourceFault) return;
   const injections = await scenario.page.evaluate(() => window.__t6MediaFaultInjections ?? []);
@@ -699,6 +747,11 @@ const syncWebKitFaults = async (scenario) => {
 const runForwardFailure = async (profile, directory) => {
   const scenario = await openScenario(profile, new Set(["forward", "reverse"]), `${profile.id}-forward`);
   try {
+    if (scenario.webkitSourceFault) {
+      await positionBeforeForwardBoundary(scenario.page);
+      await waitForForwardMediaReady(scenario.page);
+      await armWebKitMediaFaults(scenario);
+    }
     const preflight = await waitForPreflightCycle(scenario.page, profile, scenario.cdp, 1);
     const passThrough = await movePastFailedBoundary(scenario.page, profile, scenario.cdp, 1);
     await syncWebKitFaults(scenario);
@@ -735,6 +788,7 @@ const runReverseFailure = async (profile, directory) => {
       null,
       { timeout: 8_000 },
     );
+    await armWebKitMediaFaults(scenario);
     const preflight = await waitForPreflightCycle(scenario.page, profile, scenario.cdp, -1);
     const passThrough = await movePastFailedBoundary(scenario.page, profile, scenario.cdp, -1);
     await syncWebKitFaults(scenario);
