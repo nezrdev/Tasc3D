@@ -25,7 +25,7 @@
 - `docs/t11-t9-decomposition-final-2026-08-02.json` passed both engines with one authored instance of every extracted section and one runtime-owned media/story graph.
 - `docs/t11-first-visit-smoke-2026-08-02.json` passed 4/4 cold Chromium/WebKit desktop/mobile visits: consent was initially absent, persisted after acceptance, Contact navigation resolved, and no browser errors occurred. Screenshots are stored beside the report.
 - `output/playwright/t11-t12-seams-final/summary.json` passed 2/2 Services/How seam cases, including rapid return on WebKit mobile.
-- `output/playwright/t11-t6-fault-tightened-final/summary.json` passed 8/8 forward/reverse Domino transport-failure cases across Chromium/WebKit desktop/mobile. Every scenario now proves an explicit preflight cycle, a `data-domino-media-failure` terminal, unlocked document movement, and the correct forward `complete` or reverse `start` boundary; observed preflights were 901-918 ms against the 1,240 ms assertion ceiling.
+- `docs/t11-domino-fault-authoritative-2026-08-02.json` passed 8/8 forward/reverse Domino transport-failure cases across Chromium/WebKit desktop/mobile. Every scenario proves an explicit preflight cycle, a `data-domino-media-failure` terminal, unlocked document movement, and the correct forward `complete` or reverse `start` boundary; observed preflights were 901-913 ms against the 1,240 ms assertion ceiling. Raw result JSON and screenshots remain under the ignored `output/playwright/t11-t6-fault-tightened-final-v2/` directory.
 - `work/t11-webgl-lifecycle-authoritative-2026-08-02.json` passed 3/3 default and forced-packed WebGL lifecycle cases.
 - A local media range request returned `206`, `Content-Range: bytes 0-31/4060298`, and `Content-Length: 32`.
 

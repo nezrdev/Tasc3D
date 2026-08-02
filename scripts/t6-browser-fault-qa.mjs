@@ -12,6 +12,9 @@ const args = Object.fromEntries(
 
 const baseUrl = String(args.url ?? "http://127.0.0.1:3106/");
 const outputRoot = path.resolve(String(args.output ?? "output/playwright/t6-browser-fault"));
+const summaryOutput = args.summary
+  ? path.resolve(String(args.summary))
+  : path.join(outputRoot, "summary.json");
 const headed = Boolean(args.headed);
 const DOMINO_PREFLIGHT_CONTRACT_MS = 1_200;
 const TIMER_TOLERANCE_MS = 40;
@@ -681,14 +684,14 @@ const openScenario = async (profile, blockedKinds, id) => {
   });
   await installTimeline(context);
   if (profile.browserType === webkit) await installWebKitMediaFault(context, blockedKinds);
-  const aborted = [];
+  const faultInjections = [];
   const routedMedia = [];
   await context.route("**/*", async (route) => {
     const requestUrl = route.request().url();
     const kind = injectedMediaKind(requestUrl);
     if (/\/media\/domino-cta-/i.test(requestUrl)) routedMedia.push({ kind, url: requestUrl });
     if (profile.browserType !== webkit && kind && blockedKinds.has(kind)) {
-      aborted.push({ kind, url: requestUrl, at: Date.now() });
+      faultInjections.push({ kind, url: requestUrl, at: Date.now(), mode: "network-abort" });
       await route.abort("failed");
       return;
     }
@@ -717,7 +720,7 @@ const openScenario = async (profile, blockedKinds, id) => {
     context,
     page,
     cdp,
-    aborted,
+    faultInjections,
     diagnostics,
     webkitSourceFault: profile.browserType === webkit,
   };
@@ -732,14 +735,14 @@ const syncWebKitFaults = async (scenario) => {
   if (!scenario.webkitSourceFault) return;
   const injections = await scenario.page.evaluate(() => window.__t6MediaFaultInjections ?? []);
   for (const injection of injections) {
-    if (scenario.aborted.some((entry) => entry.kind === injection.kind && entry.url === injection.originalUrl)) {
+    if (scenario.faultInjections.some((entry) => entry.kind === injection.kind && entry.url === injection.originalUrl)) {
       continue;
     }
-    scenario.aborted.push({
+    scenario.faultInjections.push({
       kind: injection.kind,
       url: injection.originalUrl,
       at: injection.at,
-      mode: "webkit-source-interception",
+      mode: injection.mode ?? "webkit-media-state-fault",
     });
   }
 };
@@ -758,15 +761,15 @@ const runForwardFailure = async (profile, directory) => {
     const gate = evaluateFaultGate(1, preflight, passThrough);
     const screenshot = path.join(directory, "forward-failure-final.png");
     await scenario.page.screenshot({ path: screenshot, animations: "allow" });
-    if (!scenario.aborted.some((entry) => entry.kind === "forward")) {
+    if (!scenario.faultInjections.some((entry) => entry.kind === "forward")) {
       gate.passed = false;
-      gate.failures.push("forward media request was not aborted");
+      gate.failures.push("forward media fault was not injected");
     }
     return {
       id: `${profile.id}-forward-failure`,
       passed: gate.passed,
       blockedKinds: ["forward", "reverse"],
-      aborted: scenario.aborted,
+      faults: scenario.faultInjections,
       diagnostics: scenario.diagnostics,
       preflight,
       passThrough,
@@ -795,15 +798,15 @@ const runReverseFailure = async (profile, directory) => {
     const gate = evaluateFaultGate(-1, preflight, passThrough);
     const screenshot = path.join(directory, "reverse-failure-final.png");
     await scenario.page.screenshot({ path: screenshot, animations: "allow" });
-    if (!scenario.aborted.some((entry) => entry.kind === "reverse")) {
+    if (!scenario.faultInjections.some((entry) => entry.kind === "reverse")) {
       gate.passed = false;
-      gate.failures.push("reverse media request was not aborted");
+      gate.failures.push("reverse media fault was not injected");
     }
     return {
       id: `${profile.id}-reverse-failure`,
       passed: gate.passed,
       blockedKinds: ["reverse"],
-      aborted: scenario.aborted,
+      faults: scenario.faultInjections,
       diagnostics: scenario.diagnostics,
       happyForward: forward,
       preflight,
@@ -862,11 +865,12 @@ const summary = {
     failures: result.gate?.failures ?? [result.fatal?.message ?? String(result.fatal)],
     preflightMs: result.preflight?.cycle?.durationMs ?? null,
     movement: result.gate?.movement ?? null,
-    abortedKinds: [...new Set((result.aborted ?? []).map((entry) => entry.kind))],
-    screenshot: result.screenshot ?? null,
+    faultedKinds: [...new Set((result.faults ?? []).map((entry) => entry.kind))],
+    faultModes: [...new Set((result.faults ?? []).map((entry) => entry.mode))],
+    screenshot: result.screenshot ? path.relative(process.cwd(), result.screenshot).replaceAll("\\", "/") : null,
   })),
 };
-const summaryFile = path.join(outputRoot, "summary.json");
-fs.writeFileSync(summaryFile, JSON.stringify(summary, null, 2));
-console.log(JSON.stringify({ ...summary, results: summary.results, summaryFile }, null, 2));
+fs.mkdirSync(path.dirname(summaryOutput), { recursive: true });
+fs.writeFileSync(summaryOutput, JSON.stringify(summary, null, 2));
+console.log(JSON.stringify({ ...summary, results: summary.results, summaryFile: summaryOutput }, null, 2));
 if (!summary.passed) process.exitCode = 1;
