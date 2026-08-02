@@ -3,8 +3,8 @@
 ## Project State
 
 - Worktree: `C:\workflow\Freelance\projects\tasc-3d-site`.
-- Active optimization chain: T6, T13, T12, and T7 are stacked under the current T8 work.
-- Current branch in this worktree: `task/t8-motion-lifecycle`, based on `2570c5d`.
+- Active optimization chain: T6, T13, T12, T7, T8, and T9 are stacked in isolated branches and PRs.
+- Current branch in this worktree: `task/t9-landing-decomposition`, based on the T8 branch.
 - Production deployment is intentionally out of scope until separately approved.
 
 ## Runtime Decisions
@@ -23,6 +23,7 @@
 - Mobile portion scrolling stops and writes through Lenis while it owns a transition, then synchronizes and resumes Lenis on every completion, interruption, watchdog release, and cleanup.
 - Real Safari acceptance still requires physical macOS/iPhone Safari or an equivalent real-device remote session. Windows Playwright WebKit is regression coverage only.
 - Browser QA must run against one stable local `next start` process. Do not rebuild `.next` or start a second server while Playwright/perf harnesses are running.
+- `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically, media state is owned by `useMediaOrchestrator`, and Services input behavior is created through `useServicesStory` inside that same runtime.
 
 ## Latest Evidence
 
@@ -38,3 +39,4 @@
 - `docs/t7-on-t8-motion-input-qa-2026-08-02.json` passed full Chromium and WebKit T7 regression on the T8 branch.
 - `docs/t8-perf-smoke-2026-08-02.json` passed the Chromium mobile 390 smoke run; measured long-task sum in the first 7 seconds is 207 ms, under the 250 ms T8 target.
 - The focused Chromium 390 mobile portion run passed 65/65 checks without changing its timing limits.
+- T9 passed `pnpm check`, Chromium/WebKit structural QA, T8 lifecycle QA, and T7 forward/reverse input QA on production BUILD_ID `6Cv4-YD_ip1O1H6_JeSAj`; see `docs/t9-verification-2026-08-02.md`.

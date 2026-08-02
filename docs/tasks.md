@@ -7,10 +7,10 @@
 - T12: Services to How pin/anchor seam stabilization is locally verified.
 - T7: unified motion input ownership, explicit/observed connection classification, and focused Chromium/WebKit journey QA are implemented.
 - T8: runtime profile bootstrap, stable-baseline viewport hysteresis, stable Services media identity, controlled late measured-throughput isolation, and dynamic reduced-motion teardown/restart are implemented and locally verified.
+- T9: section extraction, media reducer orchestration, Services story extraction, and visual media memoization are implemented and locally verified without behavior drift.
 
 ## Remaining Goal Scope
 
-- T9: decompose landing implementation into smaller atomic commits without behavior drift.
 - T10: remove dead code/assets and close A20-A23.
 - T11: full final gate across build, browser journeys, performance, cross-device/network evidence and handoff.
 
