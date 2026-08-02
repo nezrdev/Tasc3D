@@ -318,21 +318,25 @@ test("both forms emit elapsedMs payloads and wire first-field-focus capture", as
     assert.equal(dominoPayload.formType, "project_brief");
     assert.equal(datumPayload.elapsedMs, 3000);
     assert.equal(dominoPayload.elapsedMs, 3000);
-    const landingSource = fs.readFileSync(path.join(projectRoot, "src", "components", "TascLanding.tsx"), "utf8");
-    for (const [formClass, leadName] of [
-        ["datum-waitlist-form", "datumLead"],
-        ["domino-impulse-form", "dominoLead"],
+    const sectionSources = {
+        datum: fs.readFileSync(path.join(projectRoot, "src", "components", "sections", "DatumSection.tsx"), "utf8"),
+        domino: fs.readFileSync(path.join(projectRoot, "src", "components", "sections", "DominoSection.tsx"), "utf8"),
+    };
+    for (const [section, formClass, leadName] of [
+        ["datum", "datum-waitlist-form", "datumLead"],
+        ["domino", "domino-impulse-form", "dominoLead"],
     ]) {
-        const start = landingSource.indexOf(`<form className="${formClass}"`);
-        const end = landingSource.indexOf("</form>", start);
+        const sectionSource = sectionSources[section];
+        const start = sectionSource.indexOf(`<form className="${formClass}"`);
+        const end = sectionSource.indexOf("</form>", start);
         assert.notEqual(start, -1, `${formClass} is missing`);
         assert.notEqual(end, -1, `${formClass} closing tag is missing`);
-        const formSource = landingSource.slice(start, end);
+        const formSource = sectionSource.slice(start, end);
         assert.doesNotMatch(formSource, /onPointerDownCapture|onFocusCapture|onKeyDownCapture|onInputCapture/);
         assert.match(formSource, new RegExp(`name="email"[^>]*onFocus=\\{${leadName}\\.captureFirstInteraction\\}`));
         assert.match(formSource, new RegExp(`name="privacy"[^>]*onFocus=\\{${leadName}\\.captureFirstInteraction\\}`));
     }
-    const dominoInput = landingSource.match(/<input id="domino-email"[^>]*\/>/)?.[0] || "";
+    const dominoInput = sectionSources.domino.match(/<input id="domino-email"[^>]*\/>/)?.[0] || "";
     assert.ok(dominoInput, "Domino email input is missing");
     assert.doesNotMatch(dominoInput, /\bvalue=/);
     assert.doesNotMatch(dominoInput, /\bonInput=/);
