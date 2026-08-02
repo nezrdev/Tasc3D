@@ -25,6 +25,9 @@ const DOMINO_POST_UNLOCK_QUIET_MS = 300;
 const DOMINO_TOUCH_DIRECTION_THRESHOLD = 50;
 const DOMINO_WHEEL_DIRECTION_THRESHOLD = 60;
 const DOMINO_WHEEL_GESTURE_GAP_MS = 180;
+const DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS = 1200;
+const DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS = DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS - 300;
+const DOMINO_TRANSPORT_UNAVAILABLE_TTL_MS = 15000;
 export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", onForwardCompletedOnce, enabled, story, }: ReversibleScrollStoriesOptions) {
     const onForwardCompletedOnceRef = useRef(onForwardCompletedOnce);
     const forwardCompletionReportedRef = useRef(false);
@@ -677,7 +680,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             let transportAttemptDirection: -1 | 0 | 1 = 0;
             let transportAttemptStartedAt = 0;
             let transportAttemptFailures = 0;
+            let transportPreflightToken = 0;
+            let transportPreparingDirection: -1 | 0 | 1 = 0;
             const transportUnavailable = new Set<-1 | 1>();
+            const transportUnavailableUntil = new Map<-1 | 1, number>();
+            const transportUnavailableTimers = new Map<-1 | 1, number>();
             const accumulateDirectionalDelta = (accumulated: number, delta: number) => accumulated === 0 || Math.sign(accumulated) === Math.sign(delta) ? accumulated + delta : delta;
             const resetGestureTracking = () => {
                 touchY = null;
@@ -698,12 +705,15 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 resetGestureTracking();
             };
             const jumpToScrollPosition = (target: number) => {
+                const safeTarget = Math.max(0, Math.round(target));
+                if (Math.abs(window.scrollY - safeTarget) <= 2)
+                    return;
                 const lenis = lenisRef.current;
                 if (lenis) {
-                    lenis.scrollTo(target, { immediate: true, force: true });
+                    lenis.scrollTo(safeTarget, { immediate: true, force: true });
                     return;
                 }
-                window.scrollTo({ top: target, left: 0, behavior: "auto" });
+                window.scrollTo({ top: safeTarget, left: 0, behavior: "auto" });
             };
             const isDominoVisuallyNear = (viewportMargin = 0.8) => {
                 const viewportHeight = getViewportHeight();
@@ -716,6 +726,37 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 transportAttemptDirection = 0;
                 transportAttemptStartedAt = 0;
                 transportAttemptFailures = 0;
+            };
+            const clearTransportUnavailable = (availableDirection: -1 | 1) => {
+                const timer = transportUnavailableTimers.get(availableDirection);
+                if (timer !== undefined)
+                    window.clearTimeout(timer);
+                transportUnavailableTimers.delete(availableDirection);
+                transportUnavailableUntil.delete(availableDirection);
+                transportUnavailable.delete(availableDirection);
+                if (transportUnavailable.size === 0)
+                    delete root.dataset.dominoMediaFailure;
+            };
+            const markTransportUnavailable = (failedDirection: -1 | 1) => {
+                clearTransportUnavailable(failedDirection);
+                transportUnavailable.add(failedDirection);
+                transportUnavailableUntil.set(failedDirection, performance.now() + DOMINO_TRANSPORT_UNAVAILABLE_TTL_MS);
+                const timer = window.setTimeout(() => {
+                    transportUnavailableTimers.delete(failedDirection);
+                    transportUnavailableUntil.delete(failedDirection);
+                    transportUnavailable.delete(failedDirection);
+                    if (transportUnavailable.size === 0)
+                        delete root.dataset.dominoMediaFailure;
+                }, DOMINO_TRANSPORT_UNAVAILABLE_TTL_MS);
+                transportUnavailableTimers.set(failedDirection, timer);
+            };
+            const isTransportUnavailable = (directionToCheck: -1 | 1) => {
+                const unavailableUntil = transportUnavailableUntil.get(directionToCheck);
+                if (unavailableUntil !== undefined && performance.now() >= unavailableUntil) {
+                    clearTransportUnavailable(directionToCheck);
+                    return false;
+                }
+                return transportUnavailable.has(directionToCheck);
             };
             const beginTransportAttempt = (nextDirection: -1 | 1) => {
                 if (transportAttemptDirection === nextDirection && transportAttemptStartedAt > 0)
@@ -817,12 +858,12 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 });
             };
             const pauseVideos = () => videos.forEach((video) => video.pause());
-            const waitForMetadata = (video: HTMLVideoElement, token: number) => new Promise<boolean>((resolve) => {
+            const waitForTransportFrame = (video: HTMLVideoElement, preflightToken: number) => new Promise<boolean>((resolve) => {
                 if (video.dataset.armed !== "true") {
                     resolve(false);
                     return;
                 }
-                if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
                     resolve(true);
                     return;
                 }
@@ -832,14 +873,45 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                         return;
                     settled = true;
                     window.clearTimeout(timeout);
-                    video.removeEventListener("loadedmetadata", handleMetadata);
+                    video.removeEventListener("loadeddata", handleReady);
+                    video.removeEventListener("canplay", handleReady);
+                    video.removeEventListener("error", handleError);
+                    resolve(ready && preflightToken === transportPreflightToken && !disposed);
+                };
+                const handleReady = () => finish(video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
+                const handleError = () => finish(false);
+                const timeout = window.setTimeout(() => finish(false), DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS);
+                video.addEventListener("loadeddata", handleReady, { once: true });
+                video.addEventListener("canplay", handleReady, { once: true });
+                video.addEventListener("error", handleError, { once: true });
+                if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
+                    video.load();
+            });
+            const waitForMetadata = (video: HTMLVideoElement, token: number) => new Promise<boolean>((resolve) => {
+                if (video.dataset.armed !== "true") {
+                    resolve(false);
+                    return;
+                }
+                if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                    resolve(true);
+                    return;
+                }
+                let settled = false;
+                const finish = (ready: boolean) => {
+                    if (settled)
+                        return;
+                    settled = true;
+                    window.clearTimeout(timeout);
+                    video.removeEventListener("loadeddata", handleMetadata);
+                    video.removeEventListener("canplay", handleMetadata);
                     video.removeEventListener("error", handleError);
                     resolve(ready && token === transportToken && !disposed);
                 };
-                const handleMetadata = () => finish(true);
+                const handleMetadata = () => finish(video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA);
                 const handleError = () => finish(false);
-                const timeout = window.setTimeout(() => finish(false), lowPower ? 3600 : 2400);
-                video.addEventListener("loadedmetadata", handleMetadata, { once: true });
+                const timeout = window.setTimeout(() => finish(false), DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS);
+                video.addEventListener("loadeddata", handleMetadata, { once: true });
+                video.addEventListener("canplay", handleMetadata, { once: true });
                 video.addEventListener("error", handleError, { once: true });
                 if (video.networkState === HTMLMediaElement.NETWORK_EMPTY)
                     video.load();
@@ -867,7 +939,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                         finish(true);
                         return;
                     }
-                    if (performance.now() - startedAt >= (lowPower ? 3600 : 2400)) {
+                    if (performance.now() - startedAt >= DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS) {
                         finish(false);
                         return;
                     }
@@ -898,7 +970,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                         finish(true);
                         return;
                     }
-                    if (performance.now() - startedAt >= (lowPower ? 3600 : 2400)) {
+                    if (performance.now() - startedAt >= DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS) {
                         finish(false);
                         return;
                     }
@@ -909,8 +981,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const holdSessionAtBoundary = () => {
                 if (!locked || sessionBoundaryY === null || disposed)
                     return;
-                const target = sessionBoundaryY;
-                if (Math.abs(window.scrollY - target) <= 0.75)
+                const target = Math.round(sessionBoundaryY);
+                if (Math.abs(window.scrollY - target) <= 2)
                     return;
                 jumpToScrollPosition(target);
             };
@@ -1049,6 +1121,9 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 monitorFrame = window.requestAnimationFrame(update);
             };
             const failOpenDominoTransport = (failedDirection: -1 | 1, video: HTMLVideoElement, reason: string) => {
+                transportPreflightToken += 1;
+                transportPreparingDirection = 0;
+                delete root.dataset.dominoPreflight;
                 transportToken += 1;
                 window.clearTimeout(transportRetryTimer);
                 transportRetryTimer = 0;
@@ -1067,7 +1142,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 reverseHandoffActive = false;
                 beginPostUnlockGestureEpoch(0);
                 resetTransportAttempt();
-                transportUnavailable.add(failedDirection);
+                markTransportUnavailable(failedDirection);
                 video.dataset.segmentState = "fallback";
                 root.dataset.dominoPlayback = "media-unavailable";
                 root.dataset.dominoMediaFailure = reason;
@@ -1078,8 +1153,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 beginTransportAttempt(nextDirection);
                 transportAttemptFailures += 1;
                 const elapsed = performance.now() - transportAttemptStartedAt;
-                const retryBudgetMs = lowPower ? 18000 : 12000;
-                if (video.error || transportAttemptFailures >= 4 || elapsed >= retryBudgetMs) {
+                const retryBudgetMs = DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS;
+                if (video.error || transportAttemptFailures >= 3 || elapsed >= retryBudgetMs) {
                     failOpenDominoTransport(nextDirection, video, waitingState);
                     return;
                 }
@@ -1177,24 +1252,30 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     cancelForwardApproachHandoff();
                 void switchDirection(nextDirection);
             };
-            const startSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
+            const commitSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
                 if ((root.dataset.portionedScroll || root.dataset.portionGesture) && navigationTarget !== "#brief")
-                    return;
+                    return false;
                 if (navigationTarget && navigationTarget !== "#brief")
-                    return;
-                if (transportUnavailable.has(nextDirection))
-                    return;
+                    return false;
+                if (disposed || isTransportUnavailable(nextDirection))
+                    return false;
                 if (locked) {
                     scheduleBoundaryHold();
-                    return;
+                    return true;
                 }
                 const requiresDeliberateOppositeGesture = postUnlockDirection !== 0 && nextDirection === -postUnlockDirection;
                 if (navigationTarget !== "#brief" &&
                     ((requiresDeliberateOppositeGesture && entryIntent !== nextDirection) ||
                         (!triggerConfirmed && entryIntent !== nextDirection))) {
-                    return;
+                    return false;
                 }
+                const incomingVideo = nextDirection > 0 ? dominoForwardVideo : dominoReverseVideo;
+                if (incomingVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
+                    return false;
+                transportPreparingDirection = 0;
+                delete root.dataset.dominoPreflight;
+                clearTransportUnavailable(nextDirection);
                 entryIntent = 0;
                 postUnlockDirection = 0;
                 postUnlockQuietUntil = 0;
@@ -1217,12 +1298,85 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 requestedDirection = 0;
                 root.dataset.dominoPlayback = nextDirection > 0 ? "forward" : "reverse";
                 syncVisualState();
-                const incomingVideo = nextDirection > 0 ? dominoForwardVideo : dominoReverseVideo;
                 if (incomingVideo.dataset.armed === "true" &&
                     incomingVideo.networkState === HTMLMediaElement.NETWORK_EMPTY) {
                     incomingVideo.load();
                 }
                 requestDirection(nextDirection);
+                return true;
+            };
+            const startSession = (nextDirection: -1 | 1, boundaryY?: number, triggerConfirmed = false) => {
+                const navigationTarget = root.dataset.programmaticAnchor;
+                if ((root.dataset.portionedScroll || root.dataset.portionGesture) && navigationTarget !== "#brief")
+                    return false;
+                if (navigationTarget && navigationTarget !== "#brief")
+                    return false;
+                if (disposed || isTransportUnavailable(nextDirection))
+                    return false;
+                if (locked) {
+                    scheduleBoundaryHold();
+                    return true;
+                }
+                const requiresDeliberateOppositeGesture = postUnlockDirection !== 0 && nextDirection === -postUnlockDirection;
+                if (navigationTarget !== "#brief" &&
+                    ((requiresDeliberateOppositeGesture && entryIntent !== nextDirection) ||
+                        (!triggerConfirmed && entryIntent !== nextDirection))) {
+                    return false;
+                }
+                const incomingVideo = nextDirection > 0 ? dominoForwardVideo : dominoReverseVideo;
+                if (incomingVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)
+                    return commitSession(nextDirection, boundaryY, triggerConfirmed);
+                if (transportPreparingDirection === nextDirection)
+                    return true;
+                transportPreflightToken += 1;
+                const preflightToken = transportPreflightToken;
+                transportPreparingDirection = nextDirection;
+                root.dataset.dominoPreflight = nextDirection > 0 ? "forward" : "reverse";
+                if (incomingVideo.dataset.armed === "true" &&
+                    incomingVideo.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+                    incomingVideo.load();
+                }
+                const preflightStartedArmed = incomingVideo.dataset.armed === "true";
+                void waitForTransportFrame(incomingVideo, preflightToken).then((ready) => {
+                    if (disposed || preflightToken !== transportPreflightToken)
+                        return;
+                    transportPreparingDirection = 0;
+                    delete root.dataset.dominoPreflight;
+                    if (!ready) {
+                        entryIntent = 0;
+                        if (nextDirection > 0) {
+                            forwardApproachAlignPending = false;
+                            forwardApproachHandoffActive = false;
+                        }
+                        if (!preflightStartedArmed) {
+                            root.dataset.dominoMediaFailure = "preflight-unarmed";
+                            if (root.dataset.dominoPlayback !== "complete")
+                                root.dataset.dominoPlayback = "ready";
+                            return;
+                        }
+                        if (incomingVideo.error) {
+                            markTransportUnavailable(nextDirection);
+                            root.dataset.dominoMediaFailure = "preflight-error";
+                        }
+                        else {
+                            root.dataset.dominoMediaFailure = "preflight-timeout";
+                        }
+                        if (root.dataset.dominoPlayback !== "complete")
+                            root.dataset.dominoPlayback = "ready";
+                        return;
+                    }
+                    clearTransportUnavailable(nextDirection);
+                    if (root.dataset.programmaticAnchor !== "#brief" && !isDominoVisuallyNear(0.35)) {
+                        entryIntent = 0;
+                        if (nextDirection > 0) {
+                            forwardApproachAlignPending = false;
+                            forwardApproachHandoffActive = false;
+                        }
+                        return;
+                    }
+                    commitSession(nextDirection, boundaryY, triggerConfirmed);
+                });
+                return true;
             };
             const startForwardFromApproach = () => {
                 if (locked || root.dataset.portionedScroll || root.dataset.portionGesture)
@@ -1238,22 +1392,21 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 if (locked ||
                     disposed ||
                     reverseHandoffActive ||
-                    transportUnavailable.has(-1) ||
+                    isTransportUnavailable(-1) ||
                     root.dataset.dominoPlayback !== "complete" ||
                     logicalTime < getDuration() - 1 / 45 ||
                     !isDominoVisuallyNear()) {
                     return false;
                 }
                 const reverseBoundary = dominoTrigger?.end;
-                startSession(-1, Number.isFinite(reverseBoundary) ? reverseBoundary! - 1 : undefined, true);
-                return true;
+                return startSession(-1, Number.isFinite(reverseBoundary) ? reverseBoundary! - 1 : undefined, true);
             };
             const startForwardFromCrossedBoundary = (boundaryY?: number) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
                 if (locked ||
                     disposed ||
                     reverseHandoffActive ||
-                    transportUnavailable.has(1) ||
+                    isTransportUnavailable(1) ||
                     logicalTime > 1 / 45 ||
                     root.dataset.dominoPlayback === "complete" ||
                     (entryIntent !== 1 && navigationTarget !== "#brief") ||
@@ -1263,16 +1416,19 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 const forwardBoundary = Number.isFinite(boundaryY)
                     ? boundaryY!
                     : (dominoTrigger?.start ?? window.scrollY) + 1;
-                startSession(1, forwardBoundary, false);
+                const accepted = startSession(1, forwardBoundary, false);
                 if (locked) {
                     ScrollTrigger.update();
                     scheduleBoundaryHold();
                 }
-                return locked;
+                return accepted;
             };
             const cancelSession = () => {
                 cancelFormHandoff();
                 cancelForwardApproachHandoff();
+                transportPreflightToken += 1;
+                transportPreparingDirection = 0;
+                delete root.dataset.dominoPreflight;
                 transportToken += 1;
                 window.clearTimeout(transportRetryTimer);
                 transportRetryTimer = 0;
@@ -1415,9 +1571,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     : Number.POSITIVE_INFINITY;
                 const seamGuard = Math.min(180, Math.max(96, getVisualViewportHeight() * 0.2));
                 if (distanceToBoundary >= -seamGuard && distanceToBoundary <= seamGuard) {
-                    if (event.cancelable)
+                    const canCaptureInput = dominoForwardVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+                    const accepted = startForwardFromCrossedBoundary((triggerStart ?? window.scrollY) + 1);
+                    if (accepted && canCaptureInput && event.cancelable)
                         event.preventDefault();
-                    startForwardFromCrossedBoundary((triggerStart ?? window.scrollY) + 1);
                 }
             };
             const handleEntryTouchStart = (event: TouchEvent) => {
@@ -1461,9 +1618,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     : Number.POSITIVE_INFINITY;
                 const seamGuard = Math.min(180, Math.max(96, getVisualViewportHeight() * 0.2));
                 if (distanceToBoundary >= -seamGuard && distanceToBoundary <= seamGuard) {
-                    if (event.cancelable)
+                    const canCaptureInput = dominoForwardVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+                    const accepted = startForwardFromCrossedBoundary((triggerStart ?? window.scrollY) + 1);
+                    if (accepted && canCaptureInput && event.cancelable)
                         event.preventDefault();
-                    startForwardFromCrossedBoundary((triggerStart ?? window.scrollY) + 1);
                 }
             };
             const handleEntryTouchEnd = () => {
@@ -1498,9 +1656,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const markTransportAvailable = (video: HTMLVideoElement, availableDirection: -1 | 1) => {
                 if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA)
                     return;
-                transportUnavailable.delete(availableDirection);
-                if (transportUnavailable.size === 0)
-                    delete root.dataset.dominoMediaFailure;
+                clearTransportUnavailable(availableDirection);
                 if (!locked && root.dataset.dominoPlayback === "media-unavailable") {
                     root.dataset.dominoPlayback = logicalTime >= getDuration() - 1 / 45 ? "complete" : "ready";
                 }
@@ -1746,6 +1902,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 dominoReadinessTrigger?.kill();
                 window.clearTimeout(transportRetryTimer);
                 transportRetryTimer = 0;
+                transportUnavailableTimers.forEach((timer) => window.clearTimeout(timer));
+                transportUnavailableTimers.clear();
+                transportUnavailableUntil.clear();
+                transportUnavailable.clear();
                 window.cancelAnimationFrame(boundaryHoldFrame);
                 boundaryHoldFrame = 0;
                 removeReadinessListeners();
@@ -1774,6 +1934,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 delete root.dataset.dominoPinned;
                 delete root.dataset.dominoHandoff;
                 delete root.dataset.dominoMediaFailure;
+                delete root.dataset.dominoPreflight;
             });
         }
         let viewportWidth = window.innerWidth;

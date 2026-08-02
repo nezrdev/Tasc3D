@@ -2480,6 +2480,13 @@ export function TascLanding() {
         };
         lenis.on("scroll", handleSmoothScrollUpdate);
         rafId = requestAnimationFrame(raf);
+        const correctNativeScroll = (target: number) => {
+            const safeTarget = Math.max(0, Math.round(target));
+            if (Math.abs(window.scrollY - safeTarget) <= 2)
+                return false;
+            window.scrollTo({ top: safeTarget, left: 0, behavior: "auto" });
+            return true;
+        };
         let servicesTextResolve: (() => void) | null = null;
         let servicesEntryRetryResolve: (() => void) | null = null;
         let syncBlockingInputListeners = () => { };
@@ -2502,7 +2509,7 @@ export function TascLanding() {
         });
         const releaseServicesLenisLock = (snapTarget?: number) => {
             if (typeof snapTarget === "number" && Number.isFinite(snapTarget)) {
-                window.scrollTo({ top: snapTarget, left: 0, behavior: "auto" });
+                correctNativeScroll(snapTarget);
             }
             if (servicesOwnsLenisLock || lenis.isLocked) {
                 lenis.scrollTo(window.scrollY, { immediate: true, force: true });
@@ -3164,7 +3171,7 @@ export function TascLanding() {
             servicesOwnsLenisLock = true;
             lenis.stop();
             lenis.scrollTo(servicesLockY, { immediate: true, force: true });
-            window.scrollTo({ top: servicesLockY, left: 0, behavior: "auto" });
+            correctNativeScroll(servicesLockY);
             setServicesPhase("waiting");
             setMotionInputState();
         };
@@ -3600,7 +3607,7 @@ export function TascLanding() {
                 if (event.cancelable)
                     event.preventDefault();
                 touchY = nextY;
-                window.scrollTo({ top: servicesLockY, left: 0, behavior: "auto" });
+                correctNativeScroll(servicesLockY);
                 return;
             }
             const delta = touchY - nextY;
@@ -3711,9 +3718,8 @@ export function TascLanding() {
                 : dominoInputLocked
                     ? dominoLockY
                     : null;
-            if (targetY !== null && Math.abs(window.scrollY - targetY) > 1) {
-                window.scrollTo({ top: targetY, left: 0, behavior: "auto" });
-            }
+            if (targetY !== null)
+                correctNativeScroll(targetY);
         };
         if (useLegacyServicesFlow) {
             let blockingInputAttached = false;
@@ -4276,7 +4282,7 @@ export function TascLanding() {
                             return;
                     }
                     if (servicesActive) {
-                        window.scrollTo({ top: servicesLockY, left: 0, behavior: "auto" });
+                        correctNativeScroll(servicesLockY);
                         return;
                     }
                     servicesRunToken += 1;
@@ -4600,24 +4606,8 @@ export function TascLanding() {
                 const datumCardDetailGroups = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".datum-glass-card")).map((card) => Array.from(card.querySelectorAll<HTMLElement>(".datum-card-top, .datum-card-rule, h3, :scope > p")));
                 const datumCardDetails = datumCardDetailGroups.flat();
                 let datumContentState: "cards" | "waitlist" | "transition" | null = null;
-                let stableDatumViewportWidth = window.innerWidth;
-                let stableDatumViewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                const getStableDatumPinDistance = () => {
-                    const nextWidth = window.innerWidth;
-                    const nextHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                    const isRealViewportChange = Math.abs(nextWidth - stableDatumViewportWidth) > 80 ||
-                        Math.abs(nextHeight - stableDatumViewportHeight) >
-                            Math.max(180, stableDatumViewportHeight * 0.28);
-                    if (isRealViewportChange) {
-                        stableDatumViewportWidth = nextWidth;
-                        stableDatumViewportHeight = nextHeight;
-                    }
-                    const coarse = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
-                    const proportionalTravel = stableDatumViewportHeight * (coarse ? 0.86 : 0.74);
-                    return Math.round(Math.min(coarse ? 760 : 700, Math.max(coarse ? 560 : 500, proportionalTravel)));
-                };
-                gsap.set(datumCardsState, { y: 0, autoAlpha: 1, pointerEvents: "none" });
-                gsap.set(datumCardsRevealItems, { y: 0, autoAlpha: 1 });
+                gsap.set(datumCardsState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
+                gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 0 });
                 if (datumHeading) {
                     gsap.set(datumHeading, { autoAlpha: 1, clearProps: "transform,willChange" });
                 }
@@ -4653,7 +4643,7 @@ export function TascLanding() {
                     .set(datumWaitlistState, { pointerEvents: "none" }, 0)
                     .set(datumCardsState, { autoAlpha: 1, pointerEvents: "auto" }, 0)
                     .set(datumHeading ?? [], { autoAlpha: 1, clearProps: "transform,willChange" }, 0)
-                    .fromTo(datumCardsRevealItems, { y: 46, autoAlpha: 1 }, {
+                    .fromTo(datumCardsRevealItems, { y: 46, autoAlpha: 0 }, {
                     y: 0,
                     autoAlpha: 1,
                     duration: revealTime(1.34),
@@ -4688,11 +4678,11 @@ export function TascLanding() {
                     datumCardsScrubMoving = false;
                     syncDatumCardsMoving();
                     cardsRevealTimeline.timeScale(1).pause(0);
-                    gsap.set(datumCardsState, { y: 0, autoAlpha: 1, pointerEvents: "none" });
+                    gsap.set(datumCardsState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
                     if (datumHeading) {
                         gsap.set(datumHeading, { autoAlpha: 1, clearProps: "transform,willChange" });
                     }
-                    gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 1 });
+                    gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 0 });
                     gsap.set(datumHeadingItems, { y: 18, autoAlpha: 0, force3D: false });
                     gsap.set(datumCardDetails, { y: 16, autoAlpha: 0 });
                     gsap.set(datumWaitlistState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
@@ -4711,10 +4701,6 @@ export function TascLanding() {
                     cardsRevealTimeline.timeScale(1).restart();
                 };
                 const syncDatumContent = (progress: number) => {
-                    root.dataset.datumProgress = progress.toFixed(3);
-                    if (progress < 0.48) {
-                        gsap.set(datumCardDetails, { y: 0, autoAlpha: 1 });
-                    }
                     const nextState = progress <= 0.44
                         ? "cards"
                         : progress >= 0.8
@@ -4723,6 +4709,7 @@ export function TascLanding() {
                     if (nextState === datumContentState)
                         return;
                     datumContentState = nextState;
+                    root.dataset.datumProgress = nextState === "cards" ? "0.000" : nextState === "waitlist" ? "1.000" : "0.500";
                     const cardsInteractive = nextState === "cards";
                     const waitlistInteractive = nextState === "waitlist";
                     setRegionInteractive(datumCardsState, cardsInteractive);
@@ -4741,29 +4728,38 @@ export function TascLanding() {
                         if (datumContentState === null)
                             showDatumCards();
                     },
+                    onEnterBack: () => {
+                        if (datumContentState === null)
+                            showDatumCards();
+                    },
                 });
                 const datumVisibilityResetGuard = ScrollTrigger.create({
                     id: "datum-content-reset",
                     trigger: datumSection,
-                    start: "top bottom",
+                    start: () => `top ${Math.round(getVisualViewportHeight() * 2)}px`,
                     end: "bottom top",
+                    invalidateOnRefresh: true,
                     onLeaveBack: () => resetDatumContent(),
                 });
+                const datumNavigationTrigger = ScrollTrigger.create({
+                    id: "datum-reversible",
+                    trigger: datumSection,
+                    start: "top top",
+                    end: "bottom top",
+                    refreshPriority: 10,
+                    invalidateOnRefresh: true,
+                });
+                root.dataset.datumPinned = "false";
                 datumTimeline = gsap.timeline({
                     defaults: { ease: "none" },
                     scrollTrigger: {
-                        id: "datum-reversible",
+                        id: "datum-content-transition",
                         trigger: datumSection,
-                        start: "top top",
-                        end: () => `+=${getStableDatumPinDistance()}`,
-                        pin: true,
-                        pinSpacing: true,
+                        start: () => `top ${Math.round(getVisualViewportHeight() * (1 - RUNTIME_MEDIA.datum.visibilityRatio))}px`,
+                        end: "bottom top",
                         scrub: 0.28,
                         refreshPriority: 10,
                         invalidateOnRefresh: true,
-                        onToggle: (self) => {
-                            root.dataset.datumPinned = String(self.isActive);
-                        },
                         onEnter: (self) => {
                             if (datumContentState === null)
                                 showDatumCards();
@@ -4822,8 +4818,10 @@ export function TascLanding() {
                 cleanupCallbacks.push(() => {
                     datumVisibilityGuard.kill();
                     datumVisibilityResetGuard.kill();
+                    datumNavigationTrigger.kill();
                     cardsRevealTimeline.kill();
                     delete root.dataset.datumPinned;
+                    delete root.dataset.datumProgress;
                     datumCardsRevealMoving = false;
                     datumCardsScrubMoving = false;
                     syncDatumCardsMoving();
@@ -4855,6 +4853,18 @@ export function TascLanding() {
                     trigger: processContactSection,
                     start: "top 90%",
                     end: "top 38%",
+                    scrub: true,
+                    invalidateOnRefresh: true,
+                },
+            });
+            gsap.fromTo(processContactBg, { "--process-domino-tone": 0 }, {
+                "--process-domino-tone": 1,
+                ease: "none",
+                scrollTrigger: {
+                    id: "process-domino-tone",
+                    trigger: processContactSection,
+                    start: "bottom 140%",
+                    end: "bottom 75%",
                     scrub: true,
                     invalidateOnRefresh: true,
                 },
@@ -5686,7 +5696,7 @@ export function TascLanding() {
                     src: lightweightMediaMode ? DATUM_VIDEO_MOBILE_WEBM : DATUM_VIDEO_WEBM,
                     type: "video/webm",
                 },
-            ] : []} data-armed={datumMediaArmed ? "true" : "false"} poster={datumMediaArmed ? DATUM_VIDEO_POSTER : undefined} preload={datumMediaArmed ? "auto" : "metadata"} threshold={RUNTIME_MEDIA.datum.visibilityRatio} reverseThreshold={0.92} armDelayMs={0} playbackRate={0.85} onLoadedData={() => {
+            ] : []} data-armed={datumMediaArmed ? "true" : "false"} poster={datumMediaArmed ? DATUM_VIDEO_POSTER : undefined} preload={datumMediaArmed ? "auto" : "metadata"} threshold={RUNTIME_MEDIA.datum.visibilityRatio} armDelayMs={0} playbackRate={0.85} onLoadedData={() => {
                 setDatumMediaPrepared(true);
                 setDatumMediaFallback(false);
             }} onError={() => {
