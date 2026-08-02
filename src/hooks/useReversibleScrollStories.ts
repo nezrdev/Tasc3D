@@ -1174,21 +1174,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 boundaryHoldFrame = 0;
                 cancelForwardApproachHandoff();
                 pauseVideos();
-                direction = 0;
-                requestedDirection = 0;
-                entryIntent = 0;
-                sessionDirection = 0;
-                locked = false;
-                sessionBoundaryY = null;
                 reverseHandoffActive = false;
-                beginPostUnlockGestureEpoch(0);
-                resetTransportAttempt();
                 markTransportUnavailable(failedDirection);
                 video.dataset.segmentState = "fallback";
-                root.dataset.dominoPlayback = "media-unavailable";
                 root.dataset.dominoMediaFailure = reason;
-                syncInputListeners();
-                lenisRef.current?.start();
+                releaseAtBoundary(failedDirection);
             };
             const scheduleTransportRetryOrFailOpen = (nextDirection: -1 | 1, video: HTMLVideoElement, waitingState: string) => {
                 beginTransportAttempt(nextDirection);
@@ -1395,15 +1385,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                                 root.dataset.dominoPlayback = "ready";
                             return;
                         }
-                        if (incomingVideo.error) {
-                            markTransportUnavailable(nextDirection);
-                            root.dataset.dominoMediaFailure = "preflight-error";
-                        }
-                        else {
-                            root.dataset.dominoMediaFailure = "preflight-timeout";
-                        }
-                        if (root.dataset.dominoPlayback !== "complete")
-                            root.dataset.dominoPlayback = "ready";
+                        const failureReason = incomingVideo.error ||
+                            incomingVideo.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
+                            ? "preflight-error"
+                            : "preflight-timeout";
+                        failOpenDominoTransport(nextDirection, incomingVideo, failureReason);
                         return;
                     }
                     clearTransportUnavailable(nextDirection);
