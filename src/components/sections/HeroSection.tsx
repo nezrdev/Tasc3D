@@ -167,8 +167,8 @@ export function HeroSection({
                         className="vision-logo-image"
                         src={visionLogoArmed ? "/media/vision-logo-glass-20260710.webp" : VISION_LOGO_PLACEHOLDER}
                         alt="TASC Strategic Communications Group"
-                        width={3430}
-                        height={2160}
+                        width={1600}
+                        height={1008}
                         sizes="(max-width: 760px) 112vw, 78vw"
                         loading={visionLogoArmed ? "eager" : "lazy"}
                         fetchPriority={visionLogoArmed ? "high" : "low"}

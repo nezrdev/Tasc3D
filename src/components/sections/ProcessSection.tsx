@@ -1,11 +1,10 @@
+import Image from "next/image";
 import { ArrowRight } from "lucide-react";
-import { tascMapsEmbedUrl, tascOfficeAddress, } from "@/data/landing-content";
+import { tascOfficeAddress } from "@/data/landing-content";
 import { processSteps } from "@/data/site-content";
-type ProcessSectionProps = {
-    mapArmed: boolean;
-};
-export function ProcessSection({ mapArmed }: ProcessSectionProps) {
-    return (<section className="process-contact-section glass-editorial-section" id="process" aria-label="The process and contact" data-process-media-armed={mapArmed ? "true" : "false"}>
+
+export function ProcessSection() {
+    return (<section className="process-contact-section glass-editorial-section" id="process" aria-label="The process and contact">
       <div className="process-contact-bg" aria-hidden="true">
         <span className="process-gradient process-gradient-top"/>
         <span className="process-gradient process-gradient-bottom"/>
@@ -52,7 +51,16 @@ export function ProcessSection({ mapArmed }: ProcessSectionProps) {
           </div>
 
           <div className="process-map-card" aria-label="TASC office location map">
-            <iframe title="TASC office location in Google Maps" src={mapArmed ? tascMapsEmbedUrl : undefined} loading="eager" referrerPolicy="no-referrer-when-downgrade" allowFullScreen/>
+            <Image
+              className="process-map-preview"
+              src="/media/tasc-office-map-static-20260802.webp"
+              alt="Map preview showing the TASC office in Dubai Media City"
+              width={1152}
+              height={890}
+              sizes="(max-width: 900px) calc(100vw - 32px), (max-width: 1279px) 50vw, 576px"
+              loading="lazy"
+              unoptimized
+            />
             <div className="process-map-overlay">
               <p className="process-map-street">King Salman Bin Abdulaziz Al Saud St Al Sufouh - Al Sufouh 2</p>
               <strong className="process-map-office">{tascOfficeAddress}</strong>

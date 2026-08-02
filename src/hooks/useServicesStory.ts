@@ -19,7 +19,6 @@ type ServicesStoryInputOptions = {
     root: HTMLElement;
     isDisposed: () => boolean;
     isMacRuntime: () => boolean;
-    isDominoInputLocked: () => boolean;
     isServicesActive: () => boolean;
     isServicesReleasing: () => boolean;
     servicesOwnsLenisLock: () => boolean;
@@ -29,7 +28,6 @@ type ServicesStoryInputOptions = {
     getServicesEntryInputIgnoreUntil: () => number;
     getServicesTransitionDirection: () => 1 | -1 | 0;
     getServicesLockY: () => number;
-    getDominoLockY: () => number;
     getServicesTriggerActive: () => boolean | null;
     correctNativeScroll: (target: number) => void;
     releaseServicesForNavigation: () => void;
@@ -57,7 +55,6 @@ export function useServicesStory() {
             root,
             isDisposed,
             isMacRuntime,
-            isDominoInputLocked,
             isServicesActive,
             isServicesReleasing,
             servicesOwnsLenisLock,
@@ -67,7 +64,6 @@ export function useServicesStory() {
             getServicesEntryInputIgnoreUntil,
             getServicesTransitionDirection,
             getServicesLockY,
-            getDominoLockY,
             getServicesTriggerActive,
             correctNativeScroll,
             releaseServicesForNavigation,
@@ -166,10 +162,6 @@ export function useServicesStory() {
                 event.preventDefault();
                 return;
             }
-            if (isDominoInputLocked()) {
-                event.preventDefault();
-                return;
-            }
             if (!isServicesActive())
                 return;
             event.preventDefault();
@@ -222,18 +214,13 @@ export function useServicesStory() {
                 lastBlockedInputAt = 0;
                 blockedDirection = 0;
             }
-            touchY = (isServicesActive() || isServicesReleasing() || isDominoInputLocked()) && event.touches[0]
+            touchY = (isServicesActive() || isServicesReleasing()) && event.touches[0]
                 ? event.touches[0].clientY
                 : null;
         };
 
         const handleTouchMove = (event: TouchEvent) => {
             if (isServicesReleasing()) {
-                if (event.cancelable)
-                    event.preventDefault();
-                return;
-            }
-            if (isDominoInputLocked()) {
                 if (event.cancelable)
                     event.preventDefault();
                 return;
@@ -348,16 +335,12 @@ export function useServicesStory() {
                 }
                 return;
             }
-            if (isDominoInputLocked())
-                event.preventDefault();
         };
 
         const maintainPinnedScroll = () => {
             const targetY = isServicesActive() && !isServicesReleasing()
                 ? getServicesLockY()
-                : isDominoInputLocked()
-                    ? getDominoLockY()
-                    : null;
+                : null;
             if (targetY !== null)
                 correctNativeScroll(targetY);
         };

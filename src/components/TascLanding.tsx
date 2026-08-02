@@ -26,7 +26,7 @@ import {
 } from "@/hooks/useServicesStory";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
-import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
+import { RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import {
     hasExplicitConstrainedConnectionSignal,
@@ -98,8 +98,6 @@ const SERVICES_PLAYBACK_RATE = 1;
 const SERVICES_ENTRY_GATE_MS = 120;
 const SERVICES_POST_STAGE_GATE_MS = 150;
 const MEDIA_SEGMENT_GRACE_MS = 700;
-const DOMINO_TIMELINE_GRACE_MS = 460;
-const DOMINO_PLAYBACK_RATE = 1.25;
 const SERVICES_FIRST_SEGMENT_BUFFER_END = SERVICES_KEYFRAME_STOPS[0] + 2 / 30;
 const SERVICES_COMPLETE_STORY_BUFFER_END = Math.max(SERVICES_EXIT_STOP, SERVICES_REVERSE_KEYFRAME_STOPS[0]) + 1 / 60;
 const SERVICES_REVERSE_STOP_FRAMES = RUNTIME_MEDIA.services.reverseStopFrames;
@@ -173,7 +171,6 @@ export function TascLanding() {
     const lenisRef = useRef<Lenis | null>(null);
     const heroTimelineRef = useRef<gsap.core.Timeline | null>(null);
     const servicesControllerRef = useRef<MotionNavigationController | null>(null);
-    const dominoControllerRef = useRef<MotionNavigationController | null>(null);
     const programmaticNavigationRef = useRef(false);
     const programmaticAnchorRef = useRef<string | null>(null);
     const anchorSettleCleanupRef = useRef<(() => void) | null>(null);
@@ -227,9 +224,7 @@ export function TascLanding() {
             heroVideoEligible,
             heroVideoState,
             interactiveGalaxyArmed,
-            lowerMediaWarmDeadlineReached,
             packedAlphaOwner,
-            processMapArmed,
             servicesMediaArmed,
             servicesMediaFallback,
             servicesMediaPrepared,
@@ -354,7 +349,7 @@ export function TascLanding() {
         if (completeStoryPrepared) {
             root.dataset.servicesCompleteStoryWarm = "true";
         }
-        mediaActions.recoverServices(completeStoryPrepared);
+        mediaActions.recoverServices();
     }, [mediaActions]);
     const armDominoReverseMedia = useCallback(() => {
         rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
@@ -377,7 +372,6 @@ export function TascLanding() {
     const heroVisualReady = !motionAllowed ||
         heroVideoState === "ready" ||
         (heroVideoState === "fallback" && (!heroFallbackAnimationEligible || heroFallbackAnimationReady));
-    const heroDecoderLaneReleased = heroVisualReady;
     const lowerMediaPrepared = servicesMediaPrepared &&
         datumMediaPrepared &&
         dominoForwardPrepared;
@@ -387,12 +381,6 @@ export function TascLanding() {
     const lowerMediaSettled = (servicesMediaPrepared || servicesMediaFallback) &&
         (datumMediaPrepared || datumMediaFallback) &&
         (dominoForwardPrepared || dominoForwardFallback);
-    const servicesWarmSettled = servicesMediaPrepared || servicesMediaFallback;
-    const servicesPriorityWarmSettled = servicesMediaPrepared || servicesMediaFallback;
-    const deferredMediaSettled = (datumMediaPrepared || datumMediaFallback) &&
-        (dominoForwardPrepared || dominoForwardFallback);
-    const lowerMediaWarmReady = !motionAllowed ||
-        (servicesPriorityWarmSettled && (lowerMediaWarmDeadlineReached || deferredMediaSettled));
     const preloaderReady = motionPreferenceResolved &&
         performanceModeResolved &&
         criticalStaticAssetsReady &&
@@ -927,7 +915,6 @@ export function TascLanding() {
                 media.dataset.segmentState = "ready";
             }
             shell.dataset.servicesCompleteStoryWarm = "true";
-            mediaActions.markServicesCompleteStoryPrepared();
         };
         const completeFirstSegmentWarmup = () => {
             if (firstSegmentSettled || disposed)
@@ -1072,25 +1059,6 @@ export function TascLanding() {
     useEffect(() => {
         if (!motionPreferenceResolved || !performanceModeResolved)
             return;
-        if (!motionAllowed)
-            return;
-        if (!heroDecoderLaneReleased || !servicesWarmSettled)
-            return;
-        const warmDeadline = window.setTimeout(mediaActions.markLowerMediaWarmDeadlineReached, constrainedConnection ? (mobilePerformanceMode ? 9000 : 7000) : mobilePerformanceMode ? 6000 : 4500);
-        return () => window.clearTimeout(warmDeadline);
-    }, [
-        constrainedConnection,
-        heroDecoderLaneReleased,
-        mediaActions,
-        mobilePerformanceMode,
-        motionAllowed,
-        motionPreferenceResolved,
-        performanceModeResolved,
-        servicesWarmSettled,
-    ]);
-    useEffect(() => {
-        if (!motionPreferenceResolved || !performanceModeResolved)
-            return;
         const armDeepLinkedMedia = () => {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
@@ -1107,7 +1075,6 @@ export function TascLanding() {
             if (hash === "#process" || hash === "#contact") {
                 mediaActions.armDatum();
                 mediaActions.armDomino();
-                mediaActions.armProcessMap();
             }
         };
         armDeepLinkedMedia();
@@ -1133,9 +1100,6 @@ export function TascLanding() {
                 mediaActions.armDatum();
             if (hash === "#brief")
                 mediaActions.armDomino();
-            if (hash === "#process" || hash === "#contact") {
-                mediaActions.armProcessMap();
-            }
         };
         armFromHash();
         const targets = new Map<Element, () => void>();
@@ -1150,7 +1114,6 @@ export function TascLanding() {
         register(".figma-clients-section", mediaActions.armClientsFlare);
         register(".datum-motion-section", mediaActions.armDatum);
         register(".domino-cta-section", mediaActions.armDomino);
-        register(".process-contact-section", mediaActions.armProcessMap);
         const getArmMargin = () => {
             const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
             return mobilePerformanceMode || constrainedConnection
@@ -1504,8 +1467,6 @@ export function TascLanding() {
             mediaActions.armDatum();
         if (href === "#brief")
             mediaActions.armDomino();
-        if (href === "#process" || href === "#contact")
-            mediaActions.armProcessMap();
         if (!motionAllowed) {
             const target = href === "#top"
                 ? document.documentElement
@@ -1531,7 +1492,6 @@ export function TascLanding() {
         programmaticAnchorRef.current = href;
         programmaticNavigationRef.current = true;
         servicesControllerRef.current?.releaseForNavigation();
-        dominoControllerRef.current?.releaseForNavigation();
         const headerOffset = href === "#clients" ? 0 : -84;
         const getSectionTop = (selector: string) => {
             const section = document.querySelector<HTMLElement>(selector);
@@ -1777,9 +1737,6 @@ export function TascLanding() {
         const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const compactMotion = window.matchMedia("(max-width: 640px)").matches;
         const useLegacyServicesFlow = true;
-        const useAutonomousDatumFlow = true;
-        const useReversibleHowFlow = true;
-        const useReversibleDominoFlow = true;
         let stableHeroViewportWidth = getRuntimeViewport().width;
         let stableHeroViewportHeight = getRuntimeViewport().height;
         const getStableHeroPinDistance = () => {
@@ -1828,10 +1785,7 @@ export function TascLanding() {
         let heroTimeline: gsap.core.Timeline | null = null;
         let servicesTrigger: ScrollTrigger | null = null;
         let clientsServicesHandoff: gsap.core.Timeline | null = null;
-        let howWorkTimeline: gsap.core.Timeline | null = null;
         let datumTimeline: gsap.core.Timeline | null = null;
-        let ctaTimeline: gsap.core.Timeline | null = null;
-        let ctaTrigger: ScrollTrigger | null = null;
         let servicesTextTimeline: gsap.core.Timeline | null = null;
         let servicesTextWatchdog = 0;
         let servicesStage = -1;
@@ -1886,13 +1840,6 @@ export function TascLanding() {
         let servicesMediaRetryFailures = 0;
         let servicesMediaRetryStartedAt = 0;
         let servicesOwnsLenisLock = false;
-        let dominoRunToken = 0;
-        let dominoInputLocked = false;
-        let dominoCompleted = false;
-        let dominoLockY = 0;
-        let dominoEntryDirection: 1 | -1 = 1;
-        let dominoTimelineResolve: (() => void) | null = null;
-        let dominoTimelineWatchdog = 0;
         let heroVideoSuspended = false;
         const cleanupCallbacks: Array<() => void> = [];
         const trackDocumentScrollDirection = () => {
@@ -2697,7 +2644,7 @@ export function TascLanding() {
             servicesOwnsLenisLock = false;
         };
         const setMotionInputState = () => {
-            if (servicesActive || servicesReleasing || dominoInputLocked) {
+            if (servicesActive || servicesReleasing) {
                 root.dataset.motionInputLocked = "true";
             }
             else {
@@ -3188,7 +3135,7 @@ export function TascLanding() {
             setServicesEntryPoster(true);
             root.dataset.servicesPinned = "true";
             root.dataset.servicesInrange = "true";
-            root.dataset.servicesSequence = useLegacyServicesFlow ? "autoplay" : "scroll-scrub";
+            root.dataset.servicesSequence = "autoplay";
             lockClientsServicesHandoffAtServices();
             delete root.dataset.servicesMediaDecoded;
             if (preservePreview) {
@@ -3328,7 +3275,7 @@ export function TascLanding() {
             root.dataset.servicesPinned = "true";
             root.dataset.servicesInrange = "true";
             delete root.dataset.howWorkPinned;
-            root.dataset.servicesSequence = useLegacyServicesFlow ? "autoplay" : "scroll-scrub";
+            root.dataset.servicesSequence = "autoplay";
             lockClientsServicesHandoffAtServices();
             delete root.dataset.servicesPreview;
             setServicesPanel(lastStage);
@@ -3650,32 +3597,28 @@ export function TascLanding() {
                 void releaseServicesForward();
             }
         };
-        if (useLegacyServicesFlow) {
-            servicesStoryInput = createServicesStoryInput({
-                root,
-                isDisposed: () => disposed,
-                isMacRuntime,
-                isDominoInputLocked: () => dominoInputLocked,
-                isServicesActive: () => servicesActive,
-                isServicesReleasing: () => servicesReleasing,
-                servicesOwnsLenisLock: () => servicesOwnsLenisLock,
-                getServicesPhase: () => servicesPhase,
-                getServicesStage: () => servicesStage,
-                getServicesGateUntil: () => servicesGateUntil,
-                getServicesEntryInputIgnoreUntil: () => servicesEntryInputIgnoreUntil,
-                getServicesTransitionDirection: () => servicesTransitionDirection,
-                getServicesLockY: () => servicesLockY,
-                getDominoLockY: () => dominoLockY,
-                getServicesTriggerActive: () => servicesTrigger ? servicesTrigger.isActive : null,
-                correctNativeScroll,
-                releaseServicesForNavigation,
-                requestServicesDirection,
-            });
-            cleanupCallbacks.push(() => {
-                servicesStoryInput?.dispose();
-                servicesStoryInput = null;
-            });
-        }
+        servicesStoryInput = createServicesStoryInput({
+            root,
+            isDisposed: () => disposed,
+            isMacRuntime,
+            isServicesActive: () => servicesActive,
+            isServicesReleasing: () => servicesReleasing,
+            servicesOwnsLenisLock: () => servicesOwnsLenisLock,
+            getServicesPhase: () => servicesPhase,
+            getServicesStage: () => servicesStage,
+            getServicesGateUntil: () => servicesGateUntil,
+            getServicesEntryInputIgnoreUntil: () => servicesEntryInputIgnoreUntil,
+            getServicesTransitionDirection: () => servicesTransitionDirection,
+            getServicesLockY: () => servicesLockY,
+            getServicesTriggerActive: () => servicesTrigger ? servicesTrigger.isActive : null,
+            correctNativeScroll,
+            releaseServicesForNavigation,
+            requestServicesDirection,
+        });
+        cleanupCallbacks.push(() => {
+            servicesStoryInput?.dispose();
+            servicesStoryInput = null;
+        });
         const lensMotion = compactMotion
             ? {
                 intro: { ...getLensPose(0.84, 0.72, 1.52, 1), rotation: -4 },
@@ -3949,7 +3892,7 @@ export function TascLanding() {
         const servicesSection = root.querySelector<HTMLElement>(".services-story-section");
         if (servicesSection && clientsSection) {
             const clientsHandoffItems = Array.from(clientsSection.querySelectorAll<HTMLElement>(".figma-clients-heading, .figma-client-card-stage"));
-            root.dataset.servicesSequence = useLegacyServicesFlow ? "autoplay" : "scroll-scrub";
+            root.dataset.servicesSequence = "autoplay";
             servicesVideo?.pause();
             clientsSection.style.removeProperty("--clients-handoff-y");
             clientsSection.style.removeProperty("--clients-handoff-opacity");
@@ -4091,16 +4034,13 @@ export function TascLanding() {
                 onRefresh: (self) => syncServicesApproach(self.isActive),
             });
             cleanupCallbacks.push(() => servicesApproachTrigger.kill());
-            const shouldBypassServicesMotion = () => !useLegacyServicesFlow ||
-                getMotionInputOwnerId() === "portion" ||
+            const shouldBypassServicesMotion = () => getMotionInputOwnerId() === "portion" ||
                 Boolean(servicesPortionTargetIds && !servicesPortionTargetIds.includes("services")) ||
                 (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
                 (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
             const howWorkBoundary = root.querySelector<HTMLElement>(".how-work-motion-section");
             const syncServicesPinCompensation = () => {
-                const distance = useLegacyServicesFlow
-                    ? Math.round(getVisualViewportHeight())
-                    : 0;
+                const distance = Math.round(getVisualViewportHeight());
                 root.style.setProperty("--services-pin-flow-compensation", `${-distance}px`);
                 return distance;
             };
@@ -4113,8 +4053,7 @@ export function TascLanding() {
             };
             const canStartServicesMotion = (trigger: ScrollTrigger) => isNearServicesTrigger(trigger) &&
                 isServicesVisuallyNear() &&
-                getMotionInputOwnerId() !== "domino" &&
-                !dominoInputLocked;
+                getMotionInputOwnerId() !== "domino";
             const hasServicesReverseEntryIntent = (direction = 0) => {
                 if (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services")
                     return false;
@@ -4286,10 +4225,6 @@ export function TascLanding() {
                 },
             });
             cleanupCallbacks.push(() => servicesReversePrelockTrigger.kill());
-            if (!useLegacyServicesFlow) {
-                servicesTrigger.kill();
-                servicesTrigger = null;
-            }
             const handleServicesPositionApplied = () => {
                 if (programmaticAnchorRef.current === "#services" && servicesTrigger) {
                     showServicesIdlePreview(true);
@@ -4418,106 +4353,10 @@ export function TascLanding() {
                 document.removeEventListener("visibilitychange", settleServicesWhenHidden);
                 window.removeEventListener("pagehide", settleServicesWhenHidden);
             });
-            if (useLegacyServicesFlow)
-                showServicesIdlePreview();
-        }
-        const howWorkSection = root.querySelector<HTMLElement>(".how-work-motion-section");
-        if (howWorkSection && !useReversibleHowFlow) {
-            const howWorkInner = howWorkSection.querySelector<HTMLElement>(".how-work-motion-inner");
-            const howWorkIntroItems = Array.from(howWorkSection.querySelectorAll<HTMLElement>(".how-work-motion-kicker, .how-work-motion-title h2 > span, .how-work-motion-support, .how-work-number-row, .how-work-rule, .how-work-copy-stack"));
-            const stepNumbers = Array.from(howWorkSection.querySelectorAll<HTMLElement>(".how-work-step-number"));
-            const stepCopies = Array.from(howWorkSection.querySelectorAll<HTMLElement>(".how-work-step-copy"));
-            const stepCopyItems = stepCopies.map((copy) => Array.from(copy.querySelectorAll<HTMLElement>("h3, p")));
-            const inactiveNumber = {
-                scale: 0.58,
-                autoAlpha: 0.54,
-                color: "rgba(119, 177, 244, 0.7)",
-                filter: "blur(0px)",
-                duration: 0.5,
-                ease: "power3.inOut",
-            };
-            const activeNumber = {
-                scale: 1.22,
-                autoAlpha: 1,
-                color: "#badaff",
-                filter: "blur(0px)",
-                duration: 0.5,
-                ease: "power3.inOut",
-            };
-            gsap.set(stepCopies, { x: -52, y: 0, autoAlpha: 0 });
-            gsap.set(stepCopies[0], { x: 0, y: 0, autoAlpha: 1 });
-            gsap.set(stepCopyItems.flat(), { y: 18, autoAlpha: 0 });
-            gsap.set(stepNumbers, inactiveNumber);
-            gsap.set(stepNumbers[0], activeNumber);
-            gsap.set(howWorkIntroItems, { y: 48, autoAlpha: 0 });
-            const revealHowWorkIntro = () => {
-                gsap.to(howWorkIntroItems, {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: 0.82,
-                    ease: "power4.out",
-                    stagger: 0.085,
-                    overwrite: true,
-                });
-                gsap.to(stepCopyItems[0], {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: 0.46,
-                    ease: "power3.out",
-                    stagger: 0.075,
-                    overwrite: true,
-                    delay: 0.18,
-                });
-            };
-            const resetHowWorkIntro = () => {
-                gsap.set(howWorkIntroItems, { y: 48, autoAlpha: 0, overwrite: true });
-                gsap.set(stepCopyItems[0], { y: 18, autoAlpha: 0, overwrite: true });
-            };
-            ScrollTrigger.create({
-                trigger: howWorkSection,
-                start: "top 80%",
-                end: "bottom top",
-                onEnter: revealHowWorkIntro,
-                onEnterBack: revealHowWorkIntro,
-                onLeave: resetHowWorkIntro,
-                onLeaveBack: resetHowWorkIntro,
-            });
-            howWorkTimeline = gsap.timeline({
-                defaults: { ease: "none" },
-                scrollTrigger: {
-                    id: "how-work-motion",
-                    trigger: howWorkSection,
-                    start: "top top",
-                    end: () => `+=${Math.round(window.innerHeight * (window.innerWidth <= 760 ? 1 : 0.9))}`,
-                    scrub: true,
-                    pin: true,
-                    anticipatePin: 1,
-                    invalidateOnRefresh: true,
-                },
-            });
-            howWorkTimeline
-                .addLabel("step1", 0)
-                .to({}, { duration: 0.22 })
-                .addLabel("step2")
-                .to(stepCopies[0], { x: 58, autoAlpha: 0, duration: 0.24, ease: "power3.inOut" }, "step2")
-                .to(stepNumbers[0], inactiveNumber, "step2+=0.1")
-                .to(stepNumbers[1], activeNumber, "step2+=0.1")
-                .fromTo(stepCopies[1], { x: -58, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.32, ease: "power3.out" }, "step2+=0.12")
-                .fromTo(stepCopyItems[1], { y: 18, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.24, stagger: 0.055, ease: "power3.out" }, "step2+=0.18")
-                .to({}, { duration: 0.24 })
-                .addLabel("step3")
-                .to(stepCopies[1], { x: 58, autoAlpha: 0, duration: 0.24, ease: "power3.inOut" }, "step3")
-                .to(stepNumbers[1], inactiveNumber, "step3+=0.1")
-                .to(stepNumbers[2], activeNumber, "step3+=0.1")
-                .fromTo(stepCopies[2], { x: -58, autoAlpha: 0 }, { x: 0, autoAlpha: 1, duration: 0.32, ease: "power3.out" }, "step3+=0.12")
-                .fromTo(stepCopyItems[2], { y: 18, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: 0.24, stagger: 0.055, ease: "power3.out" }, "step3+=0.18")
-                .to({}, { duration: 0.26 });
-            if (howWorkInner) {
-                howWorkTimeline.to(howWorkInner, { y: -62, autoAlpha: 0, duration: 0.24, ease: "power3.inOut" }, ">-=0.06");
-            }
+            showServicesIdlePreview();
         }
         const datumSection = root.querySelector<HTMLElement>(".datum-motion-section");
-        if (datumSection && useAutonomousDatumFlow) {
+        if (datumSection) {
             const datumCardsState = datumSection.querySelector<HTMLElement>(".datum-motion-state-cards");
             const datumWaitlistState = datumSection.querySelector<HTMLElement>(".datum-motion-state-waitlist");
             const datumWaitlistSegments = Array.from(datumSection.querySelectorAll<HTMLElement>(".datum-waitlist-segment"));
@@ -4797,202 +4636,6 @@ export function TascLanding() {
                 delete root.dataset.processInrange;
             });
         }
-        const ctaSection = root.querySelector<HTMLElement>(".domino-cta-section");
-        if (ctaSection && !useReversibleDominoFlow) {
-            const dominoTargetTime = DOMINO_DURATION - 0.02;
-            ctaTimeline = gsap.timeline({
-                paused: true,
-                defaults: { ease: "power3.out" },
-            });
-            ctaTimeline
-                .addLabel("ctaIntro", 0)
-                .to(".domino-media", { scale: 1, autoAlpha: 1, duration: 0.62, ease: "power2.out" }, "ctaIntro")
-                .to(".domino-media", { scale: 1.032, duration: 3.18, ease: "power1.inOut" }, "ctaIntro+=0.42")
-                .to({}, { duration: 0.01 }, dominoTargetTime);
-            const playDominoTimeline = () => new Promise<void>((resolve) => {
-                if (!ctaTimeline) {
-                    resolve();
-                    return;
-                }
-                const timeline = ctaTimeline;
-                window.clearTimeout(dominoTimelineWatchdog);
-                dominoTimelineResolve?.();
-                dominoTimelineResolve = resolve;
-                const settleTimeline = (forceToEnd = false) => {
-                    if (dominoTimelineResolve !== resolve)
-                        return;
-                    window.clearTimeout(dominoTimelineWatchdog);
-                    dominoTimelineWatchdog = 0;
-                    timeline.eventCallback("onComplete", null);
-                    if (forceToEnd)
-                        timeline.progress(1).pause();
-                    dominoTimelineResolve = null;
-                    resolve();
-                };
-                timeline.eventCallback("onComplete", () => settleTimeline());
-                timeline.restart();
-                dominoTimelineWatchdog = window.setTimeout(() => settleTimeline(true), Math.ceil((dominoTargetTime + DOMINO_TIMELINE_GRACE_MS / 1000) * 1000));
-            });
-            const resetDominoPlayback = (resumeScroll = true) => {
-                dominoRunToken += 1;
-                if (dominoVideo)
-                    mediaRunCancels.get(dominoVideo)?.();
-                window.clearTimeout(dominoTimelineWatchdog);
-                dominoTimelineWatchdog = 0;
-                dominoTimelineResolve?.();
-                dominoTimelineResolve = null;
-                ctaTimeline?.eventCallback("onComplete", null);
-                dominoInputLocked = false;
-                dominoCompleted = false;
-                dominoEntryDirection = 1;
-                pauseAndSeek(dominoVideo, 0);
-                if (dominoVideo)
-                    dominoVideo.dataset.segmentState = "idle";
-                ctaTimeline?.pause(0);
-                root.dataset.dominoPlayback = "idle";
-                setMotionInputState();
-                if (resumeScroll)
-                    lenis.start();
-            };
-            const releaseDominoForNavigation = () => {
-                resetDominoPlayback();
-            };
-            dominoControllerRef.current = { releaseForNavigation: releaseDominoForNavigation };
-            const completeDominoPlayback = () => {
-                if (dominoVideo)
-                    mediaRunCancels.get(dominoVideo)?.();
-                window.clearTimeout(dominoTimelineWatchdog);
-                dominoTimelineWatchdog = 0;
-                dominoTimelineResolve?.();
-                dominoTimelineResolve = null;
-                ctaTimeline?.eventCallback("onComplete", null);
-                pauseAndSeek(dominoVideo, dominoTargetTime);
-                if (dominoVideo)
-                    dominoVideo.dataset.segmentState = "ready";
-                ctaTimeline?.progress(1).pause();
-                dominoInputLocked = false;
-                dominoCompleted = true;
-                root.dataset.dominoPlayback = "complete";
-                setMotionInputState();
-                lenis.start();
-            };
-            const runDominoAutoplay = async (lockY: number, entryDirection: 1 | -1) => {
-                if (dominoInputLocked || dominoCompleted)
-                    return;
-                const token = ++dominoRunToken;
-                dominoInputLocked = true;
-                dominoCompleted = false;
-                dominoLockY = lockY;
-                dominoEntryDirection = entryDirection;
-                root.dataset.dominoPlayback = "playing";
-                pauseAndSeek(dominoVideo, 0);
-                ctaTimeline?.pause(0);
-                lenis.stop();
-                window.scrollTo({ top: dominoLockY, left: 0, behavior: "auto" });
-                setMotionInputState();
-                const dominoMediaReady = await ensureServicesPlayable(dominoVideo, dominoTargetTime, () => token === dominoRunToken && dominoInputLocked);
-                if (token !== dominoRunToken || !dominoInputLocked || disposed)
-                    return;
-                if (!dominoMediaReady) {
-                    root.dataset.dominoPlayback = "buffering";
-                    dominoInputLocked = false;
-                    setMotionInputState();
-                    lenis.start();
-                    return;
-                }
-                const [mediaCompleted] = await Promise.all([
-                    playMediaSegment(dominoVideo, 0, dominoTargetTime, DOMINO_PLAYBACK_RATE, () => token === dominoRunToken && dominoInputLocked),
-                    playDominoTimeline(),
-                ]);
-                if (token !== dominoRunToken || !dominoInputLocked || disposed)
-                    return;
-                if (!mediaCompleted) {
-                    resetDominoPlayback(false);
-                    root.dataset.dominoPlayback = "buffering";
-                    return;
-                }
-                completeDominoPlayback();
-            };
-            const shouldBypassDominoMotion = () => (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#brief") ||
-                (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#brief");
-            const ensureDominoEntry = (self: ScrollTrigger, entryDirection: 1 | -1 = 1) => {
-                if (shouldBypassDominoMotion() || dominoInputLocked || dominoCompleted)
-                    return;
-                if (servicesActive || servicesReleasing || servicesOwnsLenisLock) {
-                    if (isServicesVisuallyNear(1.5))
-                        return;
-                    releaseServicesForNavigation();
-                }
-                void runDominoAutoplay(entryDirection < 0 ? self.end - 1 : self.start + 1, entryDirection);
-            };
-            const dominoScene = ctaSection.querySelector<HTMLElement>(".domino-scene");
-            ctaTrigger = ScrollTrigger.create({
-                id: "domino-motion",
-                trigger: dominoScene ?? ctaSection,
-                start: "top top",
-                end: () => `+=${Math.max(48, Math.round(window.innerHeight * 0.08))}`,
-                pin: true,
-                anticipatePin: 1,
-                invalidateOnRefresh: true,
-                onEnter: (self) => {
-                    ensureDominoEntry(self, 1);
-                },
-                onEnterBack: (self) => {
-                    if (shouldBypassDominoMotion())
-                        return;
-                    resetDominoPlayback(false);
-                    ensureDominoEntry(self, -1);
-                },
-                onUpdate: (self) => {
-                    if (self.isActive && self.direction > 0)
-                        ensureDominoEntry(self, 1);
-                },
-                onLeave: () => {
-                    if (dominoInputLocked) {
-                        window.scrollTo({ top: dominoLockY, left: 0, behavior: "auto" });
-                        return;
-                    }
-                    if (!dominoCompleted) {
-                        resetDominoPlayback();
-                        return;
-                    }
-                    pauseAndSeek(dominoVideo, dominoTargetTime);
-                    if (dominoVideo)
-                        dominoVideo.dataset.segmentState = "ready";
-                    ctaTimeline?.progress(1).pause();
-                    root.dataset.dominoPlayback = "complete";
-                    lenis.start();
-                },
-                onLeaveBack: () => {
-                    if (dominoInputLocked) {
-                        window.scrollTo({ top: dominoLockY, left: 0, behavior: "auto" });
-                        return;
-                    }
-                    resetDominoPlayback();
-                },
-                onRefresh: (self) => {
-                    if (dominoInputLocked)
-                        dominoLockY = dominoEntryDirection < 0 ? self.end - 1 : self.start + 1;
-                },
-            });
-            const handleDominoPositionApplied = () => {
-                if (programmaticAnchorRef.current === "#brief" && ctaTrigger)
-                    ensureDominoEntry(ctaTrigger);
-            };
-            window.addEventListener("tasc:scroll-position-applied", handleDominoPositionApplied);
-            const settleDominoWhenHidden = (event: Event) => {
-                if ((event.type === "pagehide" || document.visibilityState === "hidden") && dominoInputLocked) {
-                    completeDominoPlayback();
-                }
-            };
-            document.addEventListener("visibilitychange", settleDominoWhenHidden);
-            window.addEventListener("pagehide", settleDominoWhenHidden);
-            cleanupCallbacks.push(() => {
-                window.removeEventListener("tasc:scroll-position-applied", handleDominoPositionApplied);
-                document.removeEventListener("visibilitychange", settleDominoWhenHidden);
-                window.removeEventListener("pagehide", settleDominoWhenHidden);
-            });
-        }
         const revealElements = gsap.utils.toArray<HTMLElement>(".reveal-block").filter((element) => !element.closest(".hero-motion") &&
             !element.closest(".domino-cta-section") &&
             !element.closest(".services-section") &&
@@ -5157,21 +4800,15 @@ export function TascLanding() {
             cancelServicesEntryPreparation("effect-cleanup");
             servicesRunToken += 1;
             servicesReleaseToken += 1;
-            dominoRunToken += 1;
             resetServicesMediaRetry();
             window.clearTimeout(servicesReleaseTimer);
             servicesReleaseTimer = 0;
             clearServicesPendingIntent();
-            window.clearTimeout(dominoTimelineWatchdog);
-            dominoTimelineWatchdog = 0;
             mediaRunCancels.forEach((cancel) => cancel());
             mediaRunCancels.clear();
-            dominoTimelineResolve?.();
-            dominoTimelineResolve = null;
             stopServicesTextTimeline();
             servicesActive = false;
             servicesReleasing = false;
-            dominoInputLocked = false;
             releaseServicesLenisLock();
             lenis.start();
             lensVideo?.removeEventListener("loadedmetadata", handleLensMetadata);
@@ -5181,12 +4818,8 @@ export function TascLanding() {
             servicesTrigger?.kill();
             servicesVideo?.pause();
             dominoVideo?.pause();
-            howWorkTimeline?.scrollTrigger?.kill();
-            howWorkTimeline?.kill();
             datumTimeline?.scrollTrigger?.kill();
             datumTimeline?.kill();
-            ctaTrigger?.kill();
-            ctaTimeline?.kill();
             lenis.destroy();
             [
                 "servicesPinned",
@@ -5224,7 +4857,6 @@ export function TascLanding() {
                 heroTimelineRef.current = null;
             }
             servicesControllerRef.current = null;
-            dominoControllerRef.current = null;
         };
         };
         const initializeMotionRuntime = () => {
@@ -5449,15 +5081,13 @@ export function TascLanding() {
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"
                 ? "galaxy"
-                : "static"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-ready={lowerMediaWarmReady ? "true" : undefined} data-lower-media-outcome={!motionAllowed
+                : "static"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-outcome={!motionAllowed
             ? "skipped"
             : lowerMediaHasFallback && lowerMediaSettled
                 ? "fallback"
                 : lowerMediaPrepared
                     ? "prepared"
-                    : lowerMediaWarmDeadlineReached
-                        ? "deadline"
-                        : "pending"} data-services-media-prepared={servicesMediaPrepared ? "true" : undefined} data-datum-media-armed={datumMediaArmed ? "true" : undefined} data-datum-media-prepared={datumMediaPrepared ? "true" : undefined} data-datum-media-fallback={datumMediaFallback ? "true" : undefined} data-domino-media-prepared={dominoForwardPrepared ? "true" : undefined} data-domino-media-fallback={dominoForwardFallback ? "true" : undefined} data-domino-reverse-media-prepared={dominoReversePrepared ? "true" : undefined} data-domino-reverse-media-fallback={dominoReverseFallback ? "true" : undefined} data-hero-surface-ready={preloaderReady || preloaderRevealStarted ? "true" : undefined} data-mobile-performance={mobilePerformanceMode ? "true" : undefined} data-mac-performance={macPerformanceMode ? "true" : undefined} data-webkit-compatibility={webkitCompatibilityMode ? "true" : undefined} data-services-media={servicesPackedTransportMode ? "packed-alpha-video" : "native-alpha-video"} data-vision-logo-armed={visionLogoArmed ? "true" : undefined} data-galaxy-visibility-root>
+                    : "pending"} data-services-media-prepared={servicesMediaPrepared ? "true" : undefined} data-datum-media-armed={datumMediaArmed ? "true" : undefined} data-datum-media-prepared={datumMediaPrepared ? "true" : undefined} data-datum-media-fallback={datumMediaFallback ? "true" : undefined} data-domino-media-prepared={dominoForwardPrepared ? "true" : undefined} data-domino-media-fallback={dominoForwardFallback ? "true" : undefined} data-domino-reverse-media-prepared={dominoReversePrepared ? "true" : undefined} data-domino-reverse-media-fallback={dominoReverseFallback ? "true" : undefined} data-hero-surface-ready={preloaderReady || preloaderRevealStarted ? "true" : undefined} data-mobile-performance={mobilePerformanceMode ? "true" : undefined} data-mac-performance={macPerformanceMode ? "true" : undefined} data-webkit-compatibility={webkitCompatibilityMode ? "true" : undefined} data-services-media={servicesPackedTransportMode ? "packed-alpha-video" : "native-alpha-video"} data-vision-logo-armed={visionLogoArmed ? "true" : undefined} data-galaxy-visibility-root>
       <a className="skip-link" href="#main-content">Skip to main content</a>
       {!preloaderComplete ? (<SitePreloader ready={preloaderReady} onRevealStart={() => {
                 if (!window.location.hash)
@@ -5557,7 +5187,7 @@ export function TascLanding() {
         webkitCompatibilityMode={webkitCompatibilityMode}
       />
 
-      <ProcessSection mapArmed={processMapArmed}/>
+      <ProcessSection/>
 
       <DominoSection
         dominoLead={dominoLead}

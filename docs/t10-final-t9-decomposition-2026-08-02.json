@@ -1,0 +1,112 @@
+{
+  "generatedAt": "2026-08-02T16:28:50.142Z",
+  "landingLines": 5212,
+  "maxLines": null,
+  "checks": [
+    {
+      "name": "HeroSection is imported and rendered exactly once",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "HeroSection owns its authored root markup",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "ServicesSection is imported and rendered exactly once",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "ServicesSection owns its authored root markup",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "DatumSection is imported and rendered exactly once",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "DatumSection owns its authored root markup",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "DominoSection is imported and rendered exactly once",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "DominoSection owns its authored root markup",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "section markup is no longer rendered inline by TascLanding",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "T7 and T8 runtime ownership remains centralized",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "TascLanding line budget is respected when requested",
+      "passed": true,
+      "detail": {
+        "landingLines": 5212,
+        "maxLines": null
+      }
+    }
+  ],
+  "browsers": [
+    {
+      "name": "chromium",
+      "passed": true,
+      "errors": [],
+      "snapshot": {
+        "counts": {
+          ".hero-motion": 1,
+          ".figma-clients-section": 1,
+          ".services-story-section": 1,
+          ".how-work-motion-section": 1,
+          ".datum-motion-section": 1,
+          ".process-contact-section": 1,
+          ".domino-cta-section": 1,
+          ".site-footer": 1
+        },
+        "order": true,
+        "runtimeInitCount": "1",
+        "servicesVideoCount": 1,
+        "datumVideoCount": 1,
+        "dominoVideoCount": 2
+      }
+    },
+    {
+      "name": "webkit",
+      "passed": true,
+      "errors": [],
+      "snapshot": {
+        "counts": {
+          ".hero-motion": 1,
+          ".figma-clients-section": 1,
+          ".services-story-section": 1,
+          ".how-work-motion-section": 1,
+          ".datum-motion-section": 1,
+          ".process-contact-section": 1,
+          ".domino-cta-section": 1,
+          ".site-footer": 1
+        },
+        "order": true,
+        "runtimeInitCount": "1",
+        "servicesVideoCount": 1,
+        "datumVideoCount": 1,
+        "dominoVideoCount": 2
+      }
+    }
+  ],
+  "passed": true
+}

@@ -158,7 +158,6 @@ export const finalImpulseCopy = {
 } as const;
 export const tascOfficeAddress = "Office 15, Building 4, Media City, Dubai, UAE";
 export const tascStreetAddress = "Building 4, King Salman Bin Abdulaziz Al Saud St Al Sufouh, Al Sufouh 2, Dubai";
-export const tascMapsEmbedUrl = `https://www.google.com/maps?q=${encodeURIComponent(tascOfficeAddress)}&z=16&hl=en&output=embed`;
 export const footerNavigation = [
     { label: "Clients", href: "#clients" },
     { label: "Services", href: "#services" },
