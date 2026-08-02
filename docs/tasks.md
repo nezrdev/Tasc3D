@@ -6,7 +6,7 @@
 - T13: lead submission timing across devices.
 - T12: Services to How pin/anchor seam stabilization is locally verified.
 - T7: unified motion input ownership, explicit/observed connection classification, and focused Chromium/WebKit journey QA are implemented.
-- T8: runtime profile bootstrap, exact viewport hysteresis, stable Services media identity, and measured-throughput isolation are implemented and locally verified.
+- T8: runtime profile bootstrap, stable-baseline viewport hysteresis, stable Services media identity, controlled late measured-throughput isolation, and dynamic reduced-motion teardown/restart are implemented and locally verified.
 
 ## Remaining Goal Scope
 

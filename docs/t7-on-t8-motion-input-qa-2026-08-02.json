@@ -105,12 +105,12 @@
             "ownerCollisions": [],
             "ownerSamples": [
               {
-                "at": 245.20000000298023,
+                "at": 223.30000001192093,
                 "owners": [],
                 "reason": "dom-ready"
               },
               {
-                "at": 1831.300000011921,
+                "at": 1603.2000000029802,
                 "owners": [
                   {
                     "owner": "services",
@@ -120,7 +120,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 1831.4000000059605,
+                "at": 1603.2000000029802,
                 "owners": [
                   {
                     "owner": "services",
@@ -130,7 +130,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 3229.2000000029802,
+                "at": 2965.6000000089407,
                 "owners": [
                   {
                     "owner": "services",
@@ -140,7 +140,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 3229.2000000029802,
+                "at": 2965.7000000029802,
                 "owners": [
                   {
                     "owner": "services",
@@ -150,7 +150,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 3229.2000000029802,
+                "at": 2965.7000000029802,
                 "owners": [
                   {
                     "owner": "services",
@@ -160,7 +160,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 3229.7000000029802,
+                "at": 2966.1000000089407,
                 "owners": [
                   {
                     "owner": "services",
@@ -170,7 +170,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 9331.20000000298,
+                "at": 9059.40000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -180,7 +180,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 9331.20000000298,
+                "at": 9059.40000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -190,7 +190,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 9332.5,
+                "at": 9060.800000011921,
                 "owners": [
                   {
                     "owner": "services",
@@ -200,7 +200,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 14610.40000000596,
+                "at": 14280.20000000298,
                 "owners": [
                   {
                     "owner": "services",
@@ -210,7 +210,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 14610.40000000596,
+                "at": 14280.20000000298,
                 "owners": [
                   {
                     "owner": "services",
@@ -220,7 +220,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 14611.40000000596,
+                "at": 14280.90000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -230,7 +230,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 20591.80000001192,
+                "at": 20866.90000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -240,7 +240,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 20591.80000001192,
+                "at": 20866.90000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -250,7 +250,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 27639.60000000894,
+                "at": 27369,
                 "owners": [
                   {
                     "owner": "services",
@@ -260,7 +260,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 27639.70000000298,
+                "at": 27369,
                 "owners": [
                   {
                     "owner": "services",
@@ -270,7 +270,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 34959.70000000298,
+                "at": 34443.60000000894,
                 "owners": [
                   {
                     "owner": "how",
@@ -280,7 +280,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 34959.80000001192,
+                "at": 34443.60000000894,
                 "owners": [
                   {
                     "owner": "how",
@@ -290,7 +290,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 36735.70000000298,
+                "at": 38262.90000000596,
                 "owners": [
                   {
                     "owner": "how",
@@ -300,7 +300,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 39448.10000000894,
+                "at": 42125.40000000596,
                 "owners": [
                   {
                     "owner": "how",
@@ -310,7 +310,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 42383.5,
+                "at": 45485.60000000894,
                 "owners": [
                   {
                     "owner": "how",
@@ -320,7 +320,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 45105.5,
+                "at": 48978.80000001192,
                 "owners": [
                   {
                     "owner": "how",
@@ -330,7 +330,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 45928.5,
+                "at": 49766.40000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -340,7 +340,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 45928.5,
+                "at": 49766.40000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -350,7 +350,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 45928.5,
+                "at": 49766.40000000596,
                 "owners": [
                   {
                     "owner": "services",
@@ -360,7 +360,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 48340.10000000894,
+                "at": 53577.30000001192,
                 "owners": [
                   {
                     "owner": "how",
@@ -370,7 +370,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 48340.20000000298,
+                "at": 53577.30000001192,
                 "owners": [
                   {
                     "owner": "how",
@@ -380,7 +380,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 50327,
+                "at": 55678.5,
                 "owners": [
                   {
                     "owner": "how",
@@ -573,12 +573,12 @@
             "ownerCollisions": [],
             "ownerSamples": [
               {
-                "at": 65,
+                "at": 84,
                 "owners": [],
                 "reason": "dom-ready"
               },
               {
-                "at": 1760,
+                "at": 2280,
                 "owners": [
                   {
                     "owner": "services",
@@ -588,7 +588,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 1760,
+                "at": 2280,
                 "owners": [
                   {
                     "owner": "services",
@@ -598,12 +598,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 2456,
-                "owners": [],
-                "reason": "mutation"
-              },
-              {
-                "at": 2584,
+                "at": 5624,
                 "owners": [
                   {
                     "owner": "services",
@@ -613,7 +608,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 2584,
+                "at": 5624,
                 "owners": [
                   {
                     "owner": "services",
@@ -623,17 +618,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 5649,
-                "owners": [
-                  {
-                    "owner": "services",
-                    "tag": "main"
-                  }
-                ],
-                "reason": "mutation"
-              },
-              {
-                "at": 5649,
+                "at": 5624,
                 "owners": [
                   {
                     "owner": "services",
@@ -643,7 +628,27 @@
                 "reason": "owner-change"
               },
               {
-                "at": 5649,
+                "at": 5625,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 8929,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 8929,
                 "owners": [
                   {
                     "owner": "services",
@@ -653,7 +658,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 5649,
+                "at": 8931,
                 "owners": [
                   {
                     "owner": "services",
@@ -663,7 +668,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 8978,
+                "at": 12735,
                 "owners": [
                   {
                     "owner": "services",
@@ -673,7 +678,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 8978,
+                "at": 12735,
                 "owners": [
                   {
                     "owner": "services",
@@ -683,7 +688,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 8979,
+                "at": 12737,
                 "owners": [
                   {
                     "owner": "services",
@@ -693,7 +698,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 12879,
+                "at": 17245,
                 "owners": [
                   {
                     "owner": "services",
@@ -703,7 +708,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 12879,
+                "at": 17245,
                 "owners": [
                   {
                     "owner": "services",
@@ -713,7 +718,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 12881,
+                "at": 21764,
                 "owners": [
                   {
                     "owner": "services",
@@ -723,17 +728,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 17428,
-                "owners": [
-                  {
-                    "owner": "services",
-                    "tag": "main"
-                  }
-                ],
-                "reason": "mutation"
-              },
-              {
-                "at": 17428,
+                "at": 21764,
                 "owners": [
                   {
                     "owner": "services",
@@ -743,27 +738,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 22083,
-                "owners": [
-                  {
-                    "owner": "services",
-                    "tag": "main"
-                  }
-                ],
-                "reason": "mutation"
-              },
-              {
-                "at": 22083,
-                "owners": [
-                  {
-                    "owner": "services",
-                    "tag": "main"
-                  }
-                ],
-                "reason": "owner-change"
-              },
-              {
-                "at": 25735,
+                "at": 25505,
                 "owners": [
                   {
                     "owner": "how",
@@ -773,7 +748,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 25735,
+                "at": 25505,
                 "owners": [
                   {
                     "owner": "how",
@@ -783,7 +758,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 26056,
+                "at": 25768,
                 "owners": [
                   {
                     "owner": "how",
@@ -793,7 +768,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 27741,
+                "at": 27483,
                 "owners": [
                   {
                     "owner": "how",
@@ -803,7 +778,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 29413,
+                "at": 29147,
                 "owners": [
                   {
                     "owner": "how",
@@ -813,7 +788,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 31054,
+                "at": 30847,
                 "owners": [
                   {
                     "owner": "how",
@@ -823,7 +798,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 32142,
+                "at": 31912,
                 "owners": [
                   {
                     "owner": "services",
@@ -833,7 +808,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 32142,
+                "at": 31912,
                 "owners": [
                   {
                     "owner": "services",
@@ -843,7 +818,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 32142,
+                "at": 31912,
                 "owners": [
                   {
                     "owner": "services",
@@ -853,7 +828,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 33056,
+                "at": 32772,
                 "owners": [
                   {
                     "owner": "how",
@@ -863,7 +838,7 @@
                 "reason": "mutation"
               },
               {
-                "at": 33056,
+                "at": 32772,
                 "owners": [
                   {
                     "owner": "how",
@@ -873,7 +848,7 @@
                 "reason": "owner-change"
               },
               {
-                "at": 33319,
+                "at": 33018,
                 "owners": [
                   {
                     "owner": "how",
@@ -970,38 +945,38 @@
         "detail": {
           "error": null,
           "status": 200,
-          "url": "http://127.0.0.1:3120/?__tasc_t7_build_identity=1785672979008"
+          "url": "http://127.0.0.1:3120/?__tasc_t7_build_identity=1785675328023"
         }
       },
       {
         "name": "local production BUILD_ID exists",
         "passed": true,
         "detail": {
-          "localBuildId": "Y6mAk6_M37s_2B3t1AuLU"
+          "localBuildId": "zM_QoJ859FqI3H_XoDuwR"
         }
       },
       {
         "name": "production build is not older than application source",
         "passed": true,
         "detail": {
-          "buildMtimeMs": 1785672929253.1611,
-          "latestSourceMtimeMs": 1785672882270.4143
+          "buildMtimeMs": 1785675245362.1194,
+          "latestSourceMtimeMs": 1785675204610.8606
         }
       },
       {
         "name": "target serves the local production BUILD_ID",
         "passed": true,
         "detail": {
-          "localBuildId": "Y6mAk6_M37s_2B3t1AuLU",
+          "localBuildId": "zM_QoJ859FqI3H_XoDuwR",
           "responseStatus": 200
         }
       }
     ],
-    "localBuildId": "Y6mAk6_M37s_2B3t1AuLU",
+    "localBuildId": "zM_QoJ859FqI3H_XoDuwR",
     "passed": true,
-    "sourceSha256": "481b5a0587ac133405a6409f5ad4c2077aad9cb000aa0ad8df5048d9297785ca"
+    "sourceSha256": "d99f16c866b72d79427b4378487dcc44415ff844a57d7d30859603ccd51e138b"
   },
-  "generatedAt": "2026-08-02T12:17:55.973Z",
+  "generatedAt": "2026-08-02T12:57:09.808Z",
   "mode": "static-and-browser",
   "passed": true,
   "staticContracts": {

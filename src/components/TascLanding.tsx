@@ -227,6 +227,7 @@ export function TascLanding() {
         width: initialRuntimeProfile.viewportWidth,
     });
     const stableMobileViewportWidthRef = useRef(initialRuntimeProfile.viewportWidth);
+    const stableMobilePerformanceModeRef = useRef(initialRuntimeProfile.mobilePerformance);
     const runtimeProfileRef = useRef<RuntimePerformanceProfile>({
         constrainedConnection: initialRuntimeProfile.constrainedConnection,
         edgeAlphaCompatibility: initialRuntimeProfile.edgeAlphaCompatibility,
@@ -419,10 +420,13 @@ export function TascLanding() {
         return () => media.removeEventListener("change", syncMotionPreference);
     }, []);
     useEffect(() => {
-        if (!motionAllowed || !preloaderRevealStarted)
+        if (!motionPreferenceResolved)
             return;
-        window.dispatchEvent(new Event("tasc:motion-runtime-request"));
-    }, [motionAllowed, preloaderRevealStarted]);
+        const eventName = motionAllowed && preloaderRevealStarted
+            ? "tasc:motion-runtime-request"
+            : "tasc:motion-runtime-disable";
+        window.dispatchEvent(new Event(eventName));
+    }, [motionAllowed, motionPreferenceResolved, preloaderRevealStarted]);
     useEffect(() => {
         let cancelled = false;
         const criticalImages = [
@@ -510,6 +514,7 @@ export function TascLanding() {
         const lowMemory = typeof device.deviceMemory === "number" && device.deviceMemory <= 4;
         const lowCpu = typeof device.hardwareConcurrency === "number" && device.hardwareConcurrency <= 4;
         let resizeFrame = 0;
+        let forceNextSync = false;
         const readViewport = () => ({
             height: Math.max(1, document.documentElement.clientHeight || window.visualViewport?.height || window.innerHeight),
             width: Math.max(1, document.documentElement.clientWidth || window.visualViewport?.width || window.innerWidth),
@@ -519,13 +524,19 @@ export function TascLanding() {
             viewportMetricsRef.current = viewport;
             document.documentElement.dataset.tascViewportWidth = String(Math.round(viewport.width));
             document.documentElement.dataset.tascViewportHeight = String(Math.round(viewport.height));
+            const nextMobileMode = coarsePointer.matches ||
+                viewport.width <= MOBILE_PROFILE_WIDTH ||
+                (!isMacOS && (lowMemory || lowCpu)) ||
+                device.connection?.saveData === true;
             const widthMoved = Math.abs(viewport.width - stableMobileViewportWidthRef.current);
-            if (forceViewportProfile || widthMoved > MOBILE_PROFILE_HYSTERESIS_PX) {
+            const mobileModeChanged = nextMobileMode !== stableMobilePerformanceModeRef.current;
+            const shouldSwitchMobileMode = mobileModeChanged &&
+                (forceViewportProfile || widthMoved > MOBILE_PROFILE_HYSTERESIS_PX);
+            if (shouldSwitchMobileMode) {
                 stableMobileViewportWidthRef.current = viewport.width;
-                const nextMobileMode = coarsePointer.matches ||
-                    viewport.width <= MOBILE_PROFILE_WIDTH ||
-                    (!isMacOS && (lowMemory || lowCpu)) ||
-                    device.connection?.saveData === true;
+                stableMobilePerformanceModeRef.current = nextMobileMode;
+            }
+            if (forceViewportProfile || shouldSwitchMobileMode) {
                 document.documentElement.dataset.tascMobilePerformance = String(nextMobileMode);
                 setMobilePerformanceMode(nextMobileMode);
             }
@@ -545,26 +556,31 @@ export function TascLanding() {
             }
             setPerformanceModeResolved(true);
         };
-        const scheduleSync = () => {
+        const scheduleSync = (forceViewportProfile = false) => {
+            forceNextSync = forceNextSync || forceViewportProfile;
             if (resizeFrame)
                 return;
             resizeFrame = window.requestAnimationFrame(() => {
                 resizeFrame = 0;
-                syncPerformanceMode(false);
+                const forceProfile = forceNextSync;
+                forceNextSync = false;
+                syncPerformanceMode(forceProfile);
             });
         };
+        const scheduleViewportSync = () => scheduleSync(false);
+        const scheduleSignalSync = () => scheduleSync(true);
         syncPerformanceMode(!initialRuntimeProfile.ready);
-        window.addEventListener("resize", scheduleSync, { passive: true });
-        window.visualViewport?.addEventListener("resize", scheduleSync, { passive: true });
-        coarsePointer.addEventListener("change", scheduleSync);
-        device.connection?.addEventListener?.("change", scheduleSync);
+        window.addEventListener("resize", scheduleViewportSync, { passive: true });
+        window.visualViewport?.addEventListener("resize", scheduleViewportSync, { passive: true });
+        coarsePointer.addEventListener("change", scheduleSignalSync);
+        device.connection?.addEventListener?.("change", scheduleSignalSync);
         return () => {
             if (resizeFrame)
                 window.cancelAnimationFrame(resizeFrame);
-            window.removeEventListener("resize", scheduleSync);
-            window.visualViewport?.removeEventListener("resize", scheduleSync);
-            coarsePointer.removeEventListener("change", scheduleSync);
-            device.connection?.removeEventListener?.("change", scheduleSync);
+            window.removeEventListener("resize", scheduleViewportSync);
+            window.visualViewport?.removeEventListener("resize", scheduleViewportSync);
+            coarsePointer.removeEventListener("change", scheduleSignalSync);
+            device.connection?.removeEventListener?.("change", scheduleSignalSync);
         };
     }, [initialRuntimeProfile.ready]);
     useEffect(() => observeFirstMediaThroughput((megabitsPerSecond) => {
@@ -1742,7 +1758,7 @@ export function TascLanding() {
             clientsFlareStage.style.removeProperty("transform");
         };
     }, []);
-    useGSAP((_, contextSafe) => {
+    useGSAP(() => {
         const root = rootRef.current;
         if (!root) {
             return;
@@ -5490,21 +5506,62 @@ export function TascLanding() {
             dominoControllerRef.current = null;
         };
         };
-        const initializeMotionRuntime = contextSafe
-            ? contextSafe(createMotionRuntime)
-            : createMotionRuntime;
+        const initializeMotionRuntime = () => {
+            let manualCleanup: (() => void) | null = null;
+            let telemetryFrame = 0;
+            const scrollTriggerBaseline = new Set(ScrollTrigger.getAll());
+            const runtimeContext = gsap.context(() => {
+                const cleanup = createMotionRuntime();
+                if (typeof cleanup === "function")
+                    manualCleanup = cleanup;
+            }, root);
+            if (!manualCleanup) {
+                runtimeContext.revert();
+                return;
+            }
+            telemetryFrame = window.requestAnimationFrame(() => {
+                telemetryFrame = window.requestAnimationFrame(() => {
+                    telemetryFrame = 0;
+                    root.dataset.motionRuntimeScrollTriggerCount = String(ScrollTrigger.getAll().length);
+                });
+            });
+            return () => {
+                if (telemetryFrame)
+                    window.cancelAnimationFrame(telemetryFrame);
+                telemetryFrame = 0;
+                const cleanup = manualCleanup as (() => void) | null;
+                manualCleanup = null;
+                cleanup?.();
+                runtimeContext.revert();
+                ScrollTrigger.getAll()
+                    .filter((trigger) => !scrollTriggerBaseline.has(trigger))
+                    .forEach((trigger) => trigger.kill(false));
+                const residualRuntimeTriggers = ScrollTrigger.getAll()
+                    .filter((trigger) => !scrollTriggerBaseline.has(trigger));
+                root.dataset.motionRuntimeResidualScrollTriggerCount = String(residualRuntimeTriggers.length);
+                root.dataset.motionRuntimeScrollTriggerCountAfterCleanup = String(ScrollTrigger.getAll().length);
+                delete root.dataset.motionRuntimeScrollTriggerCount;
+            };
+        };
         const requestMotionRuntime = () => {
             const cleanup = initializeMotionRuntime();
             if (typeof cleanup === "function")
                 runtimeCleanup = cleanup;
         };
+        const disableMotionRuntime = () => {
+            const cleanup = runtimeCleanup;
+            runtimeCleanup = null;
+            cleanup?.();
+            runtimeInitialized = false;
+            delete root.dataset.motionRuntimeInitialized;
+        };
         requestMotionRuntime();
         window.addEventListener("tasc:motion-runtime-request", requestMotionRuntime);
+        window.addEventListener("tasc:motion-runtime-disable", disableMotionRuntime);
         return () => {
             window.removeEventListener("tasc:motion-runtime-request", requestMotionRuntime);
-            runtimeCleanup?.();
-            runtimeCleanup = null;
-            delete root.dataset.motionRuntimeInitialized;
+            window.removeEventListener("tasc:motion-runtime-disable", disableMotionRuntime);
+            disableMotionRuntime();
         };
     }, {
         scope: rootRef,

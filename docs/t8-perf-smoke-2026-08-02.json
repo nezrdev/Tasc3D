@@ -1,29 +1,30 @@
 {
   "schemaVersion": 4,
-  "generatedAt": "2026-08-02T12:18:59.006Z",
+  "generatedAt": "2026-08-02T12:58:26.271Z",
   "source": {
-    "revision": "2570c5d0088b07b9ac0d34f13dc35c721d1f2d52",
-    "tree": "a31ea439e715319c6620027a4f952c7220746b1b",
+    "revision": "d98526789b7a4867a93a929d4e1500566948d4ba",
+    "tree": "5081cec9ec94fae11ff690b782ed3d2faf8de110",
     "branch": "task/t8-motion-lifecycle",
     "dirty": true,
     "statusPorcelain": [
       "M docs/memory.md",
+      "D  docs/mobile-portions-on-t8-2026-08-02.json",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/chromium-desktop/how-seam.png",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/chromium-desktop/services-rapid-return.png",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/chromium-desktop/services-seam.png",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/summary.json",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/webkit-mobile/how-seam.png",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/webkit-mobile/services-rapid-return.png",
+      "D  docs/t12-on-t8-browser-seam-qa-2026-08-02.json/webkit-mobile/services-seam.png",
+      " M docs/t7-on-t8-motion-input-qa-2026-08-02.json",
+      " M docs/t8-motion-lifecycle-qa-2026-08-02.json",
+      " M docs/t8-perf-smoke-2026-08-02.json",
+      " M docs/t8-verification-2026-08-02.md",
       " M docs/tasks.md",
-      " M next-env.d.ts",
-      " M package.json",
-      " M scripts/t7-motion-input-qa.mjs",
-      " M scripts/verify-mobile-portioned-scroll.mjs",
-      " M src/app/layout.tsx",
-      " M src/components/TascLanding.tsx",
-      " M src/hooks/useMobilePortionedScroll.ts",
-      "?? docs/mobile-portions-on-t8-2026-08-02.json",
-      "?? docs/t12-on-t8-browser-seam-qa-2026-08-02.json/",
-      "?? docs/t7-on-t8-motion-input-qa-2026-08-02.json",
-      "?? docs/t8-motion-lifecycle-qa-2026-08-02.json",
-      "?? docs/t8-perf-smoke-2026-08-02.json",
-      "?? scripts/t8-motion-lifecycle-qa.mjs"
+      " M scripts/t8-motion-lifecycle-qa.mjs",
+      " M src/components/TascLanding.tsx"
     ],
-    "trackedFileCount": 147,
+    "trackedFileCount": 152,
     "url": "http://127.0.0.1:3120/",
     "serverSource": "external",
     "productionBuild": true
@@ -94,12 +95,12 @@
       "metrics": {
         "lcp": {
           "status": "measured",
-          "value": 256,
+          "value": 252,
           "unit": "ms",
           "candidate": {
-            "startTime": 256,
-            "renderTime": 256,
-            "loadTime": 64.40000000596046,
+            "startTime": 252,
+            "renderTime": 252,
+            "loadTime": 51.6000000089407,
             "size": 102400,
             "url": "http://127.0.0.1:3120/media/hero-earth-poster-1080-20260715.webp",
             "selector": "span.lens-poster"
@@ -107,22 +108,22 @@
         },
         "fcp": {
           "status": "measured",
-          "value": 256,
+          "value": 252,
           "unit": "ms"
         },
         "tti": {
           "status": "approximate",
-          "value": 823.1,
+          "value": 837.3,
           "unit": "ms",
           "method": "legacy 5-second long-task quiet window; not Lighthouse TTI and not a hard cross-engine gate"
         },
         "tbt": {
           "status": "approximate",
-          "value": 118,
+          "value": 107,
           "unit": "ms",
           "window": "FCP to legacy quiet-window TTI",
           "method": "sum of each long task's blocking portion after its first 50 ms, clipped to the FCP-to-TTI window",
-          "blockingTime0To7sMs": 118
+          "blockingTime0To7sMs": 107
         },
         "cls": {
           "status": "measured",
@@ -131,24 +132,24 @@
         },
         "bytesBeforeFirstScroll": {
           "status": "measured",
-          "value": 2781057,
+          "value": 2781254,
           "unit": "bytes",
           "definition": "sum of PerformanceResourceTiming.transferSize for completed requests before first harness scroll input",
-          "completedTransferSizeBytes": 2781057,
+          "completedTransferSizeBytes": 2781254,
           "zeroTransferEntries": 0,
           "inflightRequestCountAtBoundary": 0,
-          "eventualBytesForCompletedRequestsBeforeFirstScroll": 2815334,
-          "eventualBytesForRequestsStartedBeforeFirstScroll": 2815334,
+          "eventualBytesForCompletedRequestsBeforeFirstScroll": 2815534,
+          "eventualBytesForRequestsStartedBeforeFirstScroll": 2815534,
           "chromiumEncodedBytesReceivedBeforeFirstScroll": {
             "status": "measured",
-            "value": 2774291,
+            "value": 2774473,
             "unit": "bytes"
           },
           "caveat": null
         },
         "nonHeroBytesBeforeFirstScroll": {
           "status": "measured",
-          "value": 710015,
+          "value": 710212,
           "unit": "bytes",
           "definition": "startup transfer before first harness scroll excluding only the active Hero video transport; Hero poster, fonts, scripts, styles and all other resources remain included",
           "hardBudgetBytes": 1500000,
@@ -157,9 +158,9 @@
             "http://127.0.0.1:3120/media/hero-earth-alpha-480-30fps-mobile-20260722.webm"
           ],
           "observedHeroTransportCount": 1,
-          "completedTransferSizeBytes": 710015,
+          "completedTransferSizeBytes": 710212,
           "inflightRequestCountAtBoundary": 0,
-          "eventualBytesForCompletedRequestsBeforeFirstScroll": 743538,
+          "eventualBytesForCompletedRequestsBeforeFirstScroll": 743738,
           "caveat": null
         },
         "heroVideoBytesBeforeFirstScroll": {
@@ -207,13 +208,13 @@
         },
         "preloaderRevealMs": {
           "status": "measured",
-          "value": 1408.9,
+          "value": 1447.5,
           "unit": "ms",
           "definition": "navigation start to visible Hero surface (main readiness or root CSS fail-open)",
-          "preloaderCompleteMs": 1439.3,
-          "preloaderHiddenMs": 1408.9,
+          "preloaderCompleteMs": 1481.9,
+          "preloaderHiddenMs": 1447.5,
           "preloaderRevealPath": "soft-deadline-reveal",
-          "softDeadlineMs": 1070.7,
+          "softDeadlineMs": 1046.8,
           "cssFailOpenMs": null,
           "hardFailOpenMs": null
         },
@@ -221,21 +222,21 @@
           "status": "measured",
           "value": [
             {
-              "start": 533.6,
-              "duration": 124
+              "start": 571,
+              "duration": 130
             },
             {
-              "start": 729.1,
-              "duration": 94
+              "start": 760.3,
+              "duration": 77
             }
           ],
           "windowMs": 15000,
-          "durationSumMs": 218,
-          "durationSum0To7sMs": 218
+          "durationSumMs": 207,
+          "durationSum0To7sMs": 207
         },
         "total": {
           "status": "measured",
-          "value": 218,
+          "value": 207,
           "unit": "ms",
           "definition": "sum of long-task durations during the first 15 seconds"
         },
@@ -243,16 +244,16 @@
           "status": "measured",
           "value": {
             "thresholdMs": 16.7,
-            "totalFrames": 141,
-            "overBudgetFrames": 77,
-            "ratio": 0.5461,
+            "totalFrames": 139,
+            "overBudgetFrames": 71,
+            "ratio": 0.5108,
             "calibratedCadenceMs": 16.7,
             "calibratedSlowThresholdMs": 25.05,
-            "calibratedSlowFrames": 20,
-            "calibratedSlowRatio": 0.1418,
+            "calibratedSlowFrames": 17,
+            "calibratedSlowRatio": 0.1223,
             "p50Ms": 16.7,
-            "p95Ms": 33.4,
-            "p99Ms": 50,
+            "p95Ms": 49.9,
+            "p99Ms": 50.1,
             "maxMs": 50.1
           }
         },
@@ -572,7 +573,7 @@
                 "allDiagnostic": [
                   {
                     "selector": "section#work.how-work-motion-section.glass-editorial-section",
-                    "opacity": "1",
+                    "opacity": "0.208682",
                     "visibility": "hidden",
                     "rect": {
                       "x": 0,
@@ -598,7 +599,7 @@
                 "allDiagnostic": [
                   {
                     "selector": "section#work.how-work-motion-section.glass-editorial-section",
-                    "opacity": "0.254223",
+                    "opacity": "0.0368257",
                     "visibility": "hidden",
                     "rect": {
                       "x": 0,
@@ -624,7 +625,7 @@
                 "allDiagnostic": [
                   {
                     "selector": "section#work.how-work-motion-section.glass-editorial-section",
-                    "opacity": "0.0733371",
+                    "opacity": "0.00692884",
                     "visibility": "hidden",
                     "rect": {
                       "x": 0,
@@ -853,15 +854,15 @@
         },
         "jsHeapPeak": {
           "status": "measured",
-          "value": 16903756,
+          "value": 17306976,
           "unit": "bytes",
-          "samples": 72,
-          "p95Bytes": 10404889
+          "samples": 73,
+          "p95Bytes": 10837982
         },
-        "firstHarnessScrollInputMs": 15068.2,
+        "firstHarnessScrollInputMs": 15067.3,
         "readiness": {
           "ready": true,
-          "waitedMs": 61
+          "waitedMs": 37
         },
         "capabilities": {
           "paint": true,

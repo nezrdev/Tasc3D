@@ -39,13 +39,17 @@ check(
 check(
   "mobile profile uses an exact greater-than 80px hysteresis",
   landingSource.includes("widthMoved > MOBILE_PROFILE_HYSTERESIS_PX") &&
-    landingSource.includes("MOBILE_PROFILE_HYSTERESIS_PX = 80"),
+    landingSource.includes("MOBILE_PROFILE_HYSTERESIS_PX = 80") &&
+    landingSource.includes("mobileModeChanged &&") &&
+    landingSource.includes("stableMobilePerformanceModeRef.current = nextMobileMode"),
 );
 check(
   "main GSAP runtime has one event-gated initializer without profile reversion",
   landingSource.includes("data.motionRuntimeInitCount") === false &&
     landingSource.includes("root.dataset.motionRuntimeInitCount") &&
     landingSource.includes('window.addEventListener("tasc:motion-runtime-request"') &&
+    landingSource.includes('window.addEventListener("tasc:motion-runtime-disable"') &&
+    landingSource.includes("runtimeInitialized = false") &&
     !landingSource.includes("revertOnUpdate"),
 );
 check(
@@ -69,10 +73,49 @@ if (!staticOnly) {
         configurable: true,
         value: { effectiveType: "4g", saveData: false },
       });
-      const nativeObserve = PerformanceObserver.prototype.observe;
-      PerformanceObserver.prototype.observe = function observe(options) {
-        if (options?.type === "resource" || options?.entryTypes?.includes("resource")) return;
-        return nativeObserve.call(this, options);
+      const NativePerformanceObserver = window.PerformanceObserver;
+      const resourceObservers = new Set();
+      class ControlledPerformanceObserver {
+        constructor(callback) {
+          this.callback = callback;
+          this.nativeObserver = null;
+        }
+        observe(options) {
+          if (options?.type === "resource" || options?.entryTypes?.includes("resource")) {
+            resourceObservers.add(this);
+            return;
+          }
+          this.nativeObserver ??= new NativePerformanceObserver(this.callback);
+          return this.nativeObserver.observe(options);
+        }
+        disconnect() {
+          resourceObservers.delete(this);
+          this.nativeObserver?.disconnect();
+          this.nativeObserver = null;
+        }
+        takeRecords() {
+          return this.nativeObserver?.takeRecords() ?? [];
+        }
+      }
+      Object.defineProperty(ControlledPerformanceObserver, "supportedEntryTypes", {
+        configurable: true,
+        value: NativePerformanceObserver.supportedEntryTypes,
+      });
+      window.PerformanceObserver = ControlledPerformanceObserver;
+      window.__tascT8EmitResource = () => {
+        const entry = {
+          duration: 1_000,
+          entryType: "resource",
+          initiatorType: "video",
+          name: `${window.location.origin}/media/t8-controlled-throughput.webm`,
+          transferSize: 100_000,
+        };
+        const list = {
+          getEntries: () => [entry],
+          getEntriesByName: () => [entry],
+          getEntriesByType: (type) => type === "resource" ? [entry] : [],
+        };
+        for (const observer of [...resourceObservers]) observer.callback(list, observer);
       };
       const nativeEntriesByType = performance.getEntriesByType.bind(performance);
       Object.defineProperty(performance, "getEntriesByType", {
@@ -88,6 +131,7 @@ if (!staticOnly) {
       await page.waitForFunction(() => {
         const rootNode = document.querySelector("main.site-shell");
         return rootNode?.dataset.motionRuntimeInitCount === "1" &&
+          Number(rootNode.dataset.motionRuntimeScrollTriggerCount ?? 0) > 0 &&
           rootNode.dataset.servicesVideoNodeId &&
           document.querySelector(".services-story-video video, video.services-story-video");
       }, null, { timeout: 60_000 });
@@ -119,42 +163,55 @@ if (!staticOnly) {
           loadCount: Number(rootNode?.dataset.servicesVideoLoadCount ?? 0),
           mobile: document.documentElement.dataset.tascMobilePerformance,
           measuredConnectionProfile: rootNode?.dataset.measuredConnectionProfile ?? null,
+          motionOwner: rootNode?.dataset.motionInputOwner ?? null,
+          runtimeInitialized: rootNode?.dataset.motionRuntimeInitialized ?? null,
+          runtimeResidualScrollTriggers: Number(rootNode?.dataset.motionRuntimeResidualScrollTriggerCount ?? -1),
+          runtimeScrollTriggerCount: Number(rootNode?.dataset.motionRuntimeScrollTriggerCount ?? 0),
+          runtimeScrollTriggerCountAfterCleanup: Number(rootNode?.dataset.motionRuntimeScrollTriggerCountAfterCleanup ?? -1),
           nestedSpacers: document.querySelectorAll('[class*="pin-spacer"] [class*="pin-spacer"]').length,
           nodeId: video?.dataset.servicesNodeId ?? null,
           sameNode: video === window.__tascT8ServicesVideo,
           sourceProfile: rootNode?.dataset.servicesSourceProfile ?? null,
           spacerCount: document.querySelectorAll('[class*="pin-spacer"]').length,
+          videoNodeCount: document.querySelectorAll(".services-story-video video, video.services-story-video").length,
         };
       });
       const initial = await readState();
+      await page.evaluate(() => window.__tascT8EmitResource());
+      await page.waitForFunction(() => {
+        const rootNode = document.querySelector("main.site-shell");
+        return document.documentElement.dataset.tascConstrainedConnection === "true" &&
+          rootNode?.dataset.measuredConnectionProfile === "constrained";
+      }, null, { timeout: 5_000 });
+      const measured = await readState();
       await page.setViewportSize({ width: 880, height: 800 });
       await page.waitForTimeout(350);
       const atEighty = await readState();
-      const constrainedFlow = initial.constrained === "true" || initial.sourceProfile === "mobile";
+      const servicesStartMobile = initial.sourceProfile === "mobile";
       await page.setViewportSize({ width: 879, height: 800 });
       await page.waitForFunction((expectedLoadCount) => {
         const rootNode = document.querySelector("main.site-shell");
         return document.documentElement.dataset.tascMobilePerformance === "true" &&
           rootNode?.dataset.servicesSourceProfile === "mobile" &&
           Number(rootNode.dataset.servicesVideoLoadCount ?? 0) >= expectedLoadCount;
-      }, constrainedFlow ? initial.loadCount : initial.loadCount + 1, { timeout: 5_000 });
+      }, servicesStartMobile ? initial.loadCount : initial.loadCount + 1, { timeout: 5_000 });
       const mobile = await readState();
       await page.setViewportSize({ width: 959, height: 800 });
       await page.waitForTimeout(350);
       const returnAtEighty = await readState();
       await page.setViewportSize({ width: 960, height: 800 });
-      await page.waitForFunction(({ constrained, expectedLoadCount }) => {
+      await page.waitForFunction(({ startsMobile, expectedLoadCount }) => {
         const rootNode = document.querySelector("main.site-shell");
-        const expectedProfile = constrained ? "mobile" : "desktop";
+        const expectedProfile = startsMobile ? "mobile" : "desktop";
         return document.documentElement.dataset.tascMobilePerformance === "false" &&
           rootNode?.dataset.servicesSourceProfile === expectedProfile &&
           Number(rootNode.dataset.servicesVideoLoadCount ?? 0) >= expectedLoadCount;
       }, {
-        constrained: constrainedFlow,
-        expectedLoadCount: constrainedFlow ? mobile.loadCount : initial.loadCount + 2,
+        startsMobile: servicesStartMobile,
+        expectedLoadCount: servicesStartMobile ? mobile.loadCount : initial.loadCount + 2,
       }, { timeout: 5_000 });
       const desktop = await readState();
-      const sourceProfilePass = constrainedFlow
+      const sourceProfilePass = servicesStartMobile
         ? initial.sourceProfile === "mobile" &&
           mobile.sourceProfile === "mobile" &&
           desktop.sourceProfile === "mobile" &&
@@ -164,16 +221,62 @@ if (!staticOnly) {
           desktop.sourceProfile === "desktop" &&
           mobile.loadCount === initial.loadCount + 1 &&
           desktop.loadCount === mobile.loadCount + 1;
+      const measuredIsolationPass = measured.constrained === "true" &&
+        measured.measuredConnectionProfile === "constrained" &&
+        measured.sourceProfile === initial.sourceProfile &&
+        measured.loadCount === initial.loadCount &&
+        measured.nodeId === initial.nodeId &&
+        measured.sameNode;
+      await page.setViewportSize({ width: 800, height: 800 });
+      await page.waitForFunction(() => document.documentElement.dataset.tascMobilePerformance === "true", null, { timeout: 5_000 });
+      const driftMobile = await readState();
+      await page.setViewportSize({ width: 881, height: 800 });
+      await page.waitForTimeout(350);
+      const driftSameMode = await readState();
+      await page.setViewportSize({ width: 901, height: 800 });
+      await page.waitForFunction(() => document.documentElement.dataset.tascMobilePerformance === "false", null, { timeout: 5_000 });
+      const driftDesktop = await readState();
+      const stableBaselinePass = driftMobile.mobile === "true" &&
+        driftSameMode.mobile === "true" &&
+        driftDesktop.mobile === "false";
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.waitForFunction(() => {
+        const rootNode = document.querySelector("main.site-shell");
+        return rootNode?.dataset.motionRuntimeInitialized !== "true" &&
+          !rootNode?.dataset.motionInputOwner &&
+          rootNode?.dataset.motionRuntimeResidualScrollTriggerCount === "0";
+      }, null, { timeout: 5_000 });
+      const reducedMotion = await readState();
+      await page.emulateMedia({ reducedMotion: "no-preference" });
+      await page.waitForFunction(() => {
+        const rootNode = document.querySelector("main.site-shell");
+        return rootNode?.dataset.motionRuntimeInitialized === "true" &&
+          Number(rootNode.dataset.motionRuntimeInitCount ?? 0) === 2 &&
+          Number(rootNode.dataset.motionRuntimeScrollTriggerCount ?? 0) > 0;
+      }, null, { timeout: 10_000 });
+      const restoredMotion = await readState();
       const passed = initial.mobile === "false" &&
+        measuredIsolationPass &&
+        stableBaselinePass &&
         atEighty.mobile === "false" &&
         mobile.mobile === "true" &&
         returnAtEighty.mobile === "true" &&
         desktop.mobile === "false" &&
-        [initial, atEighty, mobile, returnAtEighty, desktop].every((state) => state.initCount === 1 && state.sameNode && state.nestedSpacers === 0) &&
+        [initial, measured, atEighty, mobile, returnAtEighty, desktop, driftMobile, driftSameMode, driftDesktop].every((state) => state.initCount === 1 && state.sameNode && state.nestedSpacers === 0) &&
         sourceProfilePass &&
         desktop.spacerCount === initial.spacerCount &&
+        reducedMotion.runtimeInitialized === null &&
+        reducedMotion.motionOwner === null &&
+        reducedMotion.runtimeResidualScrollTriggers === 0 &&
+        reducedMotion.runtimeScrollTriggerCountAfterCleanup < initial.runtimeScrollTriggerCount &&
+        restoredMotion.runtimeInitialized === "true" &&
+        restoredMotion.initCount === 2 &&
+        restoredMotion.runtimeScrollTriggerCount === initial.runtimeScrollTriggerCount &&
+        restoredMotion.videoNodeCount === 1 &&
+        restoredMotion.nestedSpacers === 0 &&
+        restoredMotion.spacerCount === initial.spacerCount &&
         errors.length === 0;
-      browserResults.push({ name, passed, errors, states: { initial, atEighty, mobile, returnAtEighty, desktop } });
+      browserResults.push({ name, passed, errors, states: { initial, measured, atEighty, mobile, returnAtEighty, desktop, driftMobile, driftSameMode, driftDesktop, reducedMotion, restoredMotion } });
       check(`${name} profile rotation preserves one runtime and one Services node`, passed, browserResults.at(-1));
     } catch (error) {
       browserResults.push({ name, passed: false, errors: [...errors, String(error)] });
