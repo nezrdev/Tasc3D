@@ -15,6 +15,8 @@
     "qa:t5:physical-kit": "node scripts/verify-t5-physical-safari-kit.mjs",
     "qa:t6": "node scripts/verify-t6-datum-domino.mjs",
     "qa:t6:fault": "node scripts/t6-browser-fault-qa.mjs",
+    "qa:t12": "node scripts/verify-t12-pin-seams.mjs",
+    "qa:t12:browser": "node scripts/t12-browser-seam-qa.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test:leads && pnpm media:verify && pnpm build",
     "db:migrate": "node scripts/migrate.mjs"
   },

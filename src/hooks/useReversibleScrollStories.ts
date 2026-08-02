@@ -5,6 +5,7 @@ import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { DOMINO_DURATION } from "@/data/runtime-media";
+import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { revealTime } from "@/lib/tasc-motion-timings";
 import { getVisualViewportHeight } from "@/lib/visibility";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -475,7 +476,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     start: "top 78%",
                     end: "top 18%",
                     scrub: lowPower ? 0.28 : 0.36,
-                    refreshPriority: -21,
+                    refreshPriority: 25,
                     invalidateOnRefresh: true,
                 },
             });
@@ -1681,7 +1682,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 window.requestAnimationFrame(() => {
                     if (disposed)
                         return;
-                    ScrollTrigger.refresh();
+                    scheduleScrollTriggerRefresh(0);
                     const resumeDirection = pageShowResumeDirection;
                     pageShowResumeDirection = 0;
                     if (!resumeDirection || !dominoTrigger)
@@ -1939,7 +1940,6 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
         }
         let viewportWidth = window.innerWidth;
         let viewportPortrait = window.innerHeight >= window.innerWidth;
-        let resizeTimer = 0;
         const refreshForRealViewportChange = () => {
             const nextWidth = window.innerWidth;
             const nextPortrait = window.innerHeight >= window.innerWidth;
@@ -1948,21 +1948,12 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 return;
             viewportWidth = nextWidth;
             viewportPortrait = nextPortrait;
-            window.clearTimeout(resizeTimer);
-            resizeTimer = window.setTimeout(() => {
-                ScrollTrigger.sort();
-                ScrollTrigger.refresh();
-            }, 180);
+            scheduleScrollTriggerRefresh();
         };
         window.addEventListener("orientationchange", refreshForRealViewportChange, { passive: true });
         window.visualViewport?.addEventListener("resize", refreshForRealViewportChange, { passive: true });
-        const refreshFrame = window.requestAnimationFrame(() => {
-            ScrollTrigger.sort();
-            ScrollTrigger.refresh();
-        });
+        scheduleScrollTriggerRefresh(0);
         return () => {
-            window.cancelAnimationFrame(refreshFrame);
-            window.clearTimeout(resizeTimer);
             window.removeEventListener("orientationchange", refreshForRealViewportChange);
             window.visualViewport?.removeEventListener("resize", refreshForRealViewportChange);
             cleanup.reverse().forEach((dispose) => dispose());

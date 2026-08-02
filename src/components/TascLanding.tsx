@@ -26,6 +26,7 @@ import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, fig
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import { isMediaBufferedThrough } from "@/lib/media-buffer";
+import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { getVisualViewportHeight } from "@/lib/visibility";
 import type { HeroVideoState, LensPose, MotionNavigationController, } from "@/types/landing";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -1313,9 +1314,6 @@ export function TascLanding() {
         programmaticNavigationRef.current = true;
         servicesControllerRef.current?.releaseForNavigation();
         dominoControllerRef.current?.releaseForNavigation();
-        ScrollTrigger.sort();
-        ScrollTrigger.refresh();
-        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
         const headerOffset = href === "#clients" ? 0 : -84;
         const getSectionTop = (selector: string) => {
             const section = document.querySelector<HTMLElement>(selector);
@@ -1330,7 +1328,7 @@ export function TascLanding() {
         const scrollToPosition = (top: number, resolveTop?: () => number | null) => {
             programmaticNavigationRef.current = true;
             let settleCancelled = false;
-            const settleTimers: number[] = [];
+            let settleFrame = 0;
             const removeIntentListeners = () => {
                 window.removeEventListener("wheel", cancelSettle);
                 window.removeEventListener("touchstart", cancelSettle);
@@ -1354,7 +1352,7 @@ export function TascLanding() {
                 if (settleCancelled)
                     return;
                 settleCancelled = true;
-                settleTimers.forEach((timer) => window.clearTimeout(timer));
+                window.cancelAnimationFrame(settleFrame);
                 completeSettle();
             }
             function handleNavigationKey(event: KeyboardEvent) {
@@ -1368,7 +1366,7 @@ export function TascLanding() {
             window.addEventListener("keydown", handleNavigationKey);
             anchorSettleCleanupRef.current = cancelSettle;
             const applyPosition = (nextTop: number) => {
-                const targetTop = Math.max(0, nextTop);
+                const targetTop = Math.max(0, Math.round(nextTop));
                 if (lenisRef.current) {
                     lenisRef.current.scrollTo(targetTop, {
                         duration: 0.01,
@@ -1383,53 +1381,14 @@ export function TascLanding() {
             if (replaceHistory && window.history?.replaceState) {
                 window.history.replaceState(null, "", href);
             }
-            applyPosition(top);
-            window.requestAnimationFrame(() => {
+            settleFrame = window.requestAnimationFrame(() => {
                 if (settleCancelled || !programmaticNavigationRef.current || programmaticAnchorRef.current !== href)
                     return;
-                applyPosition(resolveTop?.() ?? top);
+                const finalTop = resolveTop?.() ?? top;
+                if (finalTop !== null)
+                    applyPosition(finalTop);
+                completeSettle();
             });
-            if (resolveTop) {
-                const settleDelays = reduceMotion ? [100, 240] : [160, 520];
-                settleDelays.forEach((delay, index) => {
-                    const timer = window.setTimeout(() => {
-                        if (settleCancelled || programmaticAnchorRef.current !== href)
-                            return;
-                        if (href !== "#services")
-                            servicesControllerRef.current?.releaseForNavigation();
-                        if (href !== "#brief")
-                            dominoControllerRef.current?.releaseForNavigation();
-                        const settledTop = resolveTop();
-                        if (settledTop !== null)
-                            applyPosition(settledTop);
-                        if (index === settleDelays.length - 1) {
-                            window.requestAnimationFrame(() => {
-                                if (settleCancelled || programmaticAnchorRef.current !== href)
-                                    return;
-                                if (href !== "#services")
-                                    servicesControllerRef.current?.releaseForNavigation();
-                                if (href !== "#brief")
-                                    dominoControllerRef.current?.releaseForNavigation();
-                                const finalTop = resolveTop();
-                                if (finalTop !== null)
-                                    applyPosition(finalTop);
-                                window.requestAnimationFrame(() => {
-                                    if (!settleCancelled)
-                                        completeSettle();
-                                });
-                            });
-                        }
-                    }, delay);
-                    settleTimers.push(timer);
-                });
-            }
-            else {
-                const timer = window.setTimeout(() => {
-                    if (!settleCancelled)
-                        completeSettle();
-                }, reduceMotion ? 120 : 260);
-                settleTimers.push(timer);
-            }
         };
         if (href === "#top") {
             scrollToPosition(0);
@@ -1631,7 +1590,6 @@ export function TascLanding() {
             }
         };
         let disposed = false;
-        let refreshId = 0;
         let heroTimeline: gsap.core.Timeline | null = null;
         let servicesTrigger: ScrollTrigger | null = null;
         let clientsServicesHandoff: gsap.core.Timeline | null = null;
@@ -1784,15 +1742,8 @@ export function TascLanding() {
                 elapsed >= (slowTransport ? 16000 : 9000);
         };
         const refreshScroll = () => {
-            if (!disposed) {
-                cancelAnimationFrame(refreshId);
-                refreshId = requestAnimationFrame(() => {
-                    if (!disposed) {
-                        ScrollTrigger.sort();
-                        ScrollTrigger.refresh();
-                    }
-                });
-            }
+            if (!disposed)
+                scheduleScrollTriggerRefresh();
         };
         const getMediaTargetTime = (video: HTMLVideoElement, time: number) => Math.min(Math.max(0, time), Math.max(0, (video.duration || time + 0.02) - 0.02));
         const pauseAndSeek = (video: HTMLVideoElement | null, time: number, tolerance = 1 / 1000) => {
@@ -4175,6 +4126,15 @@ export function TascLanding() {
                 (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
                 (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
             const howWorkBoundary = root.querySelector<HTMLElement>(".how-work-motion-section");
+            const syncServicesPinCompensation = () => {
+                const distance = useLegacyServicesFlow
+                    ? Math.round(getVisualViewportHeight())
+                    : 0;
+                root.style.setProperty("--services-pin-flow-compensation", `${-distance}px`);
+                return distance;
+            };
+            syncServicesPinCompensation();
+            cleanupCallbacks.push(() => root.style.removeProperty("--services-pin-flow-compensation"));
             const isNearServicesTrigger = (trigger: ScrollTrigger, viewportMargin = 1.25) => {
                 const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
                 const margin = viewportHeight * viewportMargin;
@@ -4197,17 +4157,13 @@ export function TascLanding() {
                 id: "services-reversible",
                 trigger: servicesSection,
                 start: "top top",
-                endTrigger: howWorkBoundary ?? undefined,
-                end: () => !useLegacyServicesFlow
-                    ? "top top"
-                    : howWorkBoundary
-                        ? "top top"
-                        : `+=${Math.round(Math.max(1, window.visualViewport?.height ?? window.innerHeight))}`,
+                end: () => `+=${syncServicesPinCompensation()}`,
                 pin: useLegacyServicesFlow,
-                pinSpacing: !useLegacyServicesFlow,
+                pinSpacing: true,
                 anticipatePin: 1,
                 refreshPriority: 30,
                 invalidateOnRefresh: true,
+                onRefreshInit: syncServicesPinCompensation,
                 onEnter: (self) => {
                     if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
                         return;
@@ -4307,6 +4263,7 @@ export function TascLanding() {
                     setMotionInputState();
                 },
                 onRefresh: (self) => {
+                    syncServicesPinCompensation();
                     if (servicesActive && (!isNearServicesTrigger(self) || !isServicesVisuallyNear(1.5))) {
                         releaseServicesForNavigation();
                         return;
@@ -4367,6 +4324,7 @@ export function TascLanding() {
             }
             const handleServicesPositionApplied = () => {
                 if (programmaticAnchorRef.current === "#services" && servicesTrigger) {
+                    showServicesIdlePreview(true);
                     startServicesForward(servicesTrigger.start + 1, 1, "position-applied");
                 }
             };
@@ -5251,7 +5209,6 @@ export function TascLanding() {
             lenis.start();
             lensVideo?.removeEventListener("loadedmetadata", handleLensMetadata);
             cleanupCallbacks.forEach((cleanup) => cleanup());
-            cancelAnimationFrame(refreshId);
             lenis.off("scroll", handleSmoothScrollUpdate);
             cancelAnimationFrame(rafId);
             servicesTrigger?.kill();
@@ -5426,13 +5383,11 @@ export function TascLanding() {
         let layoutFrame = 0;
         let navigationFrame = 0;
         layoutFrame = window.requestAnimationFrame(() => {
-            if (motionAllowed) {
-                ScrollTrigger.sort();
-                ScrollTrigger.refresh();
-            }
             navigationFrame = window.requestAnimationFrame(() => {
                 initialHashHandledRef.current = true;
-                handleAnchorNavigate(hash, { replaceHistory: false });
+                const currentHash = window.location.hash;
+                if (supportedAnchors.has(currentHash))
+                    handleAnchorNavigate(currentHash, { replaceHistory: false });
             });
         });
         return () => {
@@ -5453,10 +5408,6 @@ export function TascLanding() {
             }
             window.cancelAnimationFrame(navigationFrame);
             navigationFrame = window.requestAnimationFrame(() => {
-                if (motionAllowed) {
-                    ScrollTrigger.sort();
-                    ScrollTrigger.refresh();
-                }
                 handleAnchorNavigate(hash, { replaceHistory: false });
             });
         };
