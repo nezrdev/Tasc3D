@@ -8,3 +8,6 @@ This folder is working memory and verification evidence for the TASC 3D site. It
 - `t5-physical-safari-acceptance.md` is the real Apple hardware acceptance runbook.
 - `t7-verification-2026-08-02.md` records the unified input-owner verification and carried final-matrix work.
 - `t8-verification-2026-08-02.md` records the stable runtime/profile lifecycle and its regression evidence.
+- `t9-verification-2026-08-02.md` records the behavior-preserving landing decomposition.
+- `t10-verification-2026-08-02.md` records delivery cleanup, payload reduction, and the final T10 journey.
+- `t11-verification-2026-08-02.md` is the final software verification matrix, evidence index, and external Safari/deployment boundary.

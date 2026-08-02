@@ -3,8 +3,8 @@
 ## Project State
 
 - Worktree: `C:\workflow\Freelance\projects\tasc-3d-site`.
-- Active optimization chain: T6, T13, T12, T7, T8, and T9 are stacked in isolated branches and PRs.
-- Current branch in this worktree: `task/t9-landing-decomposition`, based on the T8 branch.
+- Active optimization chain: T6, T13, T12, T7, T8, T9, T10, and T11 are stacked in isolated branches and draft PRs.
+- Current branch in this worktree: `task/t11-final-verification`, based on the T10 branch.
 - Production deployment is intentionally out of scope until separately approved.
 
 ## Runtime Decisions
@@ -24,6 +24,8 @@
 - Real Safari acceptance still requires physical macOS/iPhone Safari or an equivalent real-device remote session. Windows Playwright WebKit is regression coverage only.
 - Browser QA must run against one stable local `next start` process. Do not rebuild `.next` or start a second server while Playwright/perf harnesses are running.
 - `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically, media state is owned by `useMediaOrchestrator`, and Services input behavior is created through `useServicesStory` inside that same runtime.
+- An active Services story survives ScrollTrigger refresh/profile changes; refresh recomputes and corrects the lock coordinate instead of releasing ownership.
+- Domino transport failure exits through the normal direction-aware boundary path. Forward failure exposes the form, reverse failure returns toward Process, and both paths release Lenis/document input.
 
 ## Latest Evidence
 
@@ -40,3 +42,7 @@
 - `docs/t8-perf-smoke-2026-08-02.json` passed the Chromium mobile 390 smoke run; measured long-task sum in the first 7 seconds is 207 ms, under the 250 ms T8 target.
 - The focused Chromium 390 mobile portion run passed 65/65 checks without changing its timing limits.
 - T9 passed `pnpm check`, Chromium/WebKit structural QA, T8 lifecycle QA, and T7 forward/reverse input QA on production BUILD_ID `6Cv4-YD_ip1O1H6_JeSAj`; see `docs/t9-verification-2026-08-02.md`.
+- T10 passed cleanup, build, and 4/4 cold normal-network journey gates; public delivery is 47,955,173 bytes and local fonts total 75,124 bytes.
+- T11 candidate BUILD_ID `3il90V6IuZEtqb2tTRyTJ` passes lint, typecheck, 8/8 lead tests, 20/20 media contracts, T6/T8/T9/T10/T12 gates, exact Chromium/WebKit Services and How reverse journeys, 4/4 cold first visits, 8/8 Domino fault paths, 3/3 WebGL paths, and a 24-case performance matrix with zero structural or acceptance failures.
+- The strict mobile portion harness remains unmodified. Chromium 390/430 passes; Windows synthetic WebKit reaches every target with zero positional error but exceeds six rapid timing assertions. Physical Safari timing acceptance remains external.
+- See `docs/t11-verification-2026-08-02.md` for the authoritative final evidence and boundaries.
