@@ -440,7 +440,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
     background: #000 !important;
   }
 
-  .site-shell[data-datum-media-armed="true"] .datum-motion-media {
+  .site-shell[data-datum-media-armed="true"]
+    .datum-motion-section[data-datum-playback="fallback"]
+    .datum-motion-media {
     background:
       #000 url("/media/datum-news-poster-20260714.webp") center bottom / contain no-repeat !important;
   }
@@ -456,7 +458,7 @@ html[data-tasc-webkit="true"] .figma-client-card {
 
 
   html[data-tasc-webkit]
-    .datum-motion-video:not([data-playback-state="playing"]) {
+    .datum-motion-video[data-first-frame="waiting"] {
     opacity: 0 !important;
   }
 

@@ -42,8 +42,12 @@
 }
 
 .process-contact-section .process-contact-bg::after {
-  background: none !important;
-  opacity: 0 !important;
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 54%, rgba(0, 0, 0, 0.52) 80%, #000 100%) !important;
+  opacity: var(--process-domino-tone, 0) !important;
+  pointer-events: none;
 }
 
 .process-contact-section .process-contact-inner {

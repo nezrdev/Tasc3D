@@ -500,8 +500,14 @@
 }
 
 .datum-motion-video {
-  opacity: 1;
+  opacity: 0;
   background: #000;
+  transition: opacity 180ms linear;
+}
+
+.datum-motion-video[data-first-frame="decoded"],
+.datum-motion-video[data-first-frame="fallback"] {
+  opacity: 1;
 }
 
 .domino-sequence {
