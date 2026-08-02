@@ -1,0 +1,666 @@
+{
+  "browsers": [
+    {
+      "checks": [
+        {
+          "name": "TASC page identity is present",
+          "passed": true,
+          "detail": {
+            "connection": {
+              "downlink": 0.35,
+              "effectiveType": "4g",
+              "saveData": false
+            },
+            "connectionOverrideApplied": true,
+            "listeners": "1",
+            "mobilePerformance": null,
+            "shell": true,
+            "title": "TASC | Global Strategic Communications Agency"
+          }
+        },
+        {
+          "name": "motion input bus reports one listener set",
+          "passed": true,
+          "detail": "1"
+        },
+        {
+          "name": "injected false downlink signal is active",
+          "passed": true,
+          "detail": {
+            "downlink": 0.35,
+            "effectiveType": "4g",
+            "saveData": false
+          }
+        },
+        {
+          "name": "downlink=0.35 does not select the mobile performance profile on desktop",
+          "passed": true,
+          "detail": null
+        },
+        {
+          "name": "false downlink initially selects desktop Services media",
+          "passed": true,
+          "detail": {
+            "measuredConnectionProfile": null,
+            "mobilePerformance": null,
+            "urls": [
+              "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
+              "http://127.0.0.1:3120/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4"
+            ],
+            "firstSelectedServiceMedia": "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
+            "requests": []
+          }
+        },
+        {
+          "name": "Services waiting stops are strictly 1->2->3->2->1",
+          "passed": true,
+          "detail": [
+            1,
+            2,
+            3,
+            2,
+            1
+          ]
+        },
+        {
+          "name": "How steps are reachable forward and reverse",
+          "passed": true,
+          "detail": [
+            1,
+            2,
+            3,
+            2,
+            1
+          ]
+        },
+        {
+          "name": "How safely exposes the bus owner for the watchdog probe",
+          "passed": true,
+          "detail": "how"
+        },
+        {
+          "name": "4000ms watchdog releases a stalled owner",
+          "passed": true,
+          "detail": {
+            "tested": true,
+            "observed": true
+          }
+        },
+        {
+          "name": "watchdog fails open and later navigation remains reachable",
+          "passed": true,
+          "detail": {
+            "owner": null,
+            "pendingAnchor": null,
+            "targetVisible": true
+          }
+        },
+        {
+          "name": "no sample contains more than one motion input owner",
+          "passed": true,
+          "detail": {
+            "maxOwnerCount": 1,
+            "ownerCollisions": [],
+            "ownerSamples": [
+              {
+                "at": 78,
+                "owners": [],
+                "reason": "dom-ready"
+              },
+              {
+                "at": 2173,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 2173,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 2342,
+                "owners": [],
+                "reason": "mutation"
+              },
+              {
+                "at": 2490,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 2490,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 5480,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 5480,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 5480,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 5482,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 8836,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 8836,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 8838,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 12575,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 12575,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 12577,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 17018,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 17018,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 21547,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 21547,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 25233,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 25233,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 25501,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 27169,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 28899,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 30556,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 31681,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 31681,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 31681,
+                "owners": [
+                  {
+                    "owner": "services",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 32595,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              },
+              {
+                "at": 32595,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "owner-change"
+              },
+              {
+                "at": 32882,
+                "owners": [
+                  {
+                    "owner": "how",
+                    "tag": "main"
+                  }
+                ],
+                "reason": "mutation"
+              }
+            ]
+          }
+        },
+        {
+          "name": "motion input listener set stays attached once",
+          "passed": true,
+          "detail": "1"
+        },
+        {
+          "name": "story input never teleports by a viewport",
+          "passed": true,
+          "detail": {
+            "gestureMovements": [
+              {
+                "delta": 0,
+                "story": "services",
+                "target": 2
+              },
+              {
+                "delta": 0,
+                "story": "services",
+                "target": 3
+              },
+              {
+                "delta": 0,
+                "story": "services",
+                "target": 2
+              },
+              {
+                "delta": 0,
+                "story": "services",
+                "target": 1
+              },
+              {
+                "delta": 438,
+                "story": "how",
+                "target": 2
+              },
+              {
+                "delta": 417,
+                "story": "how",
+                "target": 3
+              },
+              {
+                "delta": 417,
+                "story": "how",
+                "target": 2
+              },
+              {
+                "delta": 431,
+                "story": "how",
+                "target": 1
+              },
+              {
+                "delta": 438,
+                "story": "how-watchdog-setup",
+                "target": 2
+              }
+            ],
+            "largeEventJumps": [],
+            "maxAllowedJump": 855
+          }
+        },
+        {
+          "name": "page has no runtime or critical asset errors",
+          "passed": true,
+          "detail": {
+            "browserErrors": [],
+            "importantRequestFailures": []
+          }
+        }
+      ],
+      "name": "webkit-desktop",
+      "passed": true,
+      "watchdog": {
+        "tested": true,
+        "observed": true
+      }
+    }
+  ],
+  "buildIdentity": {
+    "checks": [
+      {
+        "name": "target URL responds successfully",
+        "passed": true,
+        "detail": {
+          "error": null,
+          "status": 200,
+          "url": "http://127.0.0.1:3120/?__tasc_t7_build_identity=1785676577472"
+        }
+      },
+      {
+        "name": "local production BUILD_ID exists",
+        "passed": true,
+        "detail": {
+          "localBuildId": "IEgQhqEWF-6_8mnf5yQge"
+        }
+      },
+      {
+        "name": "production build is not older than application source",
+        "passed": true,
+        "detail": {
+          "buildMtimeMs": 1785676231205.06,
+          "latestSourceMtimeMs": 1785676152659.7935
+        }
+      },
+      {
+        "name": "target serves the local production BUILD_ID",
+        "passed": true,
+        "detail": {
+          "localBuildId": "IEgQhqEWF-6_8mnf5yQge",
+          "responseStatus": 200
+        }
+      }
+    ],
+    "localBuildId": "IEgQhqEWF-6_8mnf5yQge",
+    "passed": true,
+    "sourceSha256": "5952d04c797f5a2b6d8aa2fb4b9e373cc440f75327187faf9adf2fdaed2e198c"
+  },
+  "generatedAt": "2026-08-02T13:16:56.399Z",
+  "mode": "static-and-browser",
+  "passed": true,
+  "staticContracts": {
+    "checks": [
+      {
+        "name": "one owner-level listener set handles every input event",
+        "passed": true,
+        "detail": {
+          "additions": [
+            {
+              "event": "wheel",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchstart",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchmove",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchend",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchcancel",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "keydown",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "scroll",
+              "path": "src/lib/motion-input-bus.ts"
+            }
+          ],
+          "removals": [
+            {
+              "event": "wheel",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchstart",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchmove",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchend",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "touchcancel",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "keydown",
+              "path": "src/lib/motion-input-bus.ts"
+            },
+            {
+              "event": "scroll",
+              "path": "src/lib/motion-input-bus.ts"
+            }
+          ]
+        }
+      },
+      {
+        "name": "listener attachment is idempotent and detached after the final registration",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "owner watchdog is exactly 4000ms",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "exactly four motion stories are registered",
+        "passed": true,
+        "detail": [
+          {
+            "id": "services",
+            "path": "src/components/TascLanding.tsx"
+          },
+          {
+            "id": "portion",
+            "path": "src/hooks/useMobilePortionedScroll.ts"
+          },
+          {
+            "id": "how",
+            "path": "src/hooks/useReversibleScrollStories.ts"
+          },
+          {
+            "id": "domino",
+            "path": "src/hooks/useReversibleScrollStories.ts"
+          }
+        ]
+      },
+      {
+        "name": "application source has no stopImmediatePropagation arbitration",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "owner data attributes are write-only CSS/QA telemetry",
+        "passed": true,
+        "detail": []
+      },
+      {
+        "name": "owner arbitration reads the motion bus state",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "initial constrained profile accepts only saveData, slow-2g, and 2g",
+        "passed": true,
+        "detail": null
+      },
+      {
+        "name": "first media throughput uses PerformanceResourceTiming transferSize/duration",
+        "passed": true,
+        "detail": null
+      }
+    ],
+    "passed": true
+  },
+  "url": "http://127.0.0.1:3120/"
+}

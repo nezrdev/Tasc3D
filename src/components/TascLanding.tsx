@@ -2,27 +2,30 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import { ArrowRight } from "lucide-react";
 import Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import CookieConsent from "@/components/CookieConsent";
-import { GlassCta } from "@/components/GlassCta";
 import { ClientsSection } from "@/components/sections/ClientsSection";
+import { DatumSection } from "@/components/sections/DatumSection";
+import { DominoSection } from "@/components/sections/DominoSection";
+import { HeroSection } from "@/components/sections/HeroSection";
 import { HowWeWorkSection } from "@/components/sections/HowWeWorkSection";
 import { ProcessSection } from "@/components/sections/ProcessSection";
+import { ServicesSection } from "@/components/sections/ServicesSection";
 import { SiteFooter } from "@/components/sections/SiteFooter";
 import SitePreloader from "@/components/SitePreloader";
-import PackedAlphaVideo from "@/components/PackedAlphaVideo";
-import { ServiceTextLines } from "@/components/ServiceTextLines";
 import TascHeader from "@/components/TascHeader";
-import VisibilityTriggeredVideo from "@/components/VisibilityTriggeredVideo";
+import { useMediaOrchestrator } from "@/hooks/useMediaOrchestrator";
 import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
+import {
+    useServicesStory,
+    type ServicesStoryInputRuntime,
+} from "@/hooks/useServicesStory";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
-import { datumCardsCopy, datumWaitlistCopy, figmaHeroCopy, figmaMissionCopy, figmaMissionLines, finalImpulseCopy, journeyCtaLabel, secondRevealCopy, servicesStoryCopy, } from "@/data/landing-content";
 import { DOMINO_DURATION, RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
 import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import {
@@ -34,12 +37,10 @@ import { isMediaBufferedThrough } from "@/lib/media-buffer";
 import {
     getMotionInputOwnerId,
     registerMotionInputObserver,
-    registerMotionInputStory,
-    type MotionInputRegistration,
 } from "@/lib/motion-input-bus";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
 import { getVisualViewportHeight } from "@/lib/visibility";
-import type { HeroVideoState, LensPose, MotionNavigationController, } from "@/types/landing";
+import type { LensPose, MotionNavigationController, } from "@/types/landing";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 const Galaxy = dynamic(() => import("@/components/Galaxy"), { ssr: false });
 const GALAXY_SHARED_PROPS = {
@@ -94,7 +95,6 @@ const VISION_LOGO_DEEP_LINKS = new Set([
     "#contact",
 ]);
 const SERVICES_PLAYBACK_RATE = 1;
-const SERVICES_INPUT_QUIET_MS = 140;
 const SERVICES_ENTRY_GATE_MS = 120;
 const SERVICES_POST_STAGE_GATE_MS = 150;
 const MEDIA_SEGMENT_GRACE_MS = 700;
@@ -181,8 +181,6 @@ export function TascLanding() {
     const [motionAllowed, setMotionAllowed] = useState(false);
     const [motionPreferenceResolved, setMotionPreferenceResolved] = useState(false);
     const [performanceModeResolved, setPerformanceModeResolved] = useState(false);
-    const [galaxyStatus, setGalaxyStatus] = useState<"pending" | "ready" | "unavailable">("pending");
-    const servicesGalaxyStatus = galaxyStatus;
     const [mobilePerformanceMode, setMobilePerformanceMode] = useState(() => initialRuntimeProfile.mobilePerformance);
     const [macPerformanceMode, setMacPerformanceMode] = useState(() => initialRuntimeProfile.macPerformance);
     const [webkitCompatibilityMode, setWebkitCompatibilityMode] = useState(() => initialRuntimeProfile.webkitCompatibility);
@@ -192,34 +190,54 @@ export function TascLanding() {
     const [forcePackedTransport, setForcePackedTransport] = useState(() => initialRuntimeProfile.forcePackedTransport);
     const [constrainedConnection, setConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
     const [explicitConstrainedConnection, setExplicitConstrainedConnection] = useState(() => initialRuntimeProfile.constrainedConnection);
-    const [servicesMediaArmed, setServicesMediaArmed] = useState(false);
-    const [servicesStopPostersArmed, setServicesStopPostersArmed] = useState(false);
-    const [servicesMediaFallback, setServicesMediaFallback] = useState(false);
-    const [datumMediaArmed, setDatumMediaArmed] = useState(false);
-    const [dominoMediaArmed, setDominoMediaArmed] = useState(false);
-    const [dominoReverseMediaArmed, setDominoReverseMediaArmed] = useState(false);
-    const [servicesMediaPrepared, setServicesMediaPrepared] = useState(false);
-    const [, setServicesCompleteStoryPrepared] = useState(false);
-    const [datumMediaPrepared, setDatumMediaPrepared] = useState(false);
-    const [datumMediaFallback, setDatumMediaFallback] = useState(false);
-    const [dominoForwardPrepared, setDominoForwardPrepared] = useState(false);
-    const [dominoReversePrepared, setDominoReversePrepared] = useState(false);
-    const [dominoForwardFallback, setDominoForwardFallback] = useState(false);
-    const [dominoReverseFallback, setDominoReverseFallback] = useState(false);
-    const [lowerMediaWarmDeadlineReached, setLowerMediaWarmDeadlineReached] = useState(false);
-    const [processMapArmed, setProcessMapArmed] = useState(false);
-    const [visionLogoArmed, setVisionLogoArmed] = useState(false);
-    const [clientsFlareArmed, setClientsFlareArmed] = useState(false);
     const [preloaderComplete, setPreloaderComplete] = useState(false);
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
     const [heroIntroReady, setHeroIntroReady] = useState(false);
-    const [interactiveGalaxyArmed, setInteractiveGalaxyArmed] = useState(false);
-    const [heroVideoState, setHeroVideoState] = useState<HeroVideoState>("pending");
-    const [heroVideoEligible, setHeroVideoEligible] = useState(false);
-    const [heroFallbackAnimationEligible, setHeroFallbackAnimationEligible] = useState(false);
-    const [heroFallbackAnimationReady, setHeroFallbackAnimationReady] = useState(false);
-    const [packedAlphaOwner, setPackedAlphaOwner] = useState<"hero" | "services">("hero");
+    const createServicesStoryInput = useServicesStory();
+    const {
+        actions: mediaActions,
+        setters: {
+            setDatumMediaFallback,
+            setDatumMediaPrepared,
+            setDominoForwardFallback,
+            setDominoForwardPrepared,
+            setDominoReverseFallback,
+            setDominoReversePrepared,
+            setGalaxyStatus,
+            setHeroFallbackAnimationEligible,
+            setHeroFallbackAnimationReady,
+            setServicesStopPostersArmed,
+            setVisionLogoArmed,
+        },
+        state: {
+            clientsFlareArmed,
+            datumMediaArmed,
+            datumMediaFallback,
+            datumMediaPrepared,
+            dominoForwardFallback,
+            dominoForwardPrepared,
+            dominoMediaArmed,
+            dominoReverseFallback,
+            dominoReverseMediaArmed,
+            dominoReversePrepared,
+            galaxyStatus,
+            heroFallbackAnimationEligible,
+            heroFallbackAnimationReady,
+            heroVideoEligible,
+            heroVideoState,
+            interactiveGalaxyArmed,
+            lowerMediaWarmDeadlineReached,
+            packedAlphaOwner,
+            processMapArmed,
+            servicesMediaArmed,
+            servicesMediaFallback,
+            servicesMediaPrepared,
+            servicesStopPostersArmed,
+            visionLogoArmed,
+        },
+    } = useMediaOrchestrator();
+    const servicesGalaxyStatus = galaxyStatus;
     const constrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
     const explicitConstrainedConnectionLatchRef = useRef(initialRuntimeProfile.constrainedConnection);
     const viewportMetricsRef = useRef({
@@ -308,7 +326,7 @@ export function TascLanding() {
         const video = servicesVideoRef.current;
         const activeStage = Math.min(SERVICES_KEYFRAME_STOPS.length, Math.max(1, Number(root?.dataset.servicesActive ?? 1) || 1));
         video?.pause();
-        setServicesStopPostersArmed(true);
+        mediaActions.activateServicesFallback();
         if (video)
             video.dataset.segmentState = "fallback";
         if (root) {
@@ -316,8 +334,7 @@ export function TascLanding() {
             root.dataset.servicesMediaFallback = "true";
             root.dataset.servicesStaticStop = String(activeStage);
         }
-        setServicesMediaFallback(true);
-    }, []);
+    }, [mediaActions]);
     const recoverServicesMedia = useCallback(() => {
         const root = rootRef.current;
         const video = servicesVideoRef.current;
@@ -333,17 +350,16 @@ export function TascLanding() {
         if (video.dataset.segmentState === "fallback")
             video.dataset.segmentState = "idle";
         root.dataset.servicesFirstSegmentWarm = "true";
-        setServicesMediaPrepared(true);
-        if (isMediaBufferedThrough(video, SERVICES_COMPLETE_STORY_BUFFER_END)) {
+        const completeStoryPrepared = isMediaBufferedThrough(video, SERVICES_COMPLETE_STORY_BUFFER_END);
+        if (completeStoryPrepared) {
             root.dataset.servicesCompleteStoryWarm = "true";
-            setServicesCompleteStoryPrepared(true);
         }
-        setServicesMediaFallback(false);
-    }, []);
+        mediaActions.recoverServices(completeStoryPrepared);
+    }, [mediaActions]);
     const armDominoReverseMedia = useCallback(() => {
         rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
-        setDominoReverseMediaArmed(true);
-    }, []);
+        mediaActions.armDominoReverse();
+    }, [mediaActions]);
     const reportDominoSourceError = useCallback((direction: "forward" | "reverse") => {
         dominoPendingSourceErrorsRef.current[direction] = true;
         const reporter = dominoSourceErrorReporterRef.current;
@@ -389,9 +405,9 @@ export function TascLanding() {
     useEffect(() => {
         if (!motionPreferenceResolved || motionAllowed)
             return;
-        const armFrame = window.requestAnimationFrame(() => setVisionLogoArmed(true));
+        const armFrame = window.requestAnimationFrame(mediaActions.armVisionLogo);
         return () => window.cancelAnimationFrame(armFrame);
-    }, [motionAllowed, motionPreferenceResolved]);
+    }, [mediaActions, motionAllowed, motionPreferenceResolved]);
     const resetToTop = useCallback(() => {
         window.scrollTo({ top: 0, left: 0, behavior: "auto" });
         document.documentElement.scrollTop = 0;
@@ -615,7 +631,7 @@ export function TascLanding() {
             if (armed)
                 return;
             armed = true;
-            setInteractiveGalaxyArmed(true);
+            mediaActions.armInteractiveGalaxy();
         };
         const idleTimer = window.setTimeout(armInteractiveGalaxy, webkitCompatibilityMode ? 1800 : 850);
         window.addEventListener("pointermove", armInteractiveGalaxy, {
@@ -628,6 +644,7 @@ export function TascLanding() {
         };
     }, [
         mobilePerformanceMode,
+        mediaActions,
         motionAllowed,
         performanceModeResolved,
         preloaderComplete,
@@ -724,38 +741,28 @@ export function TascLanding() {
         if (!motionAllowed) {
             root?.removeAttribute("data-hero-video-poster-fallback");
             const stateFrame = window.requestAnimationFrame(() => {
-                setHeroVideoEligible(false);
-                setHeroFallbackAnimationEligible(false);
-                setHeroFallbackAnimationReady(false);
-                setHeroVideoState("fallback");
+                mediaActions.configureHero("reduced");
             });
             return () => {
                 window.cancelAnimationFrame(stateFrame);
             };
         }
         const stateFrame = window.requestAnimationFrame(() => {
-            setHeroFallbackAnimationReady(false);
             if (useStaticHero) {
                 root?.setAttribute("data-hero-video-poster-fallback", "true");
-                setHeroFallbackAnimationEligible(false);
-                setHeroVideoState("fallback");
-                setHeroVideoEligible(false);
+                mediaActions.configureHero("poster");
             }
             else if (needsAnimatedFallback) {
                 root?.setAttribute("data-hero-video-poster-fallback", "true");
-                setHeroFallbackAnimationEligible(true);
-                setHeroVideoState("fallback");
-                setHeroVideoEligible(false);
+                mediaActions.configureHero("animated-fallback");
             }
             else {
                 root?.removeAttribute("data-hero-video-poster-fallback");
-                setHeroFallbackAnimationEligible(false);
-                setHeroVideoState("pending");
-                setHeroVideoEligible(true);
+                mediaActions.configureHero("video");
             }
         });
         return () => window.cancelAnimationFrame(stateFrame);
-    }, [constrainedConnection, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
+    }, [constrainedConnection, mediaActions, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
     useEffect(() => {
         if (!preloaderComplete ||
             !motionAllowed ||
@@ -783,7 +790,7 @@ export function TascLanding() {
                     : null;
             if (!nextOwner)
                 return;
-            setPackedAlphaOwner((current) => current === nextOwner ? current : nextOwner);
+            mediaActions.selectPackedAlphaOwner(nextOwner);
         };
         const scheduleSync = () => {
             if (frame)
@@ -808,6 +815,7 @@ export function TascLanding() {
         };
     }, [
         heroFallbackAnimationEligible,
+        mediaActions,
         motionAllowed,
         preloaderComplete,
         servicesPackedTransportMode,
@@ -860,7 +868,7 @@ export function TascLanding() {
             delete root?.dataset.servicesFirstSegmentWarm;
             delete root?.dataset.servicesCompleteStoryWarm;
             delete root?.dataset.servicesStartFrameDecoded;
-            setServicesMediaPrepared(false);
+            mediaActions.invalidateServicesPrepared();
             video.load();
         }
         else if (video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
@@ -878,6 +886,7 @@ export function TascLanding() {
         servicesTransportReason,
         servicesTransportKey,
         servicesVideoSource,
+        mediaActions,
     ]);
     useEffect(() => {
         const root = rootRef.current;
@@ -918,7 +927,7 @@ export function TascLanding() {
                 media.dataset.segmentState = "ready";
             }
             shell.dataset.servicesCompleteStoryWarm = "true";
-            setServicesCompleteStoryPrepared(true);
+            mediaActions.markServicesCompleteStoryPrepared();
         };
         const completeFirstSegmentWarmup = () => {
             if (firstSegmentSettled || disposed)
@@ -936,8 +945,7 @@ export function TascLanding() {
             }
             shell.dataset.servicesFirstSegmentWarm = "true";
             delete shell.dataset.servicesWarmupBlocked;
-            setServicesMediaPrepared(true);
-            setServicesMediaFallback(false);
+            mediaActions.markServicesFirstSegmentPrepared();
         };
         function inspectWarmState() {
             if (disposed || completeStorySettled)
@@ -1036,6 +1044,7 @@ export function TascLanding() {
         preloaderRevealStarted,
         servicesMediaArmed,
         servicesVideoSource,
+        mediaActions,
         webkitCompatibilityMode,
     ]);
     useEffect(() => {
@@ -1044,29 +1053,22 @@ export function TascLanding() {
             delete rootRef.current?.dataset.servicesFirstSegmentWarm;
             delete rootRef.current?.dataset.servicesCompleteStoryWarm;
             delete rootRef.current?.dataset.servicesWarmupBlocked;
-            setServicesMediaPrepared(false);
-            setServicesCompleteStoryPrepared(false);
-            setServicesMediaFallback(false);
-            setLowerMediaWarmDeadlineReached(false);
+            mediaActions.resetServicesWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [servicesVideoSource]);
+    }, [mediaActions, servicesVideoSource]);
     useEffect(() => {
         const resetFrame = window.requestAnimationFrame(() => {
-            setDatumMediaPrepared(false);
-            setDatumMediaFallback(false);
+            mediaActions.resetDatumWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [datumVideoSource]);
+    }, [datumVideoSource, mediaActions]);
     useEffect(() => {
         const resetFrame = window.requestAnimationFrame(() => {
-            setDominoForwardPrepared(false);
-            setDominoReversePrepared(false);
-            setDominoForwardFallback(false);
-            setDominoReverseFallback(false);
+            mediaActions.resetDominoWarmState();
         });
         return () => window.cancelAnimationFrame(resetFrame);
-    }, [dominoTransportKey]);
+    }, [dominoTransportKey, mediaActions]);
     useEffect(() => {
         if (!motionPreferenceResolved || !performanceModeResolved)
             return;
@@ -1074,11 +1076,12 @@ export function TascLanding() {
             return;
         if (!heroDecoderLaneReleased || !servicesWarmSettled)
             return;
-        const warmDeadline = window.setTimeout(() => setLowerMediaWarmDeadlineReached(true), constrainedConnection ? (mobilePerformanceMode ? 9000 : 7000) : mobilePerformanceMode ? 6000 : 4500);
+        const warmDeadline = window.setTimeout(mediaActions.markLowerMediaWarmDeadlineReached, constrainedConnection ? (mobilePerformanceMode ? 9000 : 7000) : mobilePerformanceMode ? 6000 : 4500);
         return () => window.clearTimeout(warmDeadline);
     }, [
         constrainedConnection,
         heroDecoderLaneReleased,
+        mediaActions,
         mobilePerformanceMode,
         motionAllowed,
         motionPreferenceResolved,
@@ -1091,27 +1094,26 @@ export function TascLanding() {
         const armDeepLinkedMedia = () => {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
-                setVisionLogoArmed(true);
+                mediaActions.armVisionLogo();
             if (hash === "#clients" || hash === "#services")
-                setClientsFlareArmed(true);
+                mediaActions.armClientsFlare();
             if (hash === "#services") {
-                setServicesMediaArmed(true);
-                setServicesStopPostersArmed(true);
+                mediaActions.armServices();
             }
             if (hash === "#datum" || hash === "#brief") {
-                setDatumMediaArmed(true);
-                setDominoMediaArmed(true);
+                mediaActions.armDatum();
+                mediaActions.armDomino();
             }
             if (hash === "#process" || hash === "#contact") {
-                setDatumMediaArmed(true);
-                setDominoMediaArmed(true);
-                setProcessMapArmed(true);
+                mediaActions.armDatum();
+                mediaActions.armDomino();
+                mediaActions.armProcessMap();
             }
         };
         armDeepLinkedMedia();
         window.addEventListener("hashchange", armDeepLinkedMedia);
         return () => window.removeEventListener("hashchange", armDeepLinkedMedia);
-    }, [motionPreferenceResolved, performanceModeResolved]);
+    }, [mediaActions, motionPreferenceResolved, performanceModeResolved]);
     useEffect(() => {
         if (!motionPreferenceResolved || !preloaderComplete)
             return;
@@ -1121,19 +1123,18 @@ export function TascLanding() {
         const armFromHash = () => {
             const hash = window.location.hash;
             if (VISION_LOGO_DEEP_LINKS.has(hash))
-                setVisionLogoArmed(true);
+                mediaActions.armVisionLogo();
             if (hash === "#clients" || hash === "#services")
-                setClientsFlareArmed(true);
+                mediaActions.armClientsFlare();
             if (hash === "#services") {
-                setServicesMediaArmed(true);
-                setServicesStopPostersArmed(true);
+                mediaActions.armServices();
             }
             if (hash === "#datum")
-                setDatumMediaArmed(true);
+                mediaActions.armDatum();
             if (hash === "#brief")
-                setDominoMediaArmed(true);
+                mediaActions.armDomino();
             if (hash === "#process" || hash === "#contact") {
-                setProcessMapArmed(true);
+                mediaActions.armProcessMap();
             }
         };
         armFromHash();
@@ -1144,13 +1145,12 @@ export function TascLanding() {
                 targets.set(target, arm);
         };
         register(".services-story-section", () => {
-            setServicesMediaArmed(true);
-            setServicesStopPostersArmed(true);
+            mediaActions.armServices();
         });
-        register(".figma-clients-section", () => setClientsFlareArmed(true));
-        register(".datum-motion-section", () => setDatumMediaArmed(true));
-        register(".domino-cta-section", () => setDominoMediaArmed(true));
-        register(".process-contact-section", () => setProcessMapArmed(true));
+        register(".figma-clients-section", mediaActions.armClientsFlare);
+        register(".datum-motion-section", mediaActions.armDatum);
+        register(".domino-cta-section", mediaActions.armDomino);
+        register(".process-contact-section", mediaActions.armProcessMap);
         const getArmMargin = () => {
             const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
             return mobilePerformanceMode || constrainedConnection
@@ -1237,7 +1237,7 @@ export function TascLanding() {
         }
         nearbyReevaluationTimer = window.setTimeout(startProximityFallback, 10000);
         return stopProximityTracking;
-    }, [constrainedConnection, mobilePerformanceMode, motionPreferenceResolved, preloaderComplete]);
+    }, [constrainedConnection, mediaActions, mobilePerformanceMode, motionPreferenceResolved, preloaderComplete]);
     useEffect(() => {
         if (!dominoMediaArmed)
             return;
@@ -1269,12 +1269,10 @@ export function TascLanding() {
                 return;
             clearRetryLadder(video);
             if (video === forwardVideo) {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
+                mediaActions.markDominoPrepared("forward");
             }
             else {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
+                mediaActions.markDominoPrepared("reverse");
             }
         };
         const warmVideo = (video: HTMLVideoElement) => {
@@ -1314,13 +1312,11 @@ export function TascLanding() {
         const handleForwardPrepared = () => markPrepared(forwardVideo);
         const handleReversePrepared = () => markPrepared(reverseVideo);
         const handleForwardError = () => {
-            setDominoForwardPrepared(false);
-            setDominoForwardFallback(true);
+            mediaActions.markDominoFallback("forward");
             scheduleColdMediaRetry(forwardVideo);
         };
         const handleReverseError = () => {
-            setDominoReversePrepared(false);
-            setDominoReverseFallback(true);
+            mediaActions.markDominoFallback("reverse");
             scheduleColdMediaRetry(reverseVideo);
         };
         const reportSourceError = (direction: "forward" | "reverse") => {
@@ -1370,7 +1366,7 @@ export function TascLanding() {
             reverseVideo.removeEventListener("error", handleReverseError, true);
             window.removeEventListener("pageshow", handlePageShow);
         };
-    }, [dominoMediaArmed, dominoReverseMediaArmed, dominoTransportKey]);
+    }, [dominoMediaArmed, dominoReverseMediaArmed, dominoTransportKey, mediaActions]);
     useEffect(() => {
         if (!motionAllowed || !heroVideoEligible) {
             return;
@@ -1423,7 +1419,7 @@ export function TascLanding() {
             readyReleased = true;
             stopChecks();
             rootRef.current?.removeAttribute("data-hero-video-poster-fallback");
-            setHeroVideoState("ready");
+            mediaActions.markHeroPlaybackReady();
         };
         const fallBackToPoster = () => {
             if (cancelled) {
@@ -1433,7 +1429,7 @@ export function TascLanding() {
             readyReleased = false;
             stopChecks();
             video.pause();
-            setHeroVideoState("fallback");
+            mediaActions.markHeroPlaybackFallback();
         };
         const requestWarmFrame = () => {
             if (cancelled ||
@@ -1496,21 +1492,20 @@ export function TascLanding() {
             video.removeEventListener("error", fallBackToPoster);
             stopChecks();
         };
-    }, [heroVideoEligible, motionAllowed]);
+    }, [heroVideoEligible, mediaActions, motionAllowed]);
     const handleAnchorNavigate = useCallback((href: string, options?: { replaceHistory?: boolean }) => {
         const replaceHistory = options?.replaceHistory !== false;
         if (href === "#services") {
-            setServicesMediaArmed(true);
-            setServicesStopPostersArmed(true);
+            mediaActions.armServices();
         }
         if (VISION_LOGO_DEEP_LINKS.has(href))
-            setVisionLogoArmed(true);
+            mediaActions.armVisionLogo();
         if (href === "#datum")
-            setDatumMediaArmed(true);
+            mediaActions.armDatum();
         if (href === "#brief")
-            setDominoMediaArmed(true);
+            mediaActions.armDomino();
         if (href === "#process" || href === "#contact")
-            setProcessMapArmed(true);
+            mediaActions.armProcessMap();
         if (!motionAllowed) {
             const target = href === "#top"
                 ? document.documentElement
@@ -1687,7 +1682,7 @@ export function TascLanding() {
         }
         const resolveTargetTop = () => target.getBoundingClientRect().top + window.scrollY + headerOffset;
         scrollToPosition(resolveTargetTop(), resolveTargetTop);
-    }, [motionAllowed]);
+    }, [mediaActions, motionAllowed]);
     useLayoutEffect(() => {
         const root = rootRef.current;
         const clientsSection = root?.querySelector<HTMLElement>(".figma-clients-section");
@@ -1843,6 +1838,7 @@ export function TascLanding() {
         let servicesRunToken = 0;
         let servicesActive = false;
         let servicesReleasing = false;
+        let servicesStoryInput: ServicesStoryInputRuntime | null = null;
         const lockClientsServicesHandoffAtServices = () => {
             const handoff = clientsServicesHandoff;
             const trigger = handoff?.scrollTrigger;
@@ -1858,18 +1854,11 @@ export function TascLanding() {
                 gsap.set(servicesMediaVisuals, { autoAlpha: 1 });
         };
         let servicesPhase: "idle" | "preparing" | "playing" | "waiting" | "releasing" | "reverse" = "idle";
-        let servicesInputRegistration: MotionInputRegistration | null = null;
         let servicesEntryDirection: 1 | -1 = 1;
         let servicesLockY = 0;
-        let servicesGestureTotal = 0;
         let servicesGateUntil = 0;
         let servicesEntryInputIgnoreUntil = 0;
-        let servicesLastBlockedInputAt = 0;
-        let servicesBlockedDirection: 1 | -1 | 0 = 0;
         let servicesTransitionDirection: 1 | -1 | 0 = 0;
-        let servicesPendingDirection: 1 | -1 | 0 = 0;
-        let servicesPendingMagnitude = 0;
-        let servicesPendingTimer = 0;
         let servicesPortionDirection: 1 | -1 | 0 = 0;
         let servicesLastPortionDirection: 1 | -1 | 0 = 0;
         let documentScrollY = window.scrollY;
@@ -1897,10 +1886,6 @@ export function TascLanding() {
         let servicesMediaRetryFailures = 0;
         let servicesMediaRetryStartedAt = 0;
         let servicesOwnsLenisLock = false;
-        let touchY: number | null = null;
-        let servicesTouchGestureActive = false;
-        let servicesIgnoreCurrentTouch = false;
-        let servicesTouchStartedAtSettledStop = false;
         let dominoRunToken = 0;
         let dominoInputLocked = false;
         let dominoCompleted = false;
@@ -2328,8 +2313,8 @@ export function TascLanding() {
                     finish(false);
                     return;
                 }
-                if (media === servicesVideo && servicesInputRegistration?.isOwner())
-                    servicesInputRegistration.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
+                if (media === servicesVideo && servicesStoryInput?.isOwner())
+                    servicesStoryInput.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
                 if (hasReachedSegmentTarget()) {
                     video.dataset.segmentState = "ready";
                     finish(true, snapToFinalFrame);
@@ -2724,9 +2709,9 @@ export function TascLanding() {
             root.dataset.servicesPhase = phase;
             const progress = `${phase}:${Math.max(0, servicesStage + 1)}`;
             if (phase === "preparing" || phase === "playing" || phase === "releasing" || phase === "reverse")
-                servicesInputRegistration?.claim(progress);
+                servicesStoryInput?.claim(progress);
             else
-                servicesInputRegistration?.release(phase === "waiting" ? "completed" : "out-of-range");
+                servicesStoryInput?.release(phase === "waiting" ? "completed" : "out-of-range");
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
@@ -2744,24 +2729,10 @@ export function TascLanding() {
             }
             setMotionInputState();
         };
-        const clearServicesPendingIntent = () => {
-            window.clearTimeout(servicesPendingTimer);
-            servicesPendingTimer = 0;
-            servicesPendingDirection = 0;
-            servicesPendingMagnitude = 0;
-        };
-        const queueServicesIntent = (direction: 1 | -1, gestureMagnitude = 160, threshold = 18, allowTransitionDirection = false) => {
-            if (servicesTransitionDirection === 0)
-                return;
-            if (direction === servicesTransitionDirection && !allowTransitionDirection)
-                return;
-            if (servicesPendingDirection !== 0 && servicesPendingDirection !== direction) {
-                servicesPendingMagnitude = 0;
-            }
-            servicesPendingMagnitude += Math.abs(gestureMagnitude);
-            if (servicesPendingMagnitude >= threshold)
-                servicesPendingDirection = direction;
-        };
+        const clearServicesPendingIntent = () => servicesStoryInput?.clearPendingIntent();
+        const flushServicesPendingIntent = () => servicesStoryInput?.flushPendingIntent();
+        const resetServicesBlockedInput = () => servicesStoryInput?.resetBlockedInput();
+        const resetServicesGestureTotal = () => servicesStoryInput?.resetGestureTotal();
         const stopServicesTextTimeline = () => {
             window.clearTimeout(servicesTextWatchdog);
             servicesTextWatchdog = 0;
@@ -2880,7 +2851,7 @@ export function TascLanding() {
             const from = nextStage === 0 ? 0 : SERVICES_KEYFRAME_STOPS[nextStage - 1];
             const to = SERVICES_KEYFRAME_STOPS[nextStage];
             const segmentDuration = (to - from) / SERVICES_PLAYBACK_RATE;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesPhase("preparing");
             setMotionInputState();
@@ -3022,9 +2993,8 @@ export function TascLanding() {
             servicesActive = false;
             servicesReleasing = true;
             servicesTransitionDirection = 0;
-            servicesGestureTotal = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
+            resetServicesGestureTotal();
+            resetServicesBlockedInput();
             clearServicesPendingIntent();
             setServicesPhase("releasing");
             delete root.dataset.servicesPinned;
@@ -3065,7 +3035,7 @@ export function TascLanding() {
             const token = ++servicesRunToken;
             beginServicesMediaAttempt("forward:exit");
             setServicesPhase("releasing");
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             const exitMediaReady = root.dataset.servicesMediaFallback === "true"
                 ? false
                 : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
@@ -3173,8 +3143,7 @@ export function TascLanding() {
             servicesReleasing = false;
             servicesTransitionDirection = 0;
             servicesGateUntil = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
+            resetServicesBlockedInput();
             clearServicesPendingIntent();
             resetServicesPortionState();
             setServicesPhase("idle");
@@ -3211,7 +3180,7 @@ export function TascLanding() {
             root.dataset.servicesEntryDirection = "forward";
             root.dataset.servicesEntrySource = entrySource;
             servicesLockY = lockY;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_ENTRY_GATE_MS;
             servicesTransitionDirection = 1;
             clearServicesPendingIntent();
@@ -3348,10 +3317,10 @@ export function TascLanding() {
             root.dataset.servicesEntryDirection = "reverse";
             root.dataset.servicesEntrySource = entrySource;
             servicesLockY = lockY;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
             servicesEntryInputIgnoreUntil = performance.now() + 320;
-            servicesIgnoreCurrentTouch = servicesTouchGestureActive;
+            servicesStoryInput?.ignoreCurrentTouchGesture();
             servicesTransitionDirection = -1;
             clearServicesPendingIntent();
             setServicesEntryPoster(false);
@@ -3491,7 +3460,7 @@ export function TascLanding() {
             root.dataset.servicesReverseTransport = "continuous";
             const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
             servicesTransitionDirection = -1;
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesStaticStop(servicesStage);
             delete root.dataset.servicesMediaDecoded;
@@ -3662,10 +3631,10 @@ export function TascLanding() {
         };
         const requestServicesDirection = (direction: 1 | -1) => {
             if (!servicesActive || servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
-                servicesGestureTotal = 0;
+                resetServicesGestureTotal();
                 return;
             }
-            servicesGestureTotal = 0;
+            resetServicesGestureTotal();
             if (direction < 0) {
                 if (servicesStage > 0) {
                     void runServicesReverseStage(servicesStage - 1);
@@ -3681,276 +3650,30 @@ export function TascLanding() {
                 void releaseServicesForward();
             }
         };
-        function flushServicesPendingIntent() {
-            window.clearTimeout(servicesPendingTimer);
-            servicesPendingTimer = 0;
-            if (!servicesActive || servicesPhase !== "waiting" || servicesPendingDirection === 0)
-                return;
-            const delay = Math.max(0, servicesGateUntil - performance.now());
-            servicesPendingTimer = window.setTimeout(() => {
-                servicesPendingTimer = 0;
-                if (!servicesActive || servicesPhase !== "waiting" || servicesPendingDirection === 0)
-                    return;
-                const direction = servicesPendingDirection;
-                servicesPendingDirection = 0;
-                servicesPendingMagnitude = 0;
-                servicesBlockedDirection = 0;
-                servicesLastBlockedInputAt = 0;
-                requestServicesDirection(direction);
-            }, delay);
-        }
-        const isEditableTarget = (target: EventTarget | null) => target instanceof Element && Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
-        const normalizeWheelDelta = (event: WheelEvent) => {
-            if (event.deltaMode === WheelEvent.DOM_DELTA_LINE)
-                return event.deltaY * 16;
-            if (event.deltaMode === WheelEvent.DOM_DELTA_PAGE)
-                return event.deltaY * window.innerHeight;
-            return event.deltaY;
-        };
-        const handleWheelCapture = (event: WheelEvent) => {
-            if (event.ctrlKey)
-                return;
-            if (isMacRuntime() && servicesActive && !servicesReleasing && servicesTrigger && !servicesTrigger.isActive) {
-                releaseServicesForNavigation();
-                return;
-            }
-            if (servicesReleasing) {
-                event.preventDefault();
-                return;
-            }
-            if (dominoInputLocked) {
-                event.preventDefault();
-                return;
-            }
-            if (!servicesActive)
-                return;
-            event.preventDefault();
-            const now = performance.now();
-            const delta = normalizeWheelDelta(event);
-            if (Math.abs(delta) < 0.01)
-                return;
-            const direction = delta >= 0 ? 1 : -1;
-            const gestureThreshold = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 12 : 18;
-            if (now < servicesEntryInputIgnoreUntil) {
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (servicesPhase !== "waiting") {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), gestureThreshold);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                return;
-            }
-            if (now < servicesGateUntil) {
-                servicesGestureTotal = 0;
-                const deliberatePostStageGesture = Math.abs(delta) >= 72;
-                queueServicesIntent(direction, Math.abs(delta), gestureThreshold, deliberatePostStageGesture);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                flushServicesPendingIntent();
-                return;
-            }
-            if (direction === servicesBlockedDirection &&
-                now - servicesLastBlockedInputAt < SERVICES_INPUT_QUIET_MS) {
-                servicesGestureTotal = 0;
-                return;
-            }
-            servicesBlockedDirection = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesGestureTotal += delta;
-            if (Math.abs(servicesGestureTotal) >= gestureThreshold) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
-            }
-        };
-        const handleTouchStart = (event: TouchEvent) => {
-            servicesTouchGestureActive = true;
-            if (performance.now() < servicesEntryInputIgnoreUntil)
-                servicesIgnoreCurrentTouch = true;
-            servicesTouchStartedAtSettledStop =
-                servicesActive && !servicesReleasing && servicesPhase === "waiting";
-            if (servicesActive && !servicesReleasing) {
-                servicesGestureTotal = 0;
-                servicesLastBlockedInputAt = 0;
-                servicesBlockedDirection = 0;
-            }
-            touchY = (servicesActive || servicesReleasing || dominoInputLocked) && event.touches[0]
-                ? event.touches[0].clientY
-                : null;
-        };
-        const handleTouchMove = (event: TouchEvent) => {
-            if (servicesReleasing) {
-                if (event.cancelable)
-                    event.preventDefault();
-                return;
-            }
-            if (dominoInputLocked) {
-                if (event.cancelable)
-                    event.preventDefault();
-                return;
-            }
-            if (!servicesActive || !event.touches[0])
-                return;
-            const nextY = event.touches[0].clientY;
-            if (servicesIgnoreCurrentTouch) {
-                if (event.cancelable)
-                    event.preventDefault();
-                touchY = nextY;
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (touchY === null) {
-                if (event.cancelable)
-                    event.preventDefault();
-                touchY = nextY;
-                correctNativeScroll(servicesLockY);
-                return;
-            }
-            const delta = touchY - nextY;
-            touchY = nextY;
-            if (event.cancelable)
-                event.preventDefault();
-            const now = performance.now();
-            const direction = delta >= 0 ? 1 : -1;
-            if (now < servicesEntryInputIgnoreUntil) {
-                servicesGestureTotal = 0;
-                clearServicesPendingIntent();
-                return;
-            }
-            if (servicesPhase !== "waiting") {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), 10);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                return;
-            }
-            if (now < servicesGateUntil) {
-                servicesGestureTotal = 0;
-                queueServicesIntent(direction, Math.abs(delta), 10, servicesTouchStartedAtSettledStop);
-                servicesLastBlockedInputAt = now;
-                servicesBlockedDirection = direction;
-                flushServicesPendingIntent();
-                return;
-            }
-            if (direction === servicesBlockedDirection &&
-                now - servicesLastBlockedInputAt < SERVICES_INPUT_QUIET_MS) {
-                servicesGestureTotal = 0;
-                return;
-            }
-            servicesBlockedDirection = 0;
-            servicesLastBlockedInputAt = 0;
-            servicesGestureTotal += delta;
-            if (Math.abs(servicesGestureTotal) >= 10) {
-                requestServicesDirection(servicesGestureTotal > 0 ? 1 : -1);
-            }
-        };
-        const handleTouchEnd = () => {
-            const ignoredEntryGesture = servicesIgnoreCurrentTouch;
-            servicesTouchGestureActive = false;
-            servicesIgnoreCurrentTouch = false;
-            touchY = null;
-            servicesGestureTotal = 0;
-            if (!ignoredEntryGesture &&
-                servicesTouchStartedAtSettledStop &&
-                servicesActive &&
-                servicesPhase === "waiting" &&
-                servicesPendingDirection !== 0) {
-                flushServicesPendingIntent();
-            }
-            else {
-                clearServicesPendingIntent();
-            }
-            servicesTouchStartedAtSettledStop = false;
-            servicesLastBlockedInputAt = 0;
-            servicesBlockedDirection = 0;
-        };
-        const handleKeydownCapture = (event: KeyboardEvent) => {
-            const forward = event.key === "ArrowDown" || event.key === "PageDown" || event.key === "End" || (event.key === " " && !event.shiftKey);
-            const backward = event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home" || (event.key === " " && event.shiftKey);
-            if (!forward && !backward)
-                return;
-            if (isEditableTarget(event.target))
-                return;
-            if (servicesReleasing) {
-                event.preventDefault();
-                return;
-            }
-            if (servicesActive) {
-                event.preventDefault();
-                if (!event.repeat) {
-                    const direction = forward ? 1 : -1;
-                    if (servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
-                        queueServicesIntent(direction, 160, 18, servicesPhase === "waiting");
-                        if (servicesPhase === "waiting")
-                            flushServicesPendingIntent();
-                    }
-                    else {
-                        requestServicesDirection(direction);
-                    }
-                }
-                return;
-            }
-            if (dominoInputLocked) {
-                event.preventDefault();
-            }
-        };
-        const maintainPinnedScroll = () => {
-            const targetY = servicesActive && !servicesReleasing
-                ? servicesLockY
-                : dominoInputLocked
-                    ? dominoLockY
-                    : null;
-            if (targetY !== null)
-                correctNativeScroll(targetY);
-        };
         if (useLegacyServicesFlow) {
-            servicesInputRegistration = registerMotionInputStory({
-                id: "services",
-                priority: 100,
+            servicesStoryInput = createServicesStoryInput({
                 root,
-                canClaim: () => !disposed && (servicesActive || servicesReleasing),
-                observe: ({ kind }) => {
-                    if (kind === "touchstart")
-                        servicesTouchGestureActive = true;
-                    else if (kind === "touchend" || kind === "touchcancel")
-                        servicesTouchGestureActive = false;
-                },
-                onGesture: ({ event, kind }) => {
-                    if (kind === "wheel")
-                        handleWheelCapture(event as WheelEvent);
-                    else if (kind === "touchstart")
-                        handleTouchStart(event as TouchEvent);
-                    else if (kind === "touchmove")
-                        handleTouchMove(event as TouchEvent);
-                    else if (kind === "touchend" || kind === "touchcancel")
-                        handleTouchEnd();
-                    else if (kind === "keydown")
-                        handleKeydownCapture(event as KeyboardEvent);
-                    else if (kind === "scroll")
-                        maintainPinnedScroll();
-                    const releaseWaitingGesture = servicesPhase === "waiting" &&
-                        (kind === "wheel" || kind === "keydown" || kind === "touchend" || kind === "touchcancel");
-                    return {
-                        handled: event.defaultPrevented,
-                        progress: servicesPhase === "waiting"
-                            ? undefined
-                            : `${servicesPhase}:${Math.max(0, servicesStage + 1)}`,
-                        release: releaseWaitingGesture,
-                    };
-                },
-                release: (reason) => {
-                    servicesTouchGestureActive = false;
-                    if ((reason === "watchdog" || reason === "superseded") &&
-                        (servicesActive || servicesReleasing || servicesOwnsLenisLock)) {
-                        releaseServicesForNavigation();
-                    }
-                },
+                isDisposed: () => disposed,
+                isMacRuntime,
+                isDominoInputLocked: () => dominoInputLocked,
+                isServicesActive: () => servicesActive,
+                isServicesReleasing: () => servicesReleasing,
+                servicesOwnsLenisLock: () => servicesOwnsLenisLock,
+                getServicesPhase: () => servicesPhase,
+                getServicesStage: () => servicesStage,
+                getServicesGateUntil: () => servicesGateUntil,
+                getServicesEntryInputIgnoreUntil: () => servicesEntryInputIgnoreUntil,
+                getServicesTransitionDirection: () => servicesTransitionDirection,
+                getServicesLockY: () => servicesLockY,
+                getDominoLockY: () => dominoLockY,
+                getServicesTriggerActive: () => servicesTrigger ? servicesTrigger.isActive : null,
+                correctNativeScroll,
+                releaseServicesForNavigation,
+                requestServicesDirection,
             });
             cleanupCallbacks.push(() => {
-                servicesInputRegistration?.unregister();
-                servicesInputRegistration = null;
+                servicesStoryInput?.dispose();
+                servicesStoryInput = null;
             });
         }
         const lensMotion = compactMotion
@@ -4496,8 +4219,7 @@ export function TascLanding() {
                     servicesReleasing = false;
                     servicesTransitionDirection = 0;
                     servicesGateUntil = 0;
-                    servicesLastBlockedInputAt = 0;
-                    servicesBlockedDirection = 0;
+                    resetServicesBlockedInput();
                     clearServicesPendingIntent();
                     setServicesPhase("idle");
                     showServicesIdlePreview();
@@ -4675,8 +4397,7 @@ export function TascLanding() {
                     mediaRunCancels.get(servicesVideo)?.();
                 stopServicesTextTimeline();
                 clearServicesPendingIntent();
-                servicesLastBlockedInputAt = 0;
-                servicesBlockedDirection = 0;
+                resetServicesBlockedInput();
                 pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[targetStage]);
                 setServicesPanel(targetStage);
                 servicesGateUntil = 0;
@@ -5779,329 +5500,81 @@ export function TascLanding() {
           <span className="first-two-transition-art"/>
         </div>
 
-        <section id="main-content" className="hero-motion" tabIndex={-1} aria-label="TASC hero and mission animation">
-        <div className="hero-grid figma-hero-grid" id="top">
-          <div className="hero-copy figma-hero-copy">
-            <h1 className="figma-hero-title" aria-label={`${figmaHeroCopy.lead} ${figmaHeroCopy.accent}`}>
-              <span className="figma-hero-title-lead" aria-hidden="true">
-                <span className="figma-hero-title-lead-desktop">{figmaHeroCopy.lead}</span>
-                <span className="figma-hero-title-lead-mobile">
-                  <span>Delivering what</span>
-                  <span>matters.</span>
-                </span>
-              </span>
-              <span className="figma-hero-title-accent" aria-hidden="true">{figmaHeroCopy.accent}</span>
-            </h1>
-            <p className="figma-hero-descriptor hero-descriptor hero-subcopy">{figmaHeroCopy.descriptor}</p>
-            <div className="figma-hero-actions">
-              <GlassCta className="figma-cta-primary" href="#brief" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#brief");
-        }}>
-                <span>{journeyCtaLabel}</span>
-                <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-              </GlassCta>
-              <a className="figma-cta figma-cta-secondary figma-cta-services" href="#services" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#services");
-        }}>
-                <span className="figma-cta-content">Move to services</span>
-              </a>
-            </div>
-          </div>
-
-          <div className={`lens-stage lens-stage-${motionAllowed ? heroVideoState : "fallback"}`} data-animated-fallback-ready={heroFallbackAnimationReady ? "true" : "false"} aria-label="Looped glass lens animation">
-            <span className="lens-poster" aria-hidden="true"/>
-            {motionAllowed && heroFallbackAnimationEligible ? (<PackedAlphaVideo className="lens-safari-animation" compositeActive={packedAlphaOwner === "hero"} videoClassName="packed-alpha-video-source" src={mobilePerformanceMode ? HERO_LENS_SAFARI_MOBILE_PACKED_MP4 : HERO_LENS_SAFARI_PACKED_MP4} outputWidth={mobilePerformanceMode
-                ? RUNTIME_MEDIA.hero.webkitPacked.mobileOutput.width
-                : RUNTIME_MEDIA.hero.webkitPacked.desktopOutput.width} outputHeight={mobilePerformanceMode
-                ? RUNTIME_MEDIA.hero.webkitPacked.mobileOutput.height
-                : RUNTIME_MEDIA.hero.webkitPacked.desktopOutput.height} autoPlay loop preload="auto" pauseWhenOffscreen maxFps={lightweightMediaMode ? 30 : 60} onReady={() => setHeroFallbackAnimationReady(true)} onError={() => {
-                setHeroFallbackAnimationReady(false);
-                setHeroFallbackAnimationEligible(false);
-            }}/>) : null}
-            {motionAllowed && heroVideoEligible ? (<video className="lens-video" loop muted playsInline preload="auto">
-                <source src={HERO_LENS_VIDEO_MOBILE_WEBM} type="video/webm" media="(max-width: 760px)"/>
-                <source src={HERO_LENS_VIDEO_WEBM} type="video/webm"/>
-              </video>) : null}
-          </div>
-
-          <div className="mission-frame figma-mission-frame" aria-label="TASC mission">
-            <div className="mission-story-positioner">
-            <article className="mission-story">
-              <p className="mission-statement" aria-label={figmaMissionCopy.statement}>
-                {figmaMissionLines.statement.map((line) => (<span className="mission-copy-line" aria-hidden="true" key={line}>{line}</span>))}
-              </p>
-              <div className="mission-main-block">
-                <span className="mission-main-rule" aria-hidden="true"/>
-                <p aria-label={figmaMissionCopy.main}>
-                  <span className="mission-main-copy mission-main-copy-desktop" aria-hidden="true">
-                    {figmaMissionLines.main.map((line) => (<span className="mission-copy-line" key={line}>{line}</span>))}
-                  </span>
-                  <span className="mission-main-copy mission-main-copy-mobile" aria-hidden="true">
-                    {figmaMissionLines.mainMobile.map((line) => (<span className="mission-copy-line" key={line}>{line}</span>))}
-                  </span>
-                </p>
-              </div>
-              <p className="mission-support" aria-label={figmaMissionCopy.support}>
-                {figmaMissionLines.support.map((line) => (<span className="mission-copy-line" aria-hidden="true" key={line}>{line}</span>))}
-              </p>
-              <GlassCta className="figma-cta-primary mission-story-cta" href="#brief" onClick={(event) => {
-            event.preventDefault();
-            handleAnchorNavigate("#brief");
-        }}>
-                <span className="mission-cta-label mission-cta-label-desktop">{journeyCtaLabel}</span>
-                <span className="mission-cta-label mission-cta-label-mobile">{journeyCtaLabel}</span>
-                <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-              </GlassCta>
-            </article>
-            </div>
-          </div>
-        </div>
-
-        <div className="second-stage" aria-label="Our Vision reveal">
-          <div className="second-copy vision-reveal-copy">
-            <p className="vision-reveal-label">{secondRevealCopy.label}</p>
-            <p className="vision-reveal-body">{secondRevealCopy.body}</p>
-          </div>
-          <div className="second-media vision-logo-media" aria-label="TASC Strategic Communications Group logo">
-            <Image className="vision-logo-image" src={visionLogoArmed ? "/media/vision-logo-glass-20260710.webp" : VISION_LOGO_PLACEHOLDER} alt="TASC Strategic Communications Group" width={3430} height={2160} sizes="(max-width: 760px) 112vw, 78vw" loading={visionLogoArmed ? "eager" : "lazy"} fetchPriority={visionLogoArmed ? "high" : "low"} unoptimized={!visionLogoArmed}/>
-          </div>
-        </div>
-        </section>
+        <HeroSection
+          heroFallbackAnimationEligible={heroFallbackAnimationEligible}
+          heroFallbackAnimationReady={heroFallbackAnimationReady}
+          heroVideoEligible={heroVideoEligible}
+          heroVideoState={heroVideoState}
+          lightweightMediaMode={lightweightMediaMode}
+          mobilePerformanceMode={mobilePerformanceMode}
+          motionAllowed={motionAllowed}
+          onHeroFallbackAnimationEligibleChange={setHeroFallbackAnimationEligible}
+          onHeroFallbackAnimationReadyChange={setHeroFallbackAnimationReady}
+          onNavigate={handleAnchorNavigate}
+          packedAlphaOwner={packedAlphaOwner}
+          visionLogoArmed={visionLogoArmed}
+        />
 
         <ClientsSection onNavigate={handleAnchorNavigate}/>
 
-        <div className="services-story-overlap-shell">
-          <section className="services-story-section services-section glass-editorial-section" id="services" aria-label="TASC services scroll story">
-        <div className="services-story-scene">
-          <div className="services-galaxy-stage" data-galaxy-visibility-root aria-hidden="true">
-            <div className="services-star-reveal-layer">
-              <span className="static-starfield-fallback static-starfield-services"/>
-            </div>
-          </div>
-          <div className="services-story-copy-layer">
-            {servicesStoryCopy.map((service, index) => (<article className={`services-story-panel services-story-card services-story-card-${index + 1}`} data-layout={service.layout} key={service.category}>
-                <div className="services-story-heading">
-                  <p>{service.category}</p>
-                  <h2>
-                    {service.titleLines.map((line) => (<span key={line}>{line}</span>))}
-                  </h2>
-                </div>
-                <div className="services-story-lead-block">
-                  <span className="services-story-rule" aria-hidden="true"/>
-                  <p className="services-story-lead">
-                    <ServiceTextLines lines={service.leadLines} highlights={service.leadHighlights}/>
-                  </p>
-                </div>
-                <p className="services-story-body">
-                  <ServiceTextLines lines={service.bodyLines} highlights={service.bodyHighlights}/>
-                </p>
-                <GlassCta className="figma-cta-primary services-story-cta" href="#brief" onClick={(event) => {
-                event.preventDefault();
-                handleAnchorNavigate("#brief");
-            }}>
-                  <span>{journeyCtaLabel}</span>
-                  <span className="figma-cta-arrow" aria-hidden="true">-&gt;</span>
-                </GlassCta>
-              </article>))}
-          </div>
-
-          <div className="services-story-video-wrap" aria-hidden="true">
-            <span className="services-story-entry-poster" style={servicesMediaArmed ? { backgroundImage: `url("${SERVICES_SEQUENCE_POSTER}")` } : undefined}/>
-            <span className="services-story-stop-posters">
-              {SERVICES_STOP_POSTERS.map((poster, index) => (<span className="services-story-stop-poster" data-services-stop={index + 1} key={poster} style={servicesStopPostersArmed ? { backgroundImage: `url("${poster}")` } : undefined}/>))}
-            </span>
-            {motionAllowed && servicesPackedTransportMode ? (<PackedAlphaVideo key={servicesTransportKey} ref={servicesVideoRef} armed={servicesMediaArmed} compositeActive={packedAlphaOwner === "services"} className="services-story-video services-story-video-packed" videoClassName="packed-alpha-video-source" src={servicesVideoSource} outputWidth={lightweightMediaMode
-                ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.width
-                : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.width} outputHeight={lightweightMediaMode
-                ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.height
-                : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.height} maxFps={RUNTIME_MEDIA.services.fps} preload={servicesMediaArmed ? "auto" : "none"} tabIndex={-1} onLoadedMetadata={() => {
-                rootRef.current?.setAttribute("data-services-video-format", "packed-alpha-h264");
-            }} onFirstFrame={() => {
-                rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
-                recoverServicesMedia();
-            }} onReady={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : motionAllowed ? (<video key={servicesTransportKey} ref={servicesVideoRef} className="services-story-video" data-armed={servicesMediaArmed ? "true" : "false"} src={servicesMediaArmed ? servicesVideoSource : undefined} muted playsInline preload={servicesMediaArmed ? "auto" : "none"} poster={servicesMediaArmed ? SERVICES_SEQUENCE_POSTER : undefined} disablePictureInPicture tabIndex={-1} onLoadedMetadata={() => {
-                rootRef.current?.setAttribute("data-services-video-format", "native-alpha-webm");
-            }} onLoadedData={() => {
-                rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
-                recoverServicesMedia();
-            }} onCanPlay={recoverServicesMedia} onError={activateServicesMediaFallback}/>) : (<span className="services-story-poster" style={servicesMediaArmed ? { backgroundImage: `url("${SERVICES_SEQUENCE_POSTER}")` } : undefined}/>)}
-          </div>
-          </div>
-          </section>
-        </div>
+        <ServicesSection
+          activateServicesMediaFallback={activateServicesMediaFallback}
+          lightweightMediaMode={lightweightMediaMode}
+          motionAllowed={motionAllowed}
+          onNavigate={handleAnchorNavigate}
+          onNativeLoadedMetadata={() => {
+            rootRef.current?.setAttribute("data-services-video-format", "native-alpha-webm");
+          }}
+          onPackedLoadedMetadata={() => {
+            rootRef.current?.setAttribute("data-services-video-format", "packed-alpha-h264");
+          }}
+          onServicesFrameReady={() => {
+            rootRef.current?.setAttribute("data-services-start-frame-decoded", "true");
+            recoverServicesMedia();
+          }}
+          packedAlphaOwner={packedAlphaOwner}
+          recoverServicesMedia={recoverServicesMedia}
+          servicesMediaArmed={servicesMediaArmed}
+          servicesPackedTransportMode={servicesPackedTransportMode}
+          servicesStopPostersArmed={servicesStopPostersArmed}
+          servicesTransportKey={servicesTransportKey}
+          servicesVideoRef={servicesVideoRef}
+          servicesVideoSource={servicesVideoSource}
+        />
       </div>
 
       <HowWeWorkSection />
 
-      <section className="datum-motion-section glass-editorial-section" id="datum" aria-label="The Datum">
-        <div className="datum-motion-media" aria-hidden="true">
-          {motionAllowed ? (<VisibilityTriggeredVideo key={datumVideoSource} ref={datumVideoRef} className="datum-motion-video" enabled={datumMediaArmed} hostStateAttribute="data-datum-playback" sources={datumMediaArmed ? [
-                ...(webkitCompatibilityMode || lightweightMediaMode
-                    ? [{ src: datumVideoSource, type: "video/mp4" }]
-                    : []),
-                {
-                    src: lightweightMediaMode ? DATUM_VIDEO_MOBILE_WEBM : DATUM_VIDEO_WEBM,
-                    type: "video/webm",
-                },
-            ] : []} data-armed={datumMediaArmed ? "true" : "false"} poster={datumMediaArmed ? DATUM_VIDEO_POSTER : undefined} preload={datumMediaArmed ? "auto" : "metadata"} threshold={RUNTIME_MEDIA.datum.visibilityRatio} armDelayMs={0} playbackRate={0.85} onLoadedData={() => {
-                setDatumMediaPrepared(true);
-                setDatumMediaFallback(false);
-            }} onError={() => {
-                setDatumMediaPrepared(false);
-                setDatumMediaFallback(true);
-            }}/>) : null}
-        </div>
-
-        <div className="datum-motion-content">
-          <div className="datum-motion-state datum-motion-state-cards stagger-reveal-group">
-            <div className="datum-motion-heading stagger-reveal-item">
-              <h2>The Datum</h2>
-              <p>A Global Media Network. Built by TASC</p>
-            </div>
-
-            <div className="datum-card-stack">
-              {datumCardsCopy.map((card) => (<article className="datum-glass-card stagger-reveal-item" key={card.title}>
-                  <div className="datum-card-top">
-                    <strong>{card.value}</strong>
-                    <span>
-                      {card.label}
-                      <br />
-                      {card.labelSecondLine}
-                    </span>
-                  </div>
-                  <span className="datum-card-rule" aria-hidden="true"/>
-                  <h3>{card.title}</h3>
-                  <p>{card.body}</p>
-                </article>))}
-            </div>
-          </div>
-
-          <div className="datum-motion-state datum-motion-state-waitlist">
-            <p className="datum-waitlist-eyebrow datum-waitlist-segment">{datumWaitlistCopy.eyebrow}</p>
-            <h2>
-              <span className="datum-waitlist-segment">{datumWaitlistCopy.headline}</span>
-              <span className="datum-waitlist-segment">{datumWaitlistCopy.accent}</span>
-            </h2>
-
-            <form className="datum-waitlist-form" data-submit-state={datumLead.state.status} onSubmit={datumLead.submit}>
-              <div className="datum-email-row">
-                <label className="datum-waitlist-segment" htmlFor="datum-email">Your Email</label>
-                <input className="datum-waitlist-segment" id="datum-email" name="email" type="email" placeholder="EXAMPLE@MAIL.COM" autoComplete="email" maxLength={254} onFocus={datumLead.captureFirstInteraction} required/>
-                <label className="lead-honeypot" aria-hidden="true">
-                  Company website
-                  <input name="website" type="text" tabIndex={-1} autoComplete="off"/>
-                </label>
-              </div>
-              <div className="datum-consent-row">
-                <label className="datum-waitlist-segment">
-                  <input name="privacy" type="checkbox" onFocus={datumLead.captureFirstInteraction} required/>
-                  <span>
-                    I agree to the processing of my personal data and accept the{" "}
-                    <a href="/privacy-policy">Privacy Policy</a>.
-                  </span>
-                </label>
-                <button className="datum-submit-button datum-waitlist-segment" type="submit" aria-label="Submit waitlist email" disabled={datumLead.state.status === "submitting"}>
-                  {datumLead.state.status === "submitting" ? "Sending" : "Submit"}
-                  <ArrowRight aria-hidden="true" size={28} strokeWidth={1.25}/>
-                </button>
-              </div>
-              <p className={`lead-form-status is-${datumLead.state.status}`} role={datumLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
-                {datumLead.state.message}
-              </p>
-            </form>
-          </div>
-        </div>
-      </section>
+      <DatumSection
+        datumLead={datumLead}
+        datumMediaArmed={datumMediaArmed}
+        datumVideoRef={datumVideoRef}
+        datumVideoSource={datumVideoSource}
+        lightweightMediaMode={lightweightMediaMode}
+        motionAllowed={motionAllowed}
+        onMediaFallbackChange={setDatumMediaFallback}
+        onMediaPreparedChange={setDatumMediaPrepared}
+        webkitCompatibilityMode={webkitCompatibilityMode}
+      />
 
       <ProcessSection mapArmed={processMapArmed}/>
 
-      <section className="domino-cta-section glass-editorial-section" id="brief" aria-label="One impulse CTA">
-        <div className="domino-scene">
-          <div className="domino-media" aria-label="Autonomous domino animation">
-            {motionAllowed ? (<>
-                <video key={`domino-forward-${dominoTransportKey}`} ref={dominoVideoRef} className="domino-sequence domino-sequence-forward" data-domino-direction="forward" data-armed={dominoMediaArmed ? "true" : "false"} muted playsInline preload={dominoMediaArmed ? "auto" : "metadata"} disablePictureInPicture tabIndex={-1} onLoadedData={() => {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
-            }} onCanPlay={() => {
-                setDominoForwardPrepared(true);
-                setDominoForwardFallback(false);
-            }} onError={() => {
-                setDominoForwardPrepared(false);
-                setDominoForwardFallback(true);
-            }}>
-                {dominoMediaArmed ? (<>
-                    {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_MP4 : DOMINO_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("forward")}/>) : null}
-                    <source src={lightweightMediaMode ? DOMINO_VIDEO_MOBILE_WEBM : DOMINO_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("forward")}/>
-                  </>) : null}
-                </video>
-                <video key={`domino-reverse-${dominoTransportKey}`} ref={dominoReverseVideoRef} className="domino-sequence domino-sequence-reverse" data-domino-direction="reverse" data-armed={dominoReverseMediaArmed ? "true" : "false"} muted playsInline preload={dominoReverseMediaArmed ? "auto" : "metadata"} disablePictureInPicture tabIndex={-1} onLoadedData={() => {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
-            }} onCanPlay={() => {
-                setDominoReversePrepared(true);
-                setDominoReverseFallback(false);
-            }} onError={() => {
-                setDominoReversePrepared(false);
-                setDominoReverseFallback(true);
-            }}>
-                  {dominoReverseMediaArmed ? (<>
-                      {webkitCompatibilityMode || lightweightMediaMode ? (<source src={lightweightMediaMode
-                        ? DOMINO_REVERSE_VIDEO_MOBILE_MP4
-                        : DOMINO_REVERSE_VIDEO_MP4} type="video/mp4" onError={() => reportDominoSourceError("reverse")}/>) : null}
-                      <source src={lightweightMediaMode
-                    ? DOMINO_REVERSE_VIDEO_MOBILE_WEBM
-                    : DOMINO_REVERSE_VIDEO_WEBM} type="video/webm" onError={() => reportDominoSourceError("reverse")}/>
-                    </>) : null}
-                </video>
-              </>) : null}
-            </div>
-          <h2 className="domino-video-title" aria-live="polite">
-            <span>{finalImpulseCopy.title}</span>
-            <span>{finalImpulseCopy.accent}</span>
-          </h2>
-        </div>
-
-        <div className="domino-form-stage">
-          <div className="domino-copy domino-impulse-copy stagger-reveal-group">
-            <p className="domino-body domino-body-primary stagger-reveal-item">
-              {finalImpulseCopy.bodyPrimary}
-            </p>
-            <p className="domino-body domino-body-signal stagger-reveal-item">
-              {finalImpulseCopy.bodySignal}
-            </p>
-            <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={dominoLead.submit}>
-              <div className="domino-impulse-row stagger-reveal-item">
-                <label className="sr-only" htmlFor="domino-email">
-                  Email
-                </label>
-                <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" required maxLength={254} autoComplete="email" onFocus={dominoLead.captureFirstInteraction}/>
-                <button type="submit" disabled={dominoLead.state.status === "submitting"}>
-                  {dominoLead.state.status === "submitting" ? "Sending" : finalImpulseCopy.action}
-                  <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5}/>
-                </button>
-              </div>
-              <label className="domino-privacy-row stagger-reveal-item">
-                <input name="privacy" type="checkbox" onFocus={dominoLead.captureFirstInteraction} required/>
-                <span className="domino-privacy-desktop">
-                  I agree to the processing of my email under the <a href="/privacy-policy">Privacy Policy</a>.
-                </span>
-                <span className="domino-privacy-mobile">
-                  By clicking you agree to our <a href="/privacy-policy">Policy</a>
-                </span>
-              </label>
-              <label className="lead-honeypot" aria-hidden="true">
-                Company website
-                <input name="website" type="text" tabIndex={-1} autoComplete="off"/>
-              </label>
-              <p className={`lead-form-status stagger-reveal-item is-${dominoLead.state.status}`} role={dominoLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
-                {dominoLead.state.message}
-              </p>
-            </form>
-          </div>
-        </div>
-      </section>
+      <DominoSection
+        dominoLead={dominoLead}
+        dominoMediaArmed={dominoMediaArmed}
+        dominoReverseMediaArmed={dominoReverseMediaArmed}
+        dominoReverseVideoRef={dominoReverseVideoRef}
+        dominoTransportKey={dominoTransportKey}
+        dominoVideoRef={dominoVideoRef}
+        lightweightMediaMode={lightweightMediaMode}
+        motionAllowed={motionAllowed}
+        onForwardFallbackChange={setDominoForwardFallback}
+        onForwardPreparedChange={setDominoForwardPrepared}
+        onReverseFallbackChange={setDominoReverseFallback}
+        onReversePreparedChange={setDominoReversePrepared}
+        reportDominoSourceError={reportDominoSourceError}
+        webkitCompatibilityMode={webkitCompatibilityMode}
+      />
 
       <SiteFooter onNavigate={handleAnchorNavigate}/>
     </main>);

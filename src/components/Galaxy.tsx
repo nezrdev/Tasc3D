@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef, useEffect, useImperativeHandle, useRef, type HTMLAttributes } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, type HTMLAttributes } from "react";
 import { Color, Mesh, Program, Renderer, Triangle } from "ogl";
 import { installRestorableWebglLifecycle, isLikelyMobileRuntime, isLikelyWebKitRuntime, releaseWebglContext } from "./webglLifecycle";
 const DEFAULT_FOCAL: [
@@ -284,7 +284,7 @@ type GalaxyProps = HTMLAttributes<HTMLDivElement> & {
     visibilityTargetSelector?: string;
     onStatusChange?: (status: "ready" | "unavailable") => void;
 };
-const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = DEFAULT_FOCAL, rotation = DEFAULT_ROTATION, starSpeed = 0.5, density = 1, maxDevicePixelRatio = 1, maxFps = 30, pauseDuringScroll = false, trackBoundsOnScroll = true, hueShift = 140, disableAnimation = false, disableOnReducedMotion = true, speed = 1.0, mouseInteraction = true, initialInteractionEnabled = true, glowIntensity = 0.3, saturation = 0.0, mouseRepulsion = true, repulsionStrength = 2, twinkleIntensity = 0.3, rotationSpeed = 0.1, autoCenterRepulsion = 0, transparent = true, visibilityTargetSelector, onStatusChange, className = "", ...rest }, ref) {
+const Galaxy = memo(forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = DEFAULT_FOCAL, rotation = DEFAULT_ROTATION, starSpeed = 0.5, density = 1, maxDevicePixelRatio = 1, maxFps = 30, pauseDuringScroll = false, trackBoundsOnScroll = true, hueShift = 140, disableAnimation = false, disableOnReducedMotion = true, speed = 1.0, mouseInteraction = true, initialInteractionEnabled = true, glowIntensity = 0.3, saturation = 0.0, mouseRepulsion = true, repulsionStrength = 2, twinkleIntensity = 0.3, rotationSpeed = 0.1, autoCenterRepulsion = 0, transparent = true, visibilityTargetSelector, onStatusChange, className = "", ...rest }, ref) {
     const containerRef = useRef<HTMLDivElement>(null);
     const targetMousePos = useRef({ x: 0.5, y: 0.5 });
     const smoothMousePos = useRef({ x: 0.5, y: 0.5 });
@@ -910,5 +910,6 @@ const Galaxy = forwardRef<GalaxyHandle, GalaxyProps>(function Galaxy({ focal = D
         visibilityTargetSelector,
     ]);
     return <div ref={containerRef} className={`galaxy-canvas ${className}`} {...rest}/>;
-});
+}));
+Galaxy.displayName = "Galaxy";
 export default Galaxy;

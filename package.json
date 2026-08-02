@@ -19,6 +19,7 @@
     "qa:t7:static": "node scripts/t7-motion-input-qa.mjs --static",
     "qa:t8": "node scripts/t8-motion-lifecycle-qa.mjs",
     "qa:t8:static": "node scripts/t8-motion-lifecycle-qa.mjs --static",
+    "qa:t9": "node scripts/t9-landing-decomposition-qa.mjs",
     "qa:t12": "node scripts/verify-t12-pin-seams.mjs",
     "qa:t12:browser": "node scripts/t12-browser-seam-qa.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test:leads && pnpm media:verify && pnpm build",

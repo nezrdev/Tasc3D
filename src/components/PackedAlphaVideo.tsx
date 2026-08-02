@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactEventHandler, } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, type ReactEventHandler, } from "react";
 import { installRestorableWebglLifecycle, releaseWebglContext } from "./webglLifecycle";
 type PackedAlphaVideoProps = {
     armed?: boolean;
@@ -203,7 +203,7 @@ type PackedAlphaWebglResources = {
     texture: WebGLTexture;
     vertexShader: WebGLShader;
 };
-const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(function PackedAlphaVideo({ armed = true, autoPlay = false, className, compositeActive = true, loop = false, maxFps = 30, muted = true, onError, onFirstFrame, onLoadedMetadata, onReady, outputHeight, outputWidth, pauseWhenOffscreen = false, playsInline = true, preload = "metadata", renderMode = "webgl", src, tabIndex = -1, videoClassName, }, forwardedRef) {
+const PackedAlphaVideo = memo(forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(function PackedAlphaVideo({ armed = true, autoPlay = false, className, compositeActive = true, loop = false, maxFps = 30, muted = true, onError, onFirstFrame, onLoadedMetadata, onReady, outputHeight, outputWidth, pauseWhenOffscreen = false, playsInline = true, preload = "metadata", renderMode = "webgl", src, tabIndex = -1, videoClassName, }, forwardedRef) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const onErrorRef = useRef(onError);
@@ -745,5 +745,6 @@ const PackedAlphaVideo = forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(fun
       {renderMode === "webgl" && compositeActive ? (<canvas ref={canvasRef} width={outputWidth} height={outputHeight} aria-hidden="true"/>) : null}
         <video ref={videoRef} className={videoClassName} src={armed ? src : undefined} width={outputWidth * 2} height={outputHeight} autoPlay={autoPlay && (renderMode === "screen" || compositeActive)} loop={loop} muted={muted} playsInline={playsInline} preload={preload} disablePictureInPicture tabIndex={tabIndex} onLoadedMetadata={onLoadedMetadata} aria-hidden="true"/>
       </div>);
-});
+}));
+PackedAlphaVideo.displayName = "PackedAlphaVideo";
 export default PackedAlphaVideo;
