@@ -88,9 +88,9 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const howCopyTransition = revealTime(0.2);
             const howItemTransition = revealTime(0.17);
             const howItemStagger = revealTime(0.03);
-            const howStepDuration = compact && !lowPower ? 1.52 : 1.56;
-            const howWheelThreshold = 18;
-            const howTouchThreshold = 36;
+            const howStepDuration = compact && !lowPower ? 1.02 : 1.04;
+            const howWheelThreshold = 12;
+            const howTouchThreshold = 26;
             const howWheelGestureGapMs = 220;
             const hiddenCopyPose = { x: -34, y: 0, autoAlpha: 0 };
             const activeCopyPose = { x: 0, y: 0, autoAlpha: 1 };
@@ -162,6 +162,16 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 transitioning = false;
                 delete root.dataset.howWorkTransitioning;
                 howInputRegistration?.markProgress(`settled-${currentStep + 1}`);
+                /*
+                  A held scroll keeps firing wheel events, which keeps resetting the
+                  quiet timer, so the consumed flag never cleared and the story sat on
+                  one step no matter how far the reader scrolled. Re-arm as soon as a
+                  step lands so a continuous gesture walks through the steps.
+                */
+                wheelConsumed = false;
+                wheelDelta = 0;
+                touchConsumed = false;
+                touchDelta = 0;
             };
             const killHowStepTween = () => {
                 if (!howStepTween) {
@@ -547,7 +557,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     id: "how-work-reversible",
                     trigger: howSection,
                     start: "top top",
-                    end: () => `+=${Math.round(getViewportHeight() * (lowPower ? 1.08 : compact ? 1.34 : 1.22))}`,
+                    end: () => `+=${Math.round(getViewportHeight() * (lowPower ? 0.9 : compact ? 1.08 : 0.96))}`,
                     pin: true,
                     scrub: true,
                     anticipatePin: 1,
@@ -1433,7 +1443,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 if (locked || getMotionInputOwnerId() === "portion")
                     return forwardApproachAlignPending;
                 forwardApproachAlignPending = true;
-                const approachBoundary = Math.max(0, (dominoTrigger?.start ?? window.scrollY) - getVisualViewportHeight() * 0.5);
+                const approachBoundary = Math.max(0, (dominoTrigger?.start ?? window.scrollY) - getVisualViewportHeight() * 0.72);
                 const started = startForwardFromCrossedBoundary(approachBoundary);
                 if (!started)
                     forwardApproachAlignPending = false;
@@ -1843,7 +1853,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             dominoReadinessTrigger = ScrollTrigger.create({
                 id: "domino-quarter-readiness",
                 trigger: dominoScene,
-                start: () => `top ${Math.round(getVisualViewportHeight() * 2)}px`,
+                start: () => `top ${Math.round(getVisualViewportHeight() * 2.45)}px`,
                 end: "bottom top",
                 invalidateOnRefresh: true,
                 onEnter: warmDominoMedia,
@@ -1922,7 +1932,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             dominoApproachTrigger = ScrollTrigger.create({
                 id: "domino-forward-approach",
                 trigger: dominoScene,
-                start: () => `top ${Math.round(getVisualViewportHeight() * 0.5)}px`,
+                start: () => `top ${Math.round(getVisualViewportHeight() * 0.72)}px`,
                 end: "top top",
                 refreshPriority: 6,
                 invalidateOnRefresh: true,

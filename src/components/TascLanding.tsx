@@ -27,7 +27,7 @@ import {
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
 import { RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
-import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
+import { CONTENT_REVEAL_LAG, cardRevealTime, revealTime } from "@/lib/tasc-motion-timings";
 import {
     hasExplicitConstrainedConnectionSignal,
     MEASURED_CONSTRAINED_MEGABITS_PER_SECOND,
@@ -1762,7 +1762,7 @@ export function TascLanding() {
             // scroll on desktop, which read as a long empty stretch before Clients.
             // Review pass two asked for another 20% off desktop and 15% off mobile,
             // so the Vision beat lands while the reader is still moving.
-            const pinMultiplier = isMacRuntime() ? 1.4 : isMobileRuntime() ? 1.36 : 1.64;
+            const pinMultiplier = isMacRuntime() ? 1.12 : isMobileRuntime() ? 1.36 : 1.26;
             return Math.round(stableHeroViewportHeight * pinMultiplier);
         };
         const lensVideo = root.querySelector<HTMLVideoElement>(".lens-video");
@@ -2615,10 +2615,10 @@ export function TascLanding() {
             easing: (t: number) => Math.min(1, 1.001 - 2 ** (-10 * t)),
             smoothWheel: !isMacRuntime(),
             virtualScroll: () => !isMacRuntime(),
-            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.38 : 0.35,
+            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.29 : 0.35,
             // Touch travel is damped to 0.8 on phones so the same swipe covers ~25%
             // less document. Sections stop flying past between two flicks.
-            touchMultiplier: isMobileRuntime() ? 0.8 : 0.9,
+            touchMultiplier: isMobileRuntime() ? 0.6 : 0.9,
         });
         lenisRef.current = lenis;
         root.dataset.wheelScrollRate = isMacRuntime() ? "native" : "lenis";
@@ -4481,16 +4481,16 @@ export function TascLanding() {
                     .fromTo(datumCardsRevealItems, { y: 46, autoAlpha: 0 }, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: revealTime(1.34),
+                    duration: cardRevealTime(1.34),
                     ease: "power4.out",
-                    stagger: revealTime(0.2),
+                    stagger: cardRevealTime(0.2),
                 }, 0)
                     .fromTo(datumHeadingItems, { y: 18, autoAlpha: 0 }, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: revealTime(0.82),
+                    duration: cardRevealTime(0.82),
                     ease: "power3.out",
-                    stagger: revealTime(0.14),
+                    stagger: cardRevealTime(0.14),
                     force3D: false,
                     onComplete: () => {
                         gsap.set(datumHeadingItems, { clearProps: "transform,willChange" });
@@ -4502,10 +4502,10 @@ export function TascLanding() {
                     cardsRevealTimeline.fromTo(items, { y: 16, autoAlpha: 0 }, {
                         y: 0,
                         autoAlpha: 1,
-                        duration: revealTime(1.02),
+                        duration: cardRevealTime(1.02),
                         ease: "power3.out",
-                        stagger: revealTime(0.14),
-                    }, 0.3 + CONTENT_REVEAL_LAG + cardIndex * revealTime(0.24));
+                        stagger: cardRevealTime(0.14),
+                    }, 0.3 + CONTENT_REVEAL_LAG + cardIndex * cardRevealTime(0.24));
                 });
                 const resetDatumContent = () => {
                     datumContentState = null;
@@ -4739,7 +4739,7 @@ export function TascLanding() {
                 gsap.to(element, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: revealTime(1.34),
+                    duration: cardRevealTime(1.34),
                     ease: "power4.out",
                     overwrite: true,
                     onComplete: () => completeManagedReveal([element]),
@@ -4788,9 +4788,9 @@ export function TascLanding() {
                 gsap.to(items, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: revealTime(1.36),
+                    duration: cardRevealTime(1.36),
                     ease: "power4.out",
-                    stagger: revealTime(0.18),
+                    stagger: cardRevealTime(0.18),
                     overwrite: true,
                     onComplete: () => completeManagedReveal(items),
                 });
@@ -4828,9 +4828,9 @@ export function TascLanding() {
                 gsap.to(rows, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: revealTime(1.34),
+                    duration: cardRevealTime(1.34),
                     ease: "power4.out",
-                    stagger: revealTime(0.18),
+                    stagger: cardRevealTime(0.18),
                     overwrite: true,
                     onComplete: () => completeManagedReveal(rows),
                 });
@@ -4841,10 +4841,10 @@ export function TascLanding() {
                     gsap.to(parts, {
                         y: 0,
                         autoAlpha: 1,
-                        duration: revealTime(0.92),
-                        delay: revealTime(0.16 + batchIndex * 0.14),
+                        duration: cardRevealTime(0.92),
+                        delay: cardRevealTime(0.16 + batchIndex * 0.14),
                         ease: "power3.out",
-                        stagger: revealTime(0.12),
+                        stagger: cardRevealTime(0.12),
                         overwrite: true,
                         onComplete: () => completeManagedReveal(parts),
                     });
@@ -4858,7 +4858,7 @@ export function TascLanding() {
             });
         }
         gsap.utils.toArray<HTMLElement>(".motion-divider").forEach((element) => {
-            const revealDivider = () => gsap.to(element, { "--line-progress": "100%", duration: revealTime(1.36), ease: "power2.out" });
+            const revealDivider = () => gsap.to(element, { "--line-progress": "100%", duration: cardRevealTime(1.36), ease: "power2.out" });
             const resetDivider = () => gsap.set(element, { "--line-progress": "0%" });
             resetDivider();
             ScrollTrigger.create({

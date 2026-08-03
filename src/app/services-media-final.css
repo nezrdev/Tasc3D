@@ -1,0 +1,104 @@
+/*
+ * Services story media — final mobile geometry.
+ *
+ * The alpha source is a 16:9 frame whose subject is NOT centred: each keyframe
+ * stop parks the object in a different part of the frame and lets it run off the
+ * far edge. Measured subject extents (share of frame width):
+ *
+ *   stop 1 (city)     spans 0.272 - 0.999   box centre 0.635
+ *   stop 2 (figures)  spans 0.000 - 0.785   box centre 0.393
+ *   stop 3 (laptops)  spans 0.325 - 0.999   box centre 0.662
+ *
+ * One shared framing therefore cannot centre all three, and sizing the frame to
+ * the viewport width leaves the object small with its clipped edge landing right
+ * on the screen edge.
+ *
+ * Instead the frame is bottom-anchored and centred, then each stop scales and
+ * shifts it so the subject sits on the horizontal centre at the largest size
+ * that still fits the whole object on screen. Anchor values are derived as
+ * scale = fit / 1.58 and shift = -(anchor - 0.5) * scale:
+ *
+ *   stop 1   fit 1.372   anchor 0.635
+ *   stop 2   fit 1.274   anchor 0.393
+ *   stop 3   fit 1.500   anchor 0.692   (larger and lower by request)
+ *
+ * Stops cross-fade over 560ms so the frame settles rather than jumping.
+ */
+
+@media (max-width: 760px) {
+  .site-shell .services-story-section .services-story-video-wrap {
+    /* frame width as a multiple of the section width */
+    --svc-frame: 1.58;
+    /* per-stop scale, relative to --svc-frame */
+    --svc-scale: 0.8684;
+    /* per-stop horizontal shift, share of the frame width */
+    --svc-shift: -12.59%;
+    /* the frame bottom sits flush with the section bottom, never above it */
+    --svc-drop: -1vw;
+
+    position: absolute !important;
+    inset: auto auto var(--svc-drop) 50% !important;
+    width: calc(var(--svc-frame) * 100%) !important;
+    height: auto !important;
+    aspect-ratio: 16 / 9 !important;
+    margin: 0 !important;
+
+    transform: translateX(calc(-50% + var(--svc-shift))) scale(var(--svc-scale)) !important;
+    transform-origin: 50% 100% !important;
+    transition:
+      transform 560ms cubic-bezier(0.33, 0, 0.2, 1),
+      bottom 560ms cubic-bezier(0.33, 0, 0.2, 1),
+      opacity 320ms ease,
+      visibility 320ms ease !important;
+
+    /* nothing here may paint a rectangle behind the alpha video */
+    background: none !important;
+    filter: none !important;
+    clip-path: none !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+    isolation: auto !important;
+    overflow: visible !important;
+  }
+
+  .site-shell[data-services-active="1"] .services-story-section .services-story-video-wrap {
+    --svc-scale: 0.8684;
+    --svc-shift: -12.59%;
+  }
+
+  .site-shell[data-services-active="2"] .services-story-section .services-story-video-wrap {
+    --svc-scale: 0.8063;
+    --svc-shift: 8.63%;
+  }
+
+  .site-shell[data-services-active="3"] .services-story-section .services-story-video-wrap {
+    --svc-scale: 0.9494;
+    --svc-shift: -18.23%;
+    --svc-drop: -3.5vw;
+  }
+
+  /* the frame maps 1:1 onto the wrap — never crop, never blend */
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-video,
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-video-packed,
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-video-packed canvas,
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-entry-poster,
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-stop-poster,
+  .site-shell[data-services-media] .services-story-section .services-story-video-wrap .services-story-poster {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    transform: none !important;
+    object-fit: contain !important;
+    object-position: 50% 100% !important;
+    background-size: contain !important;
+    background-position: 50% 100% !important;
+    background-color: transparent !important;
+    mix-blend-mode: normal !important;
+    isolation: auto !important;
+    filter: none !important;
+    clip-path: none !important;
+    -webkit-mask-image: none !important;
+    mask-image: none !important;
+  }
+}
