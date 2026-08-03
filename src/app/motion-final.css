@@ -177,6 +177,19 @@
   opacity: 0.36 !important;
 }
 
+/*
+  Phones only ever paint the primary starfield - the interactive layer is gated off
+  on `mobilePerformanceMode` - so the same 0.55 that reads correctly on a desktop
+  stacking two layers reads as a nearly empty sky on a phone. Raising the single
+  layer's opacity costs no extra fragments.
+*/
+
+@media (max-width: 900px), (pointer: coarse) {
+  .site-shell > .first-four-galaxy-stage .first-four-galaxy-primary .galaxy-canvas-element {
+    opacity: 0.72 !important;
+  }
+}
+
 
 
 
@@ -1712,17 +1725,13 @@
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
-
-
-
-    bottom: -5vw !important;
-    left: -10% !important;
-    width: 120% !important;
+    bottom: clamp(28px, 5svh, 64px) !important;
+    left: 50% !important;
+    width: 100vw !important;
     height: auto !important;
     aspect-ratio: 16 / 9;
     overflow: visible !important;
-
-    transform: none !important;
+    transform: translateX(-50%) !important;
     transform-origin: 50% 100% !important;
   }
 
@@ -1730,7 +1739,7 @@
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
-    object-position: center bottom !important;
+    object-position: center center !important;
     transform: none !important;
   }
 
@@ -1891,12 +1900,15 @@
     margin-top: 7px !important;
   }
 
+  /*
+    The frame is one viewport wide and sits inside the scene now, so there is nothing
+    overflowing the top of the box to clip away. Clipping here only ever removed part
+    of the object on short screens.
+  */
   .services-story-section .services-story-video-wrap {
-
-
-
-    -webkit-clip-path: inset(max(0px, calc(667px - 100svh)) 0 0);
-    clip-path: inset(max(0px, calc(667px - 100svh)) 0 0);
+    bottom: clamp(14px, 3svh, 32px) !important;
+    -webkit-clip-path: none;
+    clip-path: none;
   }
 }
 

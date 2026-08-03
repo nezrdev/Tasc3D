@@ -66,9 +66,9 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
-    bottom: 0 !important;
+    bottom: clamp(28px, 5svh, 64px) !important;
     left: 50% !important;
-    width: 136vw !important;
+    width: 100vw !important;
     height: auto !important;
     aspect-ratio: 16 / 9 !important;
     overflow: visible !important;
@@ -84,8 +84,8 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
-    object-position: center bottom !important;
-    background-position: center bottom !important;
+    object-position: center center !important;
+    background-position: center center !important;
     background-size: contain !important;
     transform: none !important;
   }
@@ -102,7 +102,8 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
 
 @media (max-width: 760px) and (max-height: 700px) {
   .services-story-section .services-story-video-wrap {
+    bottom: clamp(14px, 3svh, 32px) !important;
     left: 50% !important;
-    width: 124vw !important;
+    width: 100vw !important;
   }
 }

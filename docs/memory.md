@@ -33,19 +33,46 @@
   `pin`/`pinSpacing`/`anticipatePin` and `end: +=getStableDatumPinDistance()`;
   `datum-content-visibility` still reveals the cards at 25% visibility and
   `datum-reversible` stays the zero-length anchor/priority marker.
-- Clients-era backdrops (`first-four-gradient-field`, `vision-clients-flare-stage`,
-  the shared `first-four-galaxy-stage`) fade out through CSS keyed on
-  `data-services-pinned`, never through a scrub tween. Tweening those
-  full-viewport layers per frame starved the How we work story badly enough that
-  `qa:t7` timed out on Chromium whenever both engines ran in one pass. Their
-  `opacity` declarations must stay un-forced so the pinned-state rule can win.
 - `.services-story-video-wrap` is positioned from the viewport
   (`left: 50%` + `translateX(-50%)` + `vw` widths) in every breakpoint. Percentage
   offsets against the pinned scene box drift while the pin spacer settles.
 - Services media stays mounted and opaque at every stop; only the handoff timeline
   animates its children.
-- Domino pin travel is `clamp(320, 0.55vh, 700)` and the reverse story engages at
-  `progress <= 0.35` so a nudge off the footer no longer snaps it back.
+
+## Client Review Pass Two Decisions (2026-08-03)
+
+- The Clients-era backdrops are owned by the `clients-services-handoff` scrub
+  timeline, not by a CSS state keyed on `data-services-pinned`. The order is fixed:
+  the gradient field and the flare plate fade out with the cards (0 to 0.34), the
+  shared starfield dips to zero and comes back (0.02 to 0.72), and only then do the
+  Services copy (0.6) and media (0.56) arrive. Services must never be handed a bare
+  stage that the text lands on first. Do not put a CSS `transition` on any property
+  that timeline writes - a transition on a scrubbed property lags by its own
+  duration and reads as a smear.
+- `services-keyframes-mobile-lean-20260721.webm` carried `ALPHA_MODE=1` but no alpha
+  plane, so every phone painted Services on an opaque black rectangle. Replaced by
+  `services-keyframes-mobile-alpha-960-20260803.webm`. When re-deriving a VP9 alpha
+  variant, pass `-c:v libvpx-vp9` on the *input* - ffmpeg's default VP9 decoder
+  silently drops the alpha side data and the tag survives regardless. Verify by
+  rendering the file over a saturated background, never by reading the tag.
+- Services frame 339 (`exitFrame`) is fully transparent and frame 340
+  (`reverseStopFrames[2]`) is the first reverse frame. `seekServicesFrame` used a
+  fixed 0.12s (3.6 frame) acceptance window, so a reverse entry accepted the
+  transparent exit frame and Services looked empty when re-entered backwards from
+  How we work. Seeks that land on that cut pass `SERVICES_SEAM_SEEK_TOLERANCE` and
+  target `+ SERVICES_SEAM_FRAME_NUDGE`.
+- The Services frame is exactly `100vw` on phones. Wider boxes plus
+  `object-fit: contain` size the render to the box, so the authored frame is cropped
+  by the screen and the object reads as cut in half.
+- Domino pin travel is `clamp(620, 1.15vh, 1400)` and the reverse story engages at
+  `progress <= 0.12`. The gesture path (`startReverseFromCompletedBoundary`) also
+  requires `hasClimbedIntoDominoReverseBand()`: `isDominoVisuallyNear()` alone covers
+  the whole brief form and most of the footer, so one wheel notch up off the bottom
+  of the page re-ran the sequence. A reverse session locks at the reader's current Y
+  clamped into the band, never at `trigger.end - 1`, so engaging moves nothing.
+- Phones paint only the primary starfield (`interactiveGalaxyEnabled` is gated off on
+  `mobilePerformanceMode`), so the layer carries density 1.05 and 0.72 opacity where
+  desktop stacks two layers at 0.55 and 0.36.
 
 ## Latest Evidence
 

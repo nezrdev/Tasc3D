@@ -20,6 +20,7 @@ const archivedMedia = new Map([
   ["services-keyframes-packed-1280-final-20260718.mp4", "ef1f4a3b08ee73d180e05dceeeb3be3d846318a47f7ebdeaabc6a138fd3f4837"],
   ["services-keyframes-packed-1280-t1-20260731.mp4", "63673ab37046ad6e825a6009d369832267af1c0e3851bd9140a21487469e311e"],
   ["services-keyframes-packed-960-lean-20260721.mp4", "006ad6b58428eee1e594f105a47cbe9801b572000cc4683818360a4afd3829c4"],
+  ["services-keyframes-mobile-lean-20260721.webm", "5f0015a30ad55a00b96d74f3bdd6702fdd4a2767e363665d3179a443f5784459"],
 ]);
 const archiveManifestPath = "docs/media-archive-2026-07-31.md";
 const archiveManifest = existsSync(path.join(root, archiveManifestPath)) ? read(archiveManifestPath) : "";

@@ -135,13 +135,20 @@
     Viewport-anchored and centred. Percentage offsets resolved against the pinned
     scene box, which changes width while the pin spacer settles, and every stop
     landed on a slightly different horizontal position.
+
+    The frame is exactly one viewport wide. At 154vw the box was 1.5 screens across
+    and `object-fit: contain` sized the render to the box, so a third of the authored
+    frame - including the right-hand side of the city - sat off screen and the phone
+    read as cut in half. One viewport plus the source 16/9 ratio means the whole
+    authored frame lands inside the screen, and the bottom inset keeps it clear of the
+    edge instead of bleeding off it.
   */
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
-    bottom: 0 !important;
+    bottom: clamp(28px, 5svh, 64px) !important;
     left: 50% !important;
-    width: 154vw !important;
+    width: 100vw !important;
     height: auto !important;
     aspect-ratio: 16 / 9 !important;
     overflow: visible !important;
@@ -149,6 +156,17 @@
     clip-path: none !important;
     transform: translateX(-50%) !important;
     transform-origin: 50% 100% !important;
+  }
+
+  .services-story-section .services-story-video,
+  .services-story-section .services-story-video-packed,
+  .services-story-section .services-story-video-packed canvas,
+  .services-story-section .services-story-entry-poster,
+  .services-story-section .services-story-stop-poster,
+  .services-story-section .services-story-poster {
+    object-position: center center !important;
+    background-position: center center !important;
+    background-size: contain !important;
   }
 
 
@@ -305,8 +323,9 @@
   }
 
   .services-story-section .services-story-video-wrap {
+    bottom: clamp(14px, 3svh, 32px) !important;
     left: 50% !important;
-    width: 146vw !important;
+    width: 100vw !important;
   }
 
   .mission-main-block {

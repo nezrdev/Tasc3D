@@ -32,7 +32,11 @@ export const RUNTIME_MEDIA = {
     services: {
         nativeAlpha: {
             desktop: "/media/services-keyframes-desktop-final-20260718.webm",
-            mobile: "/media/services-keyframes-mobile-lean-20260721.webm",
+            // `services-keyframes-mobile-lean-20260721.webm` carried the
+            // `ALPHA_MODE=1` tag but no alpha plane, so every phone painted the
+            // Services frame on an opaque black rectangle instead of the starfield.
+            // Re-derived from the desktop alpha master at 960x540 / yuva420p.
+            mobile: "/media/services-keyframes-mobile-alpha-960-20260803.webm",
         },
         webkitPacked: {
             desktop: "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",

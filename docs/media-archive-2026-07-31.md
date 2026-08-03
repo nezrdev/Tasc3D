@@ -14,3 +14,16 @@ The archive is intentionally outside `public/` at `work/media-archive/`. It is i
 
 Total archived: 34,283,975 bytes (32.696 MiB). The `public/` delivery footprint changed from 82,239,148 bytes to 47,955,173 bytes without changing any referenced runtime asset.
 
+## 2026-08-03 addition
+
+`services-keyframes-mobile-lean-20260721.webm` carried the `ALPHA_MODE=1` Matroska tag
+but no alpha plane, so every phone painted the Services frame on an opaque black
+rectangle instead of the shared starfield. It is replaced by
+`services-keyframes-mobile-alpha-960-20260803.webm`, re-derived from the desktop alpha
+master with `-c:v libvpx-vp9` on the input (the default VP9 decoder discards the alpha
+side data) and encoded as `yuva420p`.
+
+| Original path | Bytes | SHA-256 | Archive path |
+| --- | ---: | --- | --- |
+| `public/media/services-keyframes-mobile-lean-20260721.webm` | 1,999,528 | `5f0015a30ad55a00b96d74f3bdd6702fdd4a2767e363665d3179a443f5784459` | `work/media-archive/services-keyframes-mobile-lean-20260721.webm` |
+

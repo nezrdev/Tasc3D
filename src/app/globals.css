@@ -12002,48 +12002,33 @@ body::before {
 }
 
 
-.first-four-gradient-field {
-  opacity: 0.86;
-  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
 /*
   Services paints on a transparent section so the shared starfield shows through.
-  The Clients-era backdrops (ambient hero gradient and the diagonal flare plate)
-  therefore have to be gone once Services owns the viewport, otherwise Services
-  arrives over a washed out teal band instead of black.
+  The Clients-era backdrops - the ambient hero gradient, the diagonal flare plate,
+  and the shared starfield stage - are handed over by the Clients to Services
+  scrub timeline, not by a state snap on the pin flag: the reader asked to watch
+  the white flare dissolve with the cards and the stars dip out and come back up
+  before the Services copy arrives.
 
-  This is a CSS state change keyed on the pin flag rather than a scrub tween:
-  animating these full-viewport layers on every frame measurably starved the
-  How we work story. The WebGL starfield stage is deliberately left alone so its
-  context is never driven to zero opacity.
+  No `transition` here on purpose. A transition on a property a scrub tween writes
+  every frame lags the scrub by its own duration and reads as a smear.
 */
 
-.site-shell[data-services-pinned="true"] .first-four-gradient-field {
-  opacity: 0;
-}
-
-.vision-clients-flare-stage {
-  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.site-shell[data-services-pinned="true"] .vision-clients-flare-stage {
-  opacity: 0;
+.first-four-gradient-field {
+  opacity: 0.86;
 }
 
 /*
-  The Clients starfield hands over to the Services star layer, which already
-  fades in through the handoff timeline. Driving the shared WebGL stage through
-  a per-frame tween starved the motion runtime, so the handover is a plain CSS
-  transition on the stage wrapper instead.
+  Fallback for the reduced-motion runtime, where the handoff timeline never runs
+  and nothing writes inline opacity. The scrubbed values above always win because
+  GSAP writes inline styles.
 */
 
-.site-shell > .first-four-galaxy-stage {
-  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.site-shell[data-services-pinned="true"] > .first-four-galaxy-stage {
-  opacity: 0;
+@media (prefers-reduced-motion: reduce) {
+  .site-shell[data-services-pinned="true"] .first-four-gradient-field,
+  .site-shell[data-services-pinned="true"] .vision-clients-flare-stage {
+    opacity: 0;
+  }
 }
 
 .lens-stage,

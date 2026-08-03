@@ -429,8 +429,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
 
 
     bottom: -2svh !important;
-    left: -20% !important;
-    width: 140% !important;
+    /* Review pass two asked for the Datum frame about 5% larger on phones. */
+    left: -23.5% !important;
+    width: 147% !important;
     height: auto !important;
     aspect-ratio: 16 / 9;
     overflow: hidden !important;
@@ -910,9 +911,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 
   .services-story-section .services-story-video-wrap {
-    bottom: -3vw !important;
+    bottom: clamp(28px, 5svh, 64px) !important;
     left: 50% !important;
-    width: 114vw !important;
+    width: 100vw !important;
     transform: translateX(-50%) !important;
   }
 }
@@ -981,9 +982,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
   }
 
   .services-story-section .services-story-video-wrap {
-    bottom: -3vw !important;
+    bottom: clamp(14px, 3svh, 32px) !important;
     left: 50% !important;
-    width: 114vw !important;
+    width: 100vw !important;
     transform: translateX(-50%) !important;
     -webkit-clip-path: none !important;
     clip-path: none !important;

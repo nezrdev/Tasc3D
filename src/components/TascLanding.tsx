@@ -105,6 +105,11 @@ const SERVICES_REVERSE_STOP_FRAME_SIGNATURE = SERVICES_REVERSE_STOP_FRAMES.join(
 const SERVICES_REVERSE_STOP_TIME_LABELS = SERVICES_REVERSE_STOP_FRAMES.map((frame) => `${frame}/${RUNTIME_MEDIA.services.fps}`);
 const SERVICES_REVERSE_STOP_TIME_SIGNATURE = SERVICES_REVERSE_STOP_TIME_LABELS.join(",");
 const SERVICES_HAS_CONTINUOUS_REVERSE = SERVICES_REVERSE_KEYFRAME_STOPS.length === SERVICES_KEYFRAME_STOPS.length;
+// Half a frame. Enough to land on the intended side of a cut, short enough that the
+// rendered frame is still the authored stop.
+const SERVICES_SEAM_FRAME_NUDGE = 1 / (RUNTIME_MEDIA.services.fps * 2);
+// Sub-frame acceptance window for seeks that have to resolve to one exact frame.
+const SERVICES_SEAM_SEEK_TOLERANCE = 1 / (RUNTIME_MEDIA.services.fps * 2);
 const MOBILE_PROFILE_WIDTH = 900;
 const MOBILE_PROFILE_HYSTERESIS_PX = 80;
 type RuntimePerformanceProfile = {
@@ -1755,9 +1760,9 @@ export function TascLanding() {
             }
             // Hero plus Vision used to reserve almost two and a half viewports of
             // scroll on desktop, which read as a long empty stretch before Clients.
-            // Mobile is cut further because the damped touch multiplier already
-            // stretches every swipe.
-            const pinMultiplier = isMacRuntime() ? 1.75 : isMobileRuntime() ? 1.6 : 2.05;
+            // Review pass two asked for another 20% off desktop and 15% off mobile,
+            // so the Vision beat lands while the reader is still moving.
+            const pinMultiplier = isMacRuntime() ? 1.4 : isMobileRuntime() ? 1.36 : 1.64;
             return Math.round(stableHeroViewportHeight * pinMultiplier);
         };
         const lensVideo = root.querySelector<HTMLVideoElement>(".lens-video");
@@ -1956,7 +1961,15 @@ export function TascLanding() {
             else
                 delete root.dataset.servicesEntryPoster;
         };
-        const seekServicesFrame = (video: HTMLVideoElement | null, time: number, isCurrent: () => boolean) => new Promise<boolean>((resolve) => {
+        /*
+          `tolerance` is how far off the requested time the decoder is allowed to be
+          before this counts as "already there". The 0.12s default is 3.6 frames wide,
+          which is fine in the middle of a shot and wrong at a cut: the Services exit
+          frame and the first reverse frame are one frame apart, so the default let a
+          reverse entry accept the transparent exit frame and paint nothing at all.
+          Callers landing on a seam pass a sub-frame tolerance.
+        */
+        const seekServicesFrame = (video: HTMLVideoElement | null, time: number, isCurrent: () => boolean, tolerance = 0.12) => new Promise<boolean>((resolve) => {
             if (!video || !isCurrent() || disposed) {
                 resolve(false);
                 return;
@@ -1987,7 +2000,7 @@ export function TascLanding() {
                 }
                 if (media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || media.seeking)
                     return;
-                if (Math.abs(media.currentTime - target) <= 0.12) {
+                if (Math.abs(media.currentTime - target) <= tolerance) {
                     finish(true);
                     return;
                 }
@@ -1999,7 +2012,7 @@ export function TascLanding() {
                     return;
                 }
                 media.pause();
-                if (!media.seeking && Math.abs(media.currentTime - target) <= 0.12) {
+                if (!media.seeking && Math.abs(media.currentTime - target) <= tolerance) {
                     if (media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)
                         reportTarget();
                     return;
@@ -2022,7 +2035,7 @@ export function TascLanding() {
                     !disposed &&
                     media.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
                     !media.seeking &&
-                    Math.abs(media.currentTime - target) <= 0.12);
+                    Math.abs(media.currentTime - target) <= tolerance);
             }, 1800);
             if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
                 assignTarget();
@@ -2539,7 +2552,7 @@ export function TascLanding() {
             autoAlpha: 0,
         });
         gsap.set(".domino-impulse-form", { y: 0, autoAlpha: 1, pointerEvents: "none" });
-        gsap.set(".how-work-step-copy", { x: -48, y: 0, autoAlpha: 0 });
+        gsap.set(".how-work-step-copy", { x: -34, y: 0, autoAlpha: 0 });
         gsap.set(".how-work-step-copy-1", { x: 0, y: 0, autoAlpha: 1 });
         gsap.set(".how-work-step-number", {
             scale: 0.67,
@@ -3308,7 +3321,15 @@ export function TascLanding() {
             const token = servicesEntryToken;
             const entryVideo = servicesVideo;
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            const entryFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage];
+            /*
+              The exit frame and the first reverse frame sit on either side of a hard
+              cut: everything up to the exit is fully transparent, the reverse segment
+              starts with the object back in shot. Landing half a frame inside the
+              reverse segment keeps decoder rounding from parking the entry on the
+              transparent side, which is what made Services look empty when the reader
+              came back up out of How we work.
+            */
+            const entryFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage] + SERVICES_SEAM_FRAME_NUDGE;
             const nextFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage - 1];
             servicesEntryPreparing = -1;
             servicesEntryLockY = lockY;
@@ -3369,7 +3390,7 @@ export function TascLanding() {
                 let entryFrameReady = false;
                 for (let attempt = 0; attempt < 2 && remainsRelevant(); attempt += 1) {
                     root.dataset.servicesEntryAttempt = `reverse-seek-${attempt + 1}`;
-                    entryFrameReady = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant);
+                    entryFrameReady = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
                     if (entryFrameReady || !remainsRelevant() || entryVideo.error)
                         break;
                     await waitForServicesEntryRetry(180);
@@ -3395,7 +3416,7 @@ export function TascLanding() {
                     return;
                 }
                 root.dataset.servicesReverseEntrySegmentWarm = "true";
-                const restoredEntryFrame = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant);
+                const restoredEntryFrame = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
                 if (!restoredEntryFrame || !remainsRelevant()) {
                     finishPreparation();
                     return;
@@ -3414,7 +3435,10 @@ export function TascLanding() {
             const token = ++servicesRunToken;
             beginServicesMediaAttempt(`reverse:${servicesStage}:${nextStage}`);
             const legacyFrom = SERVICES_KEYFRAME_STOPS[servicesStage];
-            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[servicesStage];
+            // The last reverse stop sits one frame past the transparent exit frame, so
+            // it gets the same half-frame nudge the reverse entry uses.
+            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[servicesStage] +
+                (servicesStage === SERVICES_KEYFRAME_STOPS.length - 1 ? SERVICES_SEAM_FRAME_NUDGE : 0);
             const reverseTo = SERVICES_REVERSE_KEYFRAME_STOPS[nextStage];
             root.dataset.servicesReverseTransport = "continuous";
             const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
@@ -3425,7 +3449,9 @@ export function TascLanding() {
             delete root.dataset.servicesMediaDecoded;
             setServicesPhase("playing");
             setMotionInputState();
-            const reverseStartReady = await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive);
+            const reverseStartReady = await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive, servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
+                ? SERVICES_SEAM_SEEK_TOLERANCE
+                : undefined);
             if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
             if (!reverseStartReady) {
@@ -3911,6 +3937,14 @@ export function TascLanding() {
             if (clientsHandoffItems.length) {
                 const clientsStarStage = root.querySelector<HTMLElement>(".first-four-galaxy-stage");
                 const servicesStarReveal = servicesSection.querySelector<HTMLElement>(".services-galaxy-stage");
+                // The ambient hero gradient and the diagonal flare plate are the two
+                // Clients-era backdrops that used to hard-cut on the pin flag. They now
+                // scrub out with the cards so Services is handed a clean black stage.
+                // Each carries its own resting opacity, so each keeps its own `fromTo`.
+                const clientsBackdropLayers = [
+                    { element: root.querySelector<HTMLElement>(".first-four-gradient-field"), restingOpacity: 0.86 },
+                    { element: root.querySelector<HTMLElement>(".vision-clients-flare-stage"), restingOpacity: 1 },
+                ].filter((layer): layer is { element: HTMLElement; restingOpacity: number } => Boolean(layer.element));
                 const firstServicesItems = servicePanelItems[0] ?? [];
                 const clientsHandoffEase = gsap.parseEase("power2.inOut");
                 const syncClientsHandoff = (progress: number) => {
@@ -3933,9 +3967,9 @@ export function TascLanding() {
                 const syncFirstServicesHandoffY = (progress: number, direction: 1 | -1) => {
                     if (!firstServicesItems.length)
                         return;
-                    const start = 0.2;
-                    const duration = 0.55;
-                    const stagger = 0.035;
+                    const start = 0.58;
+                    const duration = 0.42;
+                    const stagger = 0.03;
                     const hiddenY = direction < 0 ? -44 : 26;
                     firstServicesItems.forEach((item, index) => {
                         const itemProgress = gsap.utils.clamp(0, 1, (progress - start - index * stagger) / duration);
@@ -3970,24 +4004,37 @@ export function TascLanding() {
                     },
                 });
                 syncClientsHandoff(clientsExitTrigger.progress);
+                /*
+                  Handover order matters. Services has to arrive on a finished stage:
+                  the Clients backdrops and starfield leave first, the Services stage
+                  and its stars come back up on their own, and only then does the copy
+                  and the media fade in. Reversed, the reader gets the same order back.
+                */
+                clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
+                    clientsServicesHandoff?.fromTo(element, { opacity: restingOpacity }, {
+                        opacity: 0,
+                        duration: 0.34,
+                        ease: "power2.inOut",
+                    }, 0);
+                });
                 if (clientsStarStage) {
                     clientsServicesHandoff
-                        .fromTo(clientsStarStage, { opacity: 1 }, { opacity: 0.32, duration: 0.28, ease: "power2.out" }, 0)
-                        .to(clientsStarStage, { opacity: 1, duration: 0.54, ease: "power2.inOut" }, 0.28);
+                        .fromTo(clientsStarStage, { opacity: 1 }, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0.02)
+                        .to(clientsStarStage, { opacity: 1, duration: 0.4, ease: "power2.out" }, 0.32);
                 }
                 if (servicesStarReveal) {
-                    clientsServicesHandoff.fromTo(servicesStarReveal, { opacity: 0 }, { opacity: 1, duration: 0.82, ease: "power2.inOut" }, 0.2);
+                    clientsServicesHandoff.fromTo(servicesStarReveal, { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power2.out" }, 0.3);
                 }
                 if (firstServicesItems.length) {
                     clientsServicesHandoff.fromTo(firstServicesItems, { autoAlpha: 0 }, {
                         autoAlpha: 1,
-                        duration: 0.55,
-                        stagger: 0.035,
+                        duration: 0.42,
+                        stagger: 0.03,
                         ease: "power3.out",
-                    }, 0.46);
+                    }, 0.6);
                 }
                 if (servicesMediaVisuals.length) {
-                    clientsServicesHandoff.fromTo(servicesMediaVisuals, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.8, ease: "power2.inOut" }, 0.42);
+                    clientsServicesHandoff.fromTo(servicesMediaVisuals, { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.48, ease: "power2.out" }, 0.56);
                 }
                 cleanupCallbacks.push(() => {
                     clientsServicesHandoff?.scrollTrigger?.kill();
@@ -4002,6 +4049,8 @@ export function TascLanding() {
                         gsap.set(clientsStarStage, { clearProps: "opacity" });
                     if (servicesStarReveal)
                         gsap.set(servicesStarReveal, { clearProps: "opacity" });
+                    if (clientsBackdropLayers.length)
+                        gsap.set(clientsBackdropLayers.map((layer) => layer.element), { clearProps: "opacity" });
                     if (firstServicesItems.length)
                         gsap.set(firstServicesItems, { clearProps: "opacity,visibility,transform" });
                     if (servicesMediaVisuals.length) {
@@ -4014,14 +4063,14 @@ export function TascLanding() {
                 primaryGalaxyRef.current?.setActive(true);
                 primaryGalaxyRef.current?.setMotion(active
                     ? {
-                        density: isMobileRuntime() || isWebKitRuntime() ? 0.72 : 1,
-                        glowIntensity: isMobileRuntime() ? 0.1 : 0.12,
+                        density: isMobileRuntime() || isWebKitRuntime() ? 1.05 : 1,
+                        glowIntensity: 0.12,
                         starSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.86 : 1.08,
                         speed: isMobileRuntime() || isWebKitRuntime() ? 1.08 : 1.44,
                         rotationSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.1 : 0.15,
                     }
                     : {
-                        density: isMobileRuntime() || isWebKitRuntime() ? 0.72 : 1.3,
+                        density: isMobileRuntime() || isWebKitRuntime() ? 1.05 : 1.3,
                         glowIntensity: 0.12,
                         starSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.86 : 1.08,
                         speed: isMobileRuntime() || isWebKitRuntime() ? 1.08 : 1.44,
@@ -5134,14 +5183,14 @@ export function TascLanding() {
       <div className="first-four-galaxy-stage" aria-hidden="true">
         <span className="static-starfield-fallback"/>
         {heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed ? (<>
-            <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode || webkitCompatibilityMode ? 0.72 : 1.3} starSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode || webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={webkitCompatibilityMode
+            <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode || webkitCompatibilityMode ? 1.05 : 1.3} starSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode || webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={webkitCompatibilityMode
                 ? mobilePerformanceMode
                     ? 0.9
                     : 0.86
                 : macPerformanceMode
                     ? 0.82
                     : mobilePerformanceMode
-                        ? 0.9
+                        ? 1
                         : 1} maxFps={mobilePerformanceMode || webkitCompatibilityMode || macPerformanceMode ? 30 : 60}/>
             {interactiveGalaxyEnabled && !webkitCompatibilityMode && !macPerformanceMode ? (<Galaxy {...GALAXY_SHARED_PROPS} ref={interactiveGalaxyRef} className="first-four-galaxy-interactive" data-galaxy-layer="interactive" density={0.5} glowIntensity={0.14} starSpeed={0.6} speed={0.6} autoCenterRepulsion={0} mouseInteraction trackBoundsOnScroll={false} visibilityTargetSelector={INTERACTIVE_GALAXY_VISIBILITY_TARGETS} maxDevicePixelRatio={webkitCompatibilityMode ? 0.3 : macPerformanceMode ? 0.36 : 0.5} maxFps={webkitCompatibilityMode ? 16 : macPerformanceMode ? 18 : 24}/>) : null}
             {interactiveGalaxyEnabled && (webkitCompatibilityMode || macPerformanceMode) ? (<span className="first-four-star-parallax" data-star-layer="interactive-compositor"/>) : null}

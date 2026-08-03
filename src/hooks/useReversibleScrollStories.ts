@@ -35,16 +35,22 @@ const DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS = 1200;
 const DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS = DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS - 300;
 const DOMINO_TRANSPORT_UNAVAILABLE_TTL_MS = 15000;
 /*
-  The pin used to reserve only 72-110px, so the reverse story fired the instant a
-  reader nudged up off the footer. The pin now reserves 0.55 of a viewport and the
-  reverse session waits until the reader has scrolled up through 65% of that band,
-  mirroring the 50% visibility rule the forward approach already uses.
+  The pin reserves the approach band the reverse story fires from. At 0.55 of a
+  viewport with a 0.35 engage threshold the whole brief-to-footer tail was barely
+  1.2 viewports, so a single flick up off the bottom of the page re-ran the Domino
+  sequence before the reader had finished reading the form.
+
+  The band is now 1.15 viewports and the session waits until the reader has climbed
+  through 88% of it. That leaves roughly two viewports of free scrolling under the
+  Domino frame - enough to read the CTA, reach the form, and look at the footer -
+  and it also means scrolling back up shows the settled final frame for a while
+  before anything replays.
 */
 const DOMINO_PIN_TRAVEL_PX = () => {
     const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-    return Math.round(Math.min(700, Math.max(320, viewportHeight * 0.55)));
+    return Math.round(Math.min(1400, Math.max(620, viewportHeight * 1.15)));
 };
-const DOMINO_REVERSE_ENGAGE_PROGRESS = 0.35;
+const DOMINO_REVERSE_ENGAGE_PROGRESS = 0.12;
 export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", onForwardCompletedOnce, enabled, story, }: ReversibleScrollStoriesOptions) {
     const onForwardCompletedOnceRef = useRef(onForwardCompletedOnce);
     const forwardCompletionReportedRef = useRef(false);
@@ -72,20 +78,27 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             const inactiveNumber = { scale: 0.67, autoAlpha: 0.62, color: "rgba(119, 177, 244, 0.7)" };
             const activeNumber = { scale: 1, autoAlpha: 1, color: "#badaff" };
             const howStops = [0.02, 0.4, 0.78] as const;
-            const howCopyTransition = revealTime(0.13);
-            const howItemTransition = revealTime(0.11);
-            const howItemStagger = revealTime(0.02);
-            const howStepDuration = compact && !lowPower ? 1.3 : 1.34;
+            /*
+              Step copy used to swap inside 0.13 of the timeline while the scroll tween
+              was itself running a `power2.inOut`. Two eases stacked on the same beat
+              made the numbers snap rather than cross-fade. The transition now covers
+              most of the gap between stops, the tween carries a single gentle ease,
+              and the slide distance is short enough to read as a settle.
+            */
+            const howCopyTransition = revealTime(0.2);
+            const howItemTransition = revealTime(0.17);
+            const howItemStagger = revealTime(0.03);
+            const howStepDuration = compact && !lowPower ? 1.52 : 1.56;
             const howWheelThreshold = 18;
             const howTouchThreshold = 36;
             const howWheelGestureGapMs = 220;
-            const hiddenCopyPose = { x: -54, y: 0, autoAlpha: 0 };
+            const hiddenCopyPose = { x: -34, y: 0, autoAlpha: 0 };
             const activeCopyPose = { x: 0, y: 0, autoAlpha: 1 };
-            const exitingCopyPose = { x: -56, y: 0, autoAlpha: 0 };
-            const enteringCopyPose = { x: -56, y: 0, autoAlpha: 0 };
+            const exitingCopyPose = { x: -36, y: 0, autoAlpha: 0 };
+            const enteringCopyPose = { x: -36, y: 0, autoAlpha: 0 };
             gsap.set(howInner, { y: 54, autoAlpha: 0 });
             gsap.set(howCopies, hiddenCopyPose);
-            gsap.set(howCopyItems.flat(), { x: -16, y: 0, autoAlpha: 1 });
+            gsap.set(howCopyItems.flat(), { x: -12, y: 0, autoAlpha: 1 });
             gsap.set(howCopies[0], activeCopyPose);
             gsap.set(howCopyItems[0], { x: 0, y: 0, autoAlpha: 1 });
             gsap.set(howNumbers, inactiveNumber);
@@ -183,7 +196,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 tween = gsap.to(proxy, {
                     value: Math.max(0, target),
                     duration: howStepDuration,
-                    ease: "power2.inOut",
+                    ease: "power1.inOut",
                     overwrite: true,
                     onUpdate: () => writeHowScroll(proxy.value),
                     onComplete: finishAndFlush,
@@ -596,40 +609,40 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             howTrigger = howTimeline.scrollTrigger ?? null;
             howTimeline
                 .to({}, { duration: 1 }, 0)
-                .to(howCopies[0], { ...exitingCopyPose, duration: howCopyTransition, ease: "power2.inOut" }, 0.075)
-                .to(howNumbers[0], { ...inactiveNumber, duration: howCopyTransition, ease: "power2.inOut" }, 0.19)
-                .to(howNumbers[1], { ...activeNumber, duration: howCopyTransition, ease: "power2.inOut" }, 0.19)
+                .to(howCopies[0], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.055)
+                .to(howNumbers[0], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
+                .to(howNumbers[1], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
                 .fromTo(howCopies[1], enteringCopyPose, {
                 ...activeCopyPose,
                 duration: howCopyTransition,
-                ease: "power2.inOut",
+                ease: "sine.inOut",
                 immediateRender: false,
-            }, 0.17)
-                .fromTo(howCopyItems[1], { x: -16, y: 0 }, {
+            }, 0.145)
+                .fromTo(howCopyItems[1], { x: -12, y: 0 }, {
                 x: 0,
                 y: 0,
                 duration: howItemTransition,
                 stagger: howItemStagger,
-                ease: "power2.out",
+                ease: "sine.out",
                 immediateRender: false,
-            }, 0.17)
-                .to(howCopies[1], { ...exitingCopyPose, duration: howCopyTransition, ease: "power2.inOut" }, 0.445)
-                .to(howNumbers[1], { ...inactiveNumber, duration: howCopyTransition, ease: "power2.inOut" }, 0.56)
-                .to(howNumbers[2], { ...activeNumber, duration: howCopyTransition, ease: "power2.inOut" }, 0.56)
+            }, 0.15)
+                .to(howCopies[1], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.435)
+                .to(howNumbers[1], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
+                .to(howNumbers[2], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
                 .fromTo(howCopies[2], enteringCopyPose, {
                 ...activeCopyPose,
                 duration: howCopyTransition,
-                ease: "power2.inOut",
+                ease: "sine.inOut",
                 immediateRender: false,
-            }, 0.54)
-                .fromTo(howCopyItems[2], { x: -16, y: 0 }, {
+            }, 0.52)
+                .fromTo(howCopyItems[2], { x: -12, y: 0 }, {
                 x: 0,
                 y: 0,
                 duration: howItemTransition,
                 stagger: howItemStagger,
-                ease: "power2.out",
+                ease: "sine.out",
                 immediateRender: false,
-            }, 0.54)
+            }, 0.525)
                 .addLabel("step-01", howStops[0])
                 .addLabel("step-02", howStops[1])
                 .addLabel("step-03", howStops[2])
@@ -1426,6 +1439,36 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     forwardApproachAlignPending = false;
                 return started;
             };
+            /*
+              A reverse session locks the page at a single Y for the whole playback.
+              Pinning it to the far end of the approach band meant engaging the story
+              also teleported the reader a full band downwards before the frames even
+              started, which is what read as "it throws me around". The scene is pinned
+              across the whole band, so locking wherever the reader already is looks
+              identical and moves nothing.
+            */
+            const getReverseSessionBoundaryY = (fallback?: number) => {
+                const trigger = dominoTrigger;
+                if (!trigger)
+                    return Number.isFinite(fallback) ? fallback : window.scrollY;
+                return Math.min(trigger.end - 1, Math.max(trigger.start + 1, window.scrollY));
+            };
+            /*
+              The gesture path used to fire on the first upward wheel notch anywhere
+              the Domino scene was within 0.8 of a viewport - which covers the entire
+              brief form and most of the footer. One nudge up off the bottom of the
+              page therefore re-ran the whole sequence before the reader had read
+              anything. The reverse story now only engages once the reader has actually
+              climbed back up through the approach band, the same rule the scroll
+              trigger applies, so the tail of the page is free scrolling.
+            */
+            const hasClimbedIntoDominoReverseBand = () => {
+                const trigger = dominoTrigger;
+                if (!trigger)
+                    return isDominoVisuallyNear(0.35);
+                const travel = Math.max(1, trigger.end - trigger.start);
+                return window.scrollY <= trigger.start + travel * DOMINO_REVERSE_ENGAGE_PROGRESS;
+            };
             const startReverseFromCompletedBoundary = () => {
                 if (locked ||
                     disposed ||
@@ -1433,11 +1476,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     isTransportUnavailable(-1) ||
                     root.dataset.dominoPlayback !== "complete" ||
                     logicalTime < getDuration() - 1 / 45 ||
+                    !hasClimbedIntoDominoReverseBand() ||
                     !isDominoVisuallyNear()) {
                     return false;
                 }
-                const reverseBoundary = dominoTrigger?.end;
-                return startSession(-1, Number.isFinite(reverseBoundary) ? reverseBoundary! - 1 : undefined, true);
+                return startSession(-1, getReverseSessionBoundaryY(), true);
             };
             const startForwardFromCrossedBoundary = (boundaryY?: number) => {
                 const navigationTarget = root.dataset.programmaticAnchor;
@@ -1842,7 +1885,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     if (self.direction < 0 &&
                         self.progress <= DOMINO_REVERSE_ENGAGE_PROGRESS &&
                         logicalTime >= getDuration() - 1 / 45) {
-                        startSession(-1, self.end - 1, true);
+                        startSession(-1, getReverseSessionBoundaryY(self.end - 1), true);
                     }
                 },
                 onLeave: (self) => {
@@ -1863,12 +1906,16 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     // frame batch. Engage on the way out so the reverse story never
                     // gets skipped, only delayed.
                     if (self.direction < 0 && logicalTime >= getDuration() - 1 / 45)
-                        startSession(-1, self.end - 1, true);
+                        startSession(-1, getReverseSessionBoundaryY(self.start + 1), true);
                 },
                 onRefresh: (self) => {
                     if (!locked || sessionDirection === 0)
                         return;
-                    sessionBoundaryY = sessionDirection > 0 ? self.start + 1 : self.end - 1;
+                    // A refresh must not relocate a running reverse session. Keep the
+                    // locked Y where it already is as long as the band still covers it.
+                    sessionBoundaryY = sessionDirection > 0
+                        ? self.start + 1
+                        : Math.min(self.end - 1, Math.max(self.start + 1, sessionBoundaryY ?? self.end - 1));
                     holdSessionAtBoundary();
                 },
             });

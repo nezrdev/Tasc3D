@@ -39,6 +39,11 @@ New review items:
 - T9: section extraction, media reducer orchestration, Services story extraction, and visual media memoization are implemented and locally verified without behavior drift.
 - T10: dead-code/media cleanup, font subsetting, local map delivery, stable metadata, and final T10 journey are implemented and locally verified.
 - T11: final software gate, Services refresh/source-swap regression, Domino fail-open, first-visit consent/navigation, performance matrix, and handoff evidence are implemented and locally verified.
+- Client review pass two (2026-08-03): Hero/Vision pin travel cut again, Clients to
+  Services backdrop handover moved onto the scrub timeline, mobile Services alpha
+  source replaced, reverse Services entry frame fixed, mobile Services frame refit to
+  one viewport, How we work step copy softened, Domino tail given ~1.85 viewports of
+  free scrolling, mobile starfield density raised, mobile Datum frame +5%.
 
 ## Remaining Goal Scope
 
