@@ -131,18 +131,23 @@
 
 
 
+  /*
+    Viewport-anchored and centred. Percentage offsets resolved against the pinned
+    scene box, which changes width while the pin spacer settles, and every stop
+    landed on a slightly different horizontal position.
+  */
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
     bottom: 0 !important;
-    left: -8% !important;
-    width: 154% !important;
+    left: 50% !important;
+    width: 154vw !important;
     height: auto !important;
     aspect-ratio: 16 / 9 !important;
     overflow: visible !important;
     -webkit-clip-path: none !important;
     clip-path: none !important;
-    transform: none !important;
+    transform: translateX(-50%) !important;
     transform-origin: 50% 100% !important;
   }
 
@@ -300,8 +305,8 @@
   }
 
   .services-story-section .services-story-video-wrap {
-    left: -6% !important;
-    width: 146% !important;
+    left: 50% !important;
+    width: 146vw !important;
   }
 
   .mission-main-block {

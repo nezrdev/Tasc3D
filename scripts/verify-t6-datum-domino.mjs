@@ -29,10 +29,12 @@ const datumTransitionStart = landing.indexOf('id: "datum-content-transition"');
 const datumTransitionEnd = landing.indexOf('.addLabel("cards"', datumTransitionStart);
 const datumTransitionContract = landing.slice(datumTransitionStart, datumTransitionEnd);
 assert.ok(datumTransitionStart >= 0 && datumTransitionEnd > datumTransitionStart, "Datum transition trigger was not found");
-assert.doesNotMatch(datumTransitionContract, /\bpin\s*:/);
+assert.match(datumTransitionContract, /\bpin:\s*true/, "Datum must pin the viewport while the cards to waitlist story runs");
+assert.match(datumTransitionContract, /\bpinSpacing:\s*true/, "Datum pin must reserve flow spacing");
+assert.match(datumTransitionContract, /end:\s*\(\)\s*=>\s*`\+=\$\{getStableDatumPinDistance\(\)\}`/, "Datum pin travel must use the stable viewport distance");
+assert.match(datumTransitionContract, /root\.dataset\.datumPinned = String\(self\.isActive\)/, "Datum pin state must be published live, not hardcoded");
 assert.match(landing, /start:\s*\(\)\s*=>\s*`top \$\{Math\.round\(getVisualViewportHeight\(\) \* 2\)\}px`/);
 assert.doesNotMatch(landing, /reverseThreshold=\{/);
-assert.doesNotMatch(landing, /getStableDatumPinDistance/);
 assert.match(motionCss, /\.datum-motion-video\[data-first-frame="decoded"\]/);
 assert.match(responsiveCss, /data-datum-playback="fallback"/);
 

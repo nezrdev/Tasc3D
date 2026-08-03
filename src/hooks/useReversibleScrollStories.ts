@@ -34,6 +34,17 @@ const DOMINO_WHEEL_GESTURE_GAP_MS = 180;
 const DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS = 1200;
 const DOMINO_TRANSPORT_PREFLIGHT_TIMER_MS = DOMINO_TRANSPORT_PREFLIGHT_CONTRACT_MS - 300;
 const DOMINO_TRANSPORT_UNAVAILABLE_TTL_MS = 15000;
+/*
+  The pin used to reserve only 72-110px, so the reverse story fired the instant a
+  reader nudged up off the footer. The pin now reserves 0.55 of a viewport and the
+  reverse session waits until the reader has scrolled up through 65% of that band,
+  mirroring the 50% visibility rule the forward approach already uses.
+*/
+const DOMINO_PIN_TRAVEL_PX = () => {
+    const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+    return Math.round(Math.min(700, Math.max(320, viewportHeight * 0.55)));
+};
+const DOMINO_REVERSE_ENGAGE_PROGRESS = 0.35;
 export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", onForwardCompletedOnce, enabled, story, }: ReversibleScrollStoriesOptions) {
     const onForwardCompletedOnceRef = useRef(onForwardCompletedOnce);
     const forwardCompletionReportedRef = useRef(false);
@@ -1799,7 +1810,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 id: "domino-reversible",
                 trigger: dominoScene,
                 start: "top top",
-                end: () => `+=${Math.min(110, Math.max(72, Math.round(getViewportHeight() * 0.08)))}`,
+                end: () => `+=${DOMINO_PIN_TRAVEL_PX()}`,
                 pin: true,
                 pinSpacing: true,
                 anticipatePin: 1,
@@ -1809,7 +1820,13 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     root.dataset.dominoPinned = String(self.isActive);
                 },
                 onEnter: (self) => startSession(1, self.start + 1, self.direction > 0),
-                onEnterBack: (self) => startSession(-1, self.end - 1, self.direction < 0),
+                onEnterBack: () => {
+                    // Approaching from the footer only arms the story. The reverse
+                    // session starts once the reader has actually scrolled up through
+                    // the approach band, so a single nudge off the bottom of the page
+                    // no longer snaps the whole Domino sequence back on.
+                    warmDominoMedia();
+                },
                 onUpdate: (self) => {
                     if (locked) {
                         if (self.progress <= 0 || self.progress >= 1)
@@ -1823,7 +1840,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                         return;
                     }
                     if (self.direction < 0 &&
-                        self.progress <= 1 &&
+                        self.progress <= DOMINO_REVERSE_ENGAGE_PROGRESS &&
                         logicalTime >= getDuration() - 1 / 45) {
                         startSession(-1, self.end - 1, true);
                     }
@@ -1837,9 +1854,16 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                     if (locked)
                         scheduleBoundaryHold();
                 },
-                onLeaveBack: () => {
-                    if (locked)
+                onLeaveBack: (self) => {
+                    if (locked) {
                         scheduleBoundaryHold();
+                        return;
+                    }
+                    // A fast flick can cross the whole approach band inside one
+                    // frame batch. Engage on the way out so the reverse story never
+                    // gets skipped, only delayed.
+                    if (self.direction < 0 && logicalTime >= getDuration() - 1 / 45)
+                        startSession(-1, self.end - 1, true);
                 },
                 onRefresh: (self) => {
                     if (!locked || sessionDirection === 0)

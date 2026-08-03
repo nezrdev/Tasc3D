@@ -1,5 +1,34 @@
 # Active Tasks
 
+## Client Review Pass (2026-08-03)
+
+Regressions the T0-T13 optimisation stack introduced, restored against `0b693f7`:
+
+- Datum pin was removed in `b4ab9bd`. `pin`/`pinSpacing`/`getStableDatumPinDistance`
+  and the live `datumPinned` flag are back, so the cards to waitlist story locks
+  the viewport again. `verify-t6-datum-domino.mjs` asserted the missing pin as a
+  requirement; the assertion was inverted.
+- Clients starfield faded to `0.32` and back to `1` instead of to `0`.
+
+New review items:
+
+- The ambient `first-four-gradient-field`, the Clients flare plate and the shared
+  starfield stage fade out once Services is pinned, so Services arrives on black.
+  Four separate `opacity: 1 !important` declarations had to be un-forced first.
+  The fade is a CSS state change, not a scrub tween: an earlier GSAP version of
+  this regressed `qa:t7` on Chromium.
+- Services media is never hidden per stop. The `[data-services-active="0"|"3"]`
+  display gates and the pinned/inrange opacity gate are gone.
+- Services media geometry is viewport anchored in every mobile breakpoint. Four
+  files disagreed on `left`/`width` percentages resolved against the pinned scene.
+- The `-36vw` pan on stops 1 and 3 is gone; all stops share one framing.
+- Packed alpha canvas uses `object-fit: contain`, not `cover`.
+- Domino reserves `0.55` viewport of approach and the reverse session waits for
+  `progress <= 0.35`, with an `onLeaveBack` fallback so a fast flick delays the
+  story instead of skipping it.
+- Hero/Vision pin travel cut to `2.05` desktop / `1.6` mobile / `1.75` mac.
+  Mobile `touchMultiplier` damped to `0.8`.
+
 ## Done In Current Stack
 
 - T6: Datum and Domino playback stabilization.

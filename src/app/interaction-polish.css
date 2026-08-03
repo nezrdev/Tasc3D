@@ -14,12 +14,11 @@
 
 
 
-  .site-shell[data-services-active="1"] .services-story-section .services-story-video,
-  .site-shell[data-services-active="3"] .services-story-section .services-story-video,
-  .services-story-stop-poster[data-services-stop="1"],
-  .services-story-stop-poster[data-services-stop="3"] {
-    transform: translate3d(-36vw, 0, 0) !important;
-  }
+  /*
+    Stops 1 and 3 used to be panned by -36vw while stop 2 stayed centred, so the
+    frame jumped sideways every time the story advanced. All stops now share one
+    framing and the media arrives and leaves from the same place.
+  */
 
   .figma-clients-heading h2 {
     font-size: clamp(16.5px, 5.6vw, 23px) !important;

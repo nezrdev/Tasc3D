@@ -728,7 +728,27 @@ const runBrowserCase = async (configuration, baseUrl) => {
       howTraversalCompleted = true;
       howJourneySequence = await page.evaluate(() => window.__t7Qa?.howSteps ?? []);
     } catch (error) {
-      check("How forward/reverse journey completes", false, error instanceof Error ? error.message : String(error));
+      const howDebugState = await page.evaluate(() => {
+        const root = document.querySelector(".site-shell");
+        const how = document.querySelector(".how-work-motion-section");
+        const rect = how?.getBoundingClientRect();
+        return {
+          hash: window.location.hash,
+          programmaticAnchor: root?.dataset.programmaticAnchor ?? null,
+          howStep: root?.dataset.howWorkStep ?? null,
+          howTransitioning: root?.dataset.howWorkTransitioning ?? null,
+          howRect: rect ? { bottom: Math.round(rect.bottom), top: Math.round(rect.top) } : null,
+          owner: root?.dataset.motionInputOwner ?? null,
+          scrollY: Math.round(window.scrollY),
+          servicesActive: root?.dataset.servicesActive ?? null,
+          servicesPinned: root?.dataset.servicesPinned ?? null,
+          viewportHeight: window.innerHeight,
+        };
+      }).catch(() => null);
+      check("How forward/reverse journey completes", false, {
+        error: error instanceof Error ? error.message : String(error),
+        state: howDebugState,
+      });
     } finally {
       if (page) await page.evaluate(() => window.__t7QaControl?.endScroll()).catch(() => undefined);
     }

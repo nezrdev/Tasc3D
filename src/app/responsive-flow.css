@@ -911,8 +911,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
 
   .services-story-section .services-story-video-wrap {
     bottom: -3vw !important;
-    left: -7% !important;
-    width: 114% !important;
+    left: 50% !important;
+    width: 114vw !important;
+    transform: translateX(-50%) !important;
   }
 }
 
@@ -981,8 +982,9 @@ html[data-tasc-webkit="true"] .figma-client-card {
 
   .services-story-section .services-story-video-wrap {
     bottom: -3vw !important;
-    left: -7% !important;
-    width: 114% !important;
+    left: 50% !important;
+    width: 114vw !important;
+    transform: translateX(-50%) !important;
     -webkit-clip-path: none !important;
     clip-path: none !important;
   }

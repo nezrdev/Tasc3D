@@ -9769,21 +9769,13 @@ body::before {
   transition: opacity 520ms ease, visibility 520ms ease, filter 520ms ease;
 }
 
-.site-shell[data-services-active="3"] .services-story-video-wrap {
-  display: none !important;
-  transition: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  filter: none !important;
-}
-
-.site-shell[data-services-active="0"] .services-story-video-wrap {
-  display: none !important;
-  transition: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  filter: none !important;
-}
+/*
+  The services media stays mounted for every authored stop, including stop 0 and
+  stop 3. It is absolutely positioned inside `.services-story-section`, which
+  clips its own overflow, so it can never bleed into a neighbouring section.
+  Hiding it per stop used to leave an empty frame when the story was re-entered
+  backwards from How we work.
+*/
 
 .site-nav a,
 .header-action-cta {
@@ -11381,19 +11373,31 @@ body::before {
   mix-blend-mode: screen !important;
 }
 
-.site-shell:not([data-services-pinned="true"]):not([data-services-inrange="true"]) .services-story-video-wrap {
-  opacity: 0 !important;
-}
-
-.site-shell:is([data-services-pinned="true"], [data-services-inrange="true"]) .services-story-video-wrap {
-  opacity: 1 !important;
-  transition: opacity 680ms cubic-bezier(0.22, 1, 0.36, 1);
-}
+/*
+  The wrap itself is always opaque. The Clients to Services handoff timeline owns
+  the reveal by animating `.services-story-video` and `.services-story-stop-posters`
+  directly, so a second wrap-level opacity gate keyed on pinned/inrange only
+  produced an empty frame while the story was re-entered backwards.
+*/
 
 .services-story-video-wrap {
   display: block !important;
   visibility: visible !important;
+  opacity: 1 !important;
   filter: none !important;
+  transition: opacity 680ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+  Far from Services the wrap is skipped by the compositor. `content-visibility`
+  drops the paint cost without a `display` toggle, so returning backwards from
+  How we work still finds the frame mounted and laid out. The approach trigger
+  carries one viewport of tail past the section so this never engages during the
+  Services to How seam.
+*/
+
+.site-shell:not([data-services-inrange="true"]):not([data-services-pinned="true"]) .services-story-video-wrap {
+  content-visibility: hidden;
 }
 
 .pin-spacer-services-motion {
@@ -11551,7 +11555,8 @@ body::before {
     radial-gradient(circle at 78% 18%, rgba(67, 133, 194, 0.15), transparent 35%),
     radial-gradient(circle at 15% 42%, rgba(88, 141, 187, 0.08), transparent 42%),
     linear-gradient(180deg, #010203 0%, #03101b 43%, #02070c 72%, #000000 100%) !important;
-  opacity: 1 !important;
+  /* Not forced: the pinned-Services rule below has to be able to fade this out. */
+  opacity: 1;
 }
 
 .first-four-gradient-field > span {
@@ -11699,7 +11704,8 @@ body::before {
 }
 
 .services-story-video-packed canvas {
-  object-fit: cover;
+  object-fit: contain;
+  object-position: center bottom;
 }
 
 .site-shell[data-services-video-composite="packed-alpha"] .services-story-video,
@@ -11861,7 +11867,8 @@ body::before {
         #02080d 82%,
         #000000 100%
       ) !important;
-    opacity: 1 !important;
+    /* Not forced: the pinned-Services rule has to be able to fade this out. */
+    opacity: 1;
   }
 
   .first-four-galaxy-stage {
@@ -11996,7 +12003,47 @@ body::before {
 
 
 .first-four-gradient-field {
-  opacity: 0.86 !important;
+  opacity: 0.86;
+  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+  Services paints on a transparent section so the shared starfield shows through.
+  The Clients-era backdrops (ambient hero gradient and the diagonal flare plate)
+  therefore have to be gone once Services owns the viewport, otherwise Services
+  arrives over a washed out teal band instead of black.
+
+  This is a CSS state change keyed on the pin flag rather than a scrub tween:
+  animating these full-viewport layers on every frame measurably starved the
+  How we work story. The WebGL starfield stage is deliberately left alone so its
+  context is never driven to zero opacity.
+*/
+
+.site-shell[data-services-pinned="true"] .first-four-gradient-field {
+  opacity: 0;
+}
+
+.vision-clients-flare-stage {
+  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.site-shell[data-services-pinned="true"] .vision-clients-flare-stage {
+  opacity: 0;
+}
+
+/*
+  The Clients starfield hands over to the Services star layer, which already
+  fades in through the handoff timeline. Driving the shared WebGL stage through
+  a per-frame tween starved the motion runtime, so the handover is a plain CSS
+  transition on the stage wrapper instead.
+*/
+
+.site-shell > .first-four-galaxy-stage {
+  transition: opacity 460ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.site-shell[data-services-pinned="true"] > .first-four-galaxy-stage {
+  opacity: 0;
 }
 
 .lens-stage,

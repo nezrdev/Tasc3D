@@ -264,9 +264,15 @@
   background: transparent !important;
 }
 
+/*
+  Opacity is deliberately not forced here. The Clients-era ambient gradient has to
+  be able to fade out once Services owns the viewport, otherwise Services arrives
+  over a washed out band instead of black. See the pinned-state rule in globals.
+*/
+
 .first-four-gradient-field {
   background: none !important;
-  opacity: 1 !important;
+  opacity: 1;
 }
 
 .first-four-gradient-field > .first-two-transition-art {
@@ -544,12 +550,17 @@
   pointer-events: none !important;
 }
 
+/*
+  The Clients layer stays mounted while Services approaches, but its opacity is
+  owned by the Clients to Services handoff. Forcing `opacity: 1` here kept the
+  Clients backdrop painting underneath the transparent Services section.
+*/
+
 .site-shell[data-services-inrange="true"]:not([data-services-pinned="true"])
   .figma-clients-section,
 .site-shell[data-services-inrange="true"]:not([data-services-pinned="true"])
   .figma-clients-section .clients-scroll-element-wrap {
   display: block !important;
-  opacity: 1 !important;
   visibility: visible !important;
 }
 

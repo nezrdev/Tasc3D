@@ -27,6 +27,26 @@
 - An active Services story survives ScrollTrigger refresh/profile changes; refresh recomputes and corrects the lock coordinate instead of releasing ownership.
 - Domino transport failure exits through the normal direction-aware boundary path. Forward failure exposes the form, reverse failure returns toward Process, and both paths release Lenis/document input.
 
+## Client Review Pass Decisions (2026-08-03)
+
+- Datum owns a real pin again. `datum-content-transition` carries
+  `pin`/`pinSpacing`/`anticipatePin` and `end: +=getStableDatumPinDistance()`;
+  `datum-content-visibility` still reveals the cards at 25% visibility and
+  `datum-reversible` stays the zero-length anchor/priority marker.
+- Clients-era backdrops (`first-four-gradient-field`, `vision-clients-flare-stage`,
+  the shared `first-four-galaxy-stage`) fade out through CSS keyed on
+  `data-services-pinned`, never through a scrub tween. Tweening those
+  full-viewport layers per frame starved the How we work story badly enough that
+  `qa:t7` timed out on Chromium whenever both engines ran in one pass. Their
+  `opacity` declarations must stay un-forced so the pinned-state rule can win.
+- `.services-story-video-wrap` is positioned from the viewport
+  (`left: 50%` + `translateX(-50%)` + `vw` widths) in every breakpoint. Percentage
+  offsets against the pinned scene box drift while the pin spacer settles.
+- Services media stays mounted and opaque at every stop; only the handoff timeline
+  animates its children.
+- Domino pin travel is `clamp(320, 0.55vh, 700)` and the reverse story engages at
+  `progress <= 0.35` so a nudge off the footer no longer snaps it back.
+
 ## Latest Evidence
 
 - `pnpm qa:t12` passed.

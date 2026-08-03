@@ -57,16 +57,22 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
     clip-path: none !important;
   }
 
+  /*
+    Anchored to the viewport centre, not to the scene box. `left: -18%` plus a
+    percentage width used to re-resolve against the pinned scene, whose width
+    moves while the pin spacer and scrollbar settle, so the frame slid sideways
+    between stops. Viewport units plus a centred transform keep it still.
+  */
   .services-story-section .services-story-video-wrap {
     top: auto !important;
     right: auto !important;
     bottom: 0 !important;
-    left: -18% !important;
-    width: 136% !important;
+    left: 50% !important;
+    width: 136vw !important;
     height: auto !important;
     aspect-ratio: 16 / 9 !important;
     overflow: visible !important;
-    transform: none !important;
+    transform: translateX(-50%) !important;
     transform-origin: 50% 100% !important;
   }
 
@@ -96,7 +102,7 @@ html[data-tasc-boot-fail-open="true"] .site-shell:not(.hero-intro-ready) .figma-
 
 @media (max-width: 760px) and (max-height: 700px) {
   .services-story-section .services-story-video-wrap {
-    left: -12% !important;
-    width: 124% !important;
+    left: 50% !important;
+    width: 124vw !important;
   }
 }

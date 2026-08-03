@@ -1753,7 +1753,11 @@ export function TascLanding() {
                 stableHeroViewportWidth = nextWidth;
                 stableHeroViewportHeight = nextHeight;
             }
-            const pinMultiplier = isMacRuntime() ? 2.05 : isMobileRuntime() ? 2.15 : 2.45;
+            // Hero plus Vision used to reserve almost two and a half viewports of
+            // scroll on desktop, which read as a long empty stretch before Clients.
+            // Mobile is cut further because the damped touch multiplier already
+            // stretches every swipe.
+            const pinMultiplier = isMacRuntime() ? 1.75 : isMobileRuntime() ? 1.6 : 2.05;
             return Math.round(stableHeroViewportHeight * pinMultiplier);
         };
         const lensVideo = root.querySelector<HTMLVideoElement>(".lens-video");
@@ -2599,7 +2603,9 @@ export function TascLanding() {
             smoothWheel: !isMacRuntime(),
             virtualScroll: () => !isMacRuntime(),
             wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.38 : 0.35,
-            touchMultiplier: isMobileRuntime() ? 1 : 0.9,
+            // Touch travel is damped to 0.8 on phones so the same swipe covers ~25%
+            // less document. Sections stop flying past between two flicks.
+            touchMultiplier: isMobileRuntime() ? 0.8 : 0.9,
         });
         lenisRef.current = lenis;
         root.dataset.wheelScrollRate = isMacRuntime() ? "native" : "lenis";
@@ -4371,6 +4377,21 @@ export function TascLanding() {
                 const datumCardDetailGroups = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".datum-glass-card")).map((card) => Array.from(card.querySelectorAll<HTMLElement>(".datum-card-top, .datum-card-rule, h3, :scope > p")));
                 const datumCardDetails = datumCardDetailGroups.flat();
                 let datumContentState: "cards" | "waitlist" | "transition" | null = null;
+                let stableDatumViewportWidth = getRuntimeViewport().width;
+                let stableDatumViewportHeight = getRuntimeViewport().height;
+                const getStableDatumPinDistance = () => {
+                    const { height: nextHeight, width: nextWidth } = getRuntimeViewport();
+                    const isRealViewportChange = Math.abs(nextWidth - stableDatumViewportWidth) > 80 ||
+                        Math.abs(nextHeight - stableDatumViewportHeight) >
+                            Math.max(180, stableDatumViewportHeight * 0.28);
+                    if (isRealViewportChange) {
+                        stableDatumViewportWidth = nextWidth;
+                        stableDatumViewportHeight = nextHeight;
+                    }
+                    const coarse = isMobileRuntime();
+                    const proportionalTravel = stableDatumViewportHeight * (coarse ? 0.86 : 0.74);
+                    return Math.round(Math.min(coarse ? 760 : 700, Math.max(coarse ? 560 : 500, proportionalTravel)));
+                };
                 gsap.set(datumCardsState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
                 gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 0 });
                 if (datumHeading) {
@@ -4520,11 +4541,17 @@ export function TascLanding() {
                     scrollTrigger: {
                         id: "datum-content-transition",
                         trigger: datumSection,
-                        start: () => `top ${Math.round(getVisualViewportHeight() * (1 - RUNTIME_MEDIA.datum.visibilityRatio))}px`,
-                        end: "bottom top",
+                        start: "top top",
+                        end: () => `+=${getStableDatumPinDistance()}`,
+                        pin: true,
+                        pinSpacing: true,
+                        anticipatePin: 1,
                         scrub: 0.28,
                         refreshPriority: 10,
                         invalidateOnRefresh: true,
+                        onToggle: (self) => {
+                            root.dataset.datumPinned = String(self.isActive);
+                        },
                         onEnter: (self) => {
                             if (datumContentState === null)
                                 showDatumCards();
