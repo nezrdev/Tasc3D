@@ -4,9 +4,27 @@
 
 
 
+  /*
+    Sections that follow a pin have to win the seam, or the pinned frame paints
+    over them for the frames where it is still fixed and the next section has
+    already scrolled up under it. That is the dark Datum plate landing on top of
+    "Five steps from brief to final report" - it only showed on viewport heights
+    where the pinned section outgrew its spacer. The stack now climbs in
+    document order across the whole tail of the page.
+  */
   .pin-spacer-datum-reversible,
   .datum-motion-section {
     z-index: 4 !important;
+  }
+
+  .process-contact-section {
+    position: relative;
+    z-index: 5 !important;
+  }
+
+  .site-footer {
+    position: relative;
+    z-index: 6 !important;
   }
 
 

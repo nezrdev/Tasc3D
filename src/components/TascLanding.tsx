@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
-import Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -18,12 +17,7 @@ import { SiteFooter } from "@/components/sections/SiteFooter";
 import SitePreloader from "@/components/SitePreloader";
 import TascHeader from "@/components/TascHeader";
 import { useMediaOrchestrator } from "@/hooks/useMediaOrchestrator";
-import { useMobilePortionedScroll } from "@/hooks/useMobilePortionedScroll";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
-import {
-    useServicesStory,
-    type ServicesStoryInputRuntime,
-} from "@/hooks/useServicesStory";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
 import { RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
@@ -34,11 +28,9 @@ import {
     observeFirstMediaThroughput,
 } from "@/lib/connection-profile";
 import { isMediaBufferedThrough } from "@/lib/media-buffer";
-import {
-    getMotionInputOwnerId,
-    registerMotionInputObserver,
-} from "@/lib/motion-input-bus";
+import { registerMotionInputObserver } from "@/lib/motion-input-bus";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
+import { acquireScrollLock, type ScrollLockHandle } from "@/lib/scroll-lock";
 import { getVisualViewportHeight } from "@/lib/visibility";
 import type { LensPose, MotionNavigationController, } from "@/types/landing";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -110,6 +102,15 @@ const SERVICES_HAS_CONTINUOUS_REVERSE = SERVICES_REVERSE_KEYFRAME_STOPS.length =
 const SERVICES_SEAM_FRAME_NUDGE = 1 / (RUNTIME_MEDIA.services.fps * 2);
 // Sub-frame acceptance window for seeks that have to resolve to one exact frame.
 const SERVICES_SEAM_SEEK_TOLERANCE = 1 / (RUNTIME_MEDIA.services.fps * 2);
+/*
+  Services is pinned across this many viewports of real document. The three
+  stops sit at the progress marks below, so the reader gets close to a viewport
+  of ordinary scrolling between one segment and the next, and the exit segment
+  fires once they have scrolled past the last stop.
+*/
+const SERVICES_PIN_VIEWPORTS = 2.4;
+const SERVICES_STOP_PROGRESS = [0, 0.34, 0.63] as const;
+const SERVICES_EXIT_PROGRESS = 0.88;
 const MOBILE_PROFILE_WIDTH = 900;
 const MOBILE_PROFILE_HYSTERESIS_PX = 80;
 type RuntimePerformanceProfile = {
@@ -173,7 +174,6 @@ export function TascLanding() {
     const servicesVideoRef = useRef<HTMLVideoElement | null>(null);
     const servicesWarmupClaimRef = useRef<(() => void) | null>(null);
     const datumVideoRef = useRef<HTMLVideoElement | null>(null);
-    const lenisRef = useRef<Lenis | null>(null);
     const heroTimelineRef = useRef<gsap.core.Timeline | null>(null);
     const servicesControllerRef = useRef<MotionNavigationController | null>(null);
     const programmaticNavigationRef = useRef(false);
@@ -196,7 +196,6 @@ export function TascLanding() {
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
     const [heroIntroReady, setHeroIntroReady] = useState(false);
-    const createServicesStoryInput = useServicesStory();
     const {
         actions: mediaActions,
         setters: {
@@ -356,10 +355,6 @@ export function TascLanding() {
         }
         mediaActions.recoverServices();
     }, [mediaActions]);
-    const armDominoReverseMedia = useCallback(() => {
-        rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
-        mediaActions.armDominoReverse();
-    }, [mediaActions]);
     const reportDominoSourceError = useCallback((direction: "forward" | "reverse") => {
         dominoPendingSourceErrorsRef.current[direction] = true;
         const reporter = dominoSourceErrorReporterRef.current;
@@ -390,6 +385,13 @@ export function TascLanding() {
         performanceModeResolved &&
         criticalStaticAssetsReady &&
         heroVisualReady;
+    /*
+      The starfield mode has to agree with whether the canvas is actually on the
+      page. A stale "ready" from a galaxy that has since unmounted put the shell
+      in galaxy mode with nothing rendering, and galaxy mode hides the static
+      fallback - which is a sky with no stars in it.
+    */
+    const galaxyMounted = heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed;
     const interactiveGalaxyEnabled = interactiveGalaxyArmed &&
         motionAllowed &&
         performanceModeResolved &&
@@ -1552,13 +1554,6 @@ export function TascLanding() {
             anchorSettleCleanupRef.current = cancelSettle;
             const applyPosition = (nextTop: number) => {
                 const targetTop = Math.max(0, Math.round(nextTop));
-                if (lenisRef.current) {
-                    lenisRef.current.scrollTo(targetTop, {
-                        duration: 0.01,
-                        immediate: true,
-                        force: true,
-                    });
-                }
                 window.scrollTo({ top: targetTop, behavior: "auto" });
                 ScrollTrigger.update();
                 window.dispatchEvent(new CustomEvent("tasc:scroll-position-applied"));
@@ -1807,7 +1802,6 @@ export function TascLanding() {
         let servicesRunToken = 0;
         let servicesActive = false;
         let servicesReleasing = false;
-        let servicesStoryInput: ServicesStoryInputRuntime | null = null;
         const lockClientsServicesHandoffAtServices = () => {
             const handoff = clientsServicesHandoff;
             const trigger = handoff?.scrollTrigger;
@@ -1823,52 +1817,20 @@ export function TascLanding() {
                 gsap.set(servicesMediaVisuals, { autoAlpha: 1 });
         };
         let servicesPhase: "idle" | "preparing" | "playing" | "waiting" | "releasing" | "reverse" = "idle";
-        let servicesEntryDirection: 1 | -1 = 1;
-        let servicesLockY = 0;
         let servicesGateUntil = 0;
-        let servicesEntryInputIgnoreUntil = 0;
         let servicesTransitionDirection: 1 | -1 | 0 = 0;
-        let servicesPortionDirection: 1 | -1 | 0 = 0;
-        let servicesLastPortionDirection: 1 | -1 | 0 = 0;
-        let documentScrollY = window.scrollY;
-        let documentScrollDirection: 1 | -1 | 0 = 0;
-        let servicesPortionDirectionClearFrame = 0;
-        let servicesPortionTargetIds: string[] | null = null;
-        const resetServicesPortionState = () => {
-            window.cancelAnimationFrame(servicesPortionDirectionClearFrame);
-            servicesPortionDirectionClearFrame = 0;
-            servicesPortionDirection = 0;
-            servicesLastPortionDirection = 0;
-            servicesPortionTargetIds = null;
-            delete root.dataset.servicesPortionDirection;
-            delete root.dataset.servicesLastPortionDirection;
-            delete root.dataset.servicesPortionTarget;
-        };
         let servicesReleaseToken = 0;
         let servicesReleaseTimer = 0;
         let servicesEntryToken = 0;
         let servicesEntryPreparing: 1 | -1 | 0 = 0;
-        let servicesEntryLockY = 0;
         let servicesEntryRetryTimer = 0;
         let servicesMediaRetryTimer = 0;
         let servicesMediaRetryKey = "";
         let servicesMediaRetryFailures = 0;
         let servicesMediaRetryStartedAt = 0;
-        let servicesOwnsLenisLock = false;
+        let servicesScrollLock: ScrollLockHandle | null = null;
         let heroVideoSuspended = false;
         const cleanupCallbacks: Array<() => void> = [];
-        const trackDocumentScrollDirection = () => {
-            const nextY = window.scrollY;
-            const delta = nextY - documentScrollY;
-            if (Math.abs(delta) > 1)
-                documentScrollDirection = delta > 0 ? 1 : -1;
-            documentScrollY = nextY;
-        };
-        const unregisterDocumentDirectionObserver = registerMotionInputObserver("document-direction", ({ kind }) => {
-            if (kind === "scroll")
-                trackDocumentScrollDirection();
-        });
-        cleanupCallbacks.push(unregisterDocumentDirectionObserver);
         const managedRevealElements = new Set<HTMLElement>();
         const managedRevealTriggers = new Set<HTMLElement>();
         const registerManagedRevealElements = (elements: Iterable<HTMLElement>) => {
@@ -2283,8 +2245,6 @@ export function TascLanding() {
                     finish(false);
                     return;
                 }
-                if (media === servicesVideo && servicesStoryInput?.isOwner())
-                    servicesStoryInput.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
                 if (hasReachedSegmentTarget()) {
                     video.dataset.segmentState = "ready";
                     finish(true, snapToFinalFrame);
@@ -2608,37 +2568,14 @@ export function TascLanding() {
             gsap.set(".process-contact-bg", { y: 0, autoAlpha: 1 });
             return;
         }
-        const lenisPhysicalEventsTarget = isMacRuntime() ? document.createElement("div") : window;
-        const lenis = new Lenis({
-            eventsTarget: lenisPhysicalEventsTarget,
-            duration: isMacRuntime() ? 0.62 : isMobileRuntime() ? 0.72 : 0.96,
-            easing: (t: number) => Math.min(1, 1.001 - 2 ** (-10 * t)),
-            smoothWheel: !isMacRuntime(),
-            virtualScroll: () => !isMacRuntime(),
-            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.22 : 0.35,
-            // Touch travel is damped to 0.8 on phones so the same swipe covers ~25%
-            // less document. Sections stop flying past between two flicks.
-            touchMultiplier: isMobileRuntime() ? 0.45 : 0.9,
-        });
-        lenisRef.current = lenis;
-        root.dataset.wheelScrollRate = isMacRuntime() ? "native" : "lenis";
-        let rafId = 0;
-        const raf = (time: number) => {
-            lenis.raf(time);
-            rafId = requestAnimationFrame(raf);
-        };
-        const handleSmoothScrollUpdate = () => {
-            ScrollTrigger.update();
-        };
-        lenis.on("scroll", handleSmoothScrollUpdate);
-        rafId = requestAnimationFrame(raf);
-        const correctNativeScroll = (target: number) => {
-            const safeTarget = Math.max(0, Math.round(target));
-            if (Math.abs(window.scrollY - safeTarget) <= 2)
-                return false;
-            window.scrollTo({ top: safeTarget, left: 0, behavior: "auto" });
-            return true;
-        };
+        /*
+          Every browser scrolls natively. Lenis used to sit in front of the wheel
+          on Windows while iOS and macOS were already on the native path, so the
+          site ran two different scroll models at once and ScrollTrigger had to
+          reconcile them. One model means the pinned stories and the document
+          agree about where the reader is.
+        */
+        root.dataset.wheelScrollRate = "native";
         let servicesTextResolve: (() => void) | null = null;
         let servicesEntryRetryResolve: (() => void) | null = null;
         const clearServicesEntryRetry = () => {
@@ -2658,15 +2595,21 @@ export function TascLanding() {
                 pendingResolve?.();
             }, delayMs);
         });
-        const releaseServicesLenisLock = (snapTarget?: number) => {
-            if (typeof snapTarget === "number" && Number.isFinite(snapTarget)) {
-                correctNativeScroll(snapTarget);
-            }
-            if (servicesOwnsLenisLock || lenis.isLocked) {
-                lenis.scrollTo(window.scrollY, { immediate: true, force: true });
-                lenis.start();
-            }
-            servicesOwnsLenisLock = false;
+        /*
+          The stop only holds the reader while a segment is actually decoding and
+          playing. Everything else about Services - approaching it, reading a
+          settled stop, leaving it - is plain native scrolling.
+        */
+        const holdServicesScroll = () => {
+            if (servicesScrollLock?.isHeld())
+                return;
+            servicesScrollLock = acquireScrollLock("services");
+            root.dataset.servicesLocked = "true";
+        };
+        const releaseServicesScroll = () => {
+            servicesScrollLock?.release();
+            servicesScrollLock = null;
+            delete root.dataset.servicesLocked;
         };
         const setMotionInputState = () => {
             if (servicesActive || servicesReleasing) {
@@ -2676,35 +2619,32 @@ export function TascLanding() {
                 delete root.dataset.motionInputLocked;
             }
         };
+        /*
+          The phase is the single source of truth for whether the reader is being
+          held: anything that is decoding, playing or exiting holds the lock,
+          anything settled hands it straight back.
+        */
         const setServicesPhase = (phase: typeof servicesPhase) => {
             servicesPhase = phase;
             root.dataset.servicesPhase = phase;
-            const progress = `${phase}:${Math.max(0, servicesStage + 1)}`;
             if (phase === "preparing" || phase === "playing" || phase === "releasing" || phase === "reverse")
-                servicesStoryInput?.claim(progress);
+                holdServicesScroll();
             else
-                servicesStoryInput?.release(phase === "waiting" ? "completed" : "out-of-range");
+                releaseServicesScroll();
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
                 root.dataset.servicesEntryAbortReason = reason;
             servicesEntryToken += 1;
             servicesEntryPreparing = 0;
-            servicesEntryLockY = 0;
             clearServicesEntryRetry();
             delete root.dataset.servicesEntryPreparing;
             delete root.dataset.servicesEntryAttempt;
-            delete root.dataset.servicesReverseEntryFrameDecoded;
-            delete root.dataset.servicesReverseEntrySegmentWarm;
             if (!servicesActive && !servicesReleasing && servicesPhase === "preparing") {
                 setServicesPhase("idle");
             }
             setMotionInputState();
         };
-        const clearServicesPendingIntent = () => servicesStoryInput?.clearPendingIntent();
-        const flushServicesPendingIntent = () => servicesStoryInput?.flushPendingIntent();
-        const resetServicesBlockedInput = () => servicesStoryInput?.resetBlockedInput();
-        const resetServicesGestureTotal = () => servicesStoryInput?.resetGestureTotal();
         const stopServicesTextTimeline = () => {
             window.clearTimeout(servicesTextWatchdog);
             servicesTextWatchdog = 0;
@@ -2823,7 +2763,6 @@ export function TascLanding() {
             const from = nextStage === 0 ? 0 : SERVICES_KEYFRAME_STOPS[nextStage - 1];
             const to = SERVICES_KEYFRAME_STOPS[nextStage];
             const segmentDuration = (to - from) / SERVICES_PLAYBACK_RATE;
-            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesPhase("preparing");
             setMotionInputState();
@@ -2871,7 +2810,6 @@ export function TascLanding() {
                         resetServicesMediaRetry();
                         servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
                         setServicesPhase("waiting");
-                        flushServicesPendingIntent();
                         return;
                     }
                 }
@@ -2926,7 +2864,6 @@ export function TascLanding() {
                     resetServicesMediaRetry();
                     servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
                     setServicesPhase("waiting");
-                    flushServicesPendingIntent();
                     return;
                 }
                 setServicesPhase("idle");
@@ -2952,54 +2889,33 @@ export function TascLanding() {
             resetServicesMediaRetry();
             servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
             setServicesPhase("waiting");
-            flushServicesPendingIntent();
         };
-        const finishServicesRelease = (target: number, previewAfter = false, previewRevealed = false) => {
+        /*
+          Finishing the story does not move the page. The reader is standing
+          wherever their last gesture left them inside the pinned band; all we do
+          is hand the input back and let them carry on scrolling out of it.
+        */
+        const finishServicesRelease = (previewAfter = false, previewRevealed = false) => {
             resetServicesMediaRetry();
-            const releaseToken = ++servicesReleaseToken;
+            servicesReleaseToken += 1;
+            window.clearTimeout(servicesReleaseTimer);
+            servicesReleaseTimer = 0;
             clientsServicesHandoff?.scrollTrigger?.enable();
             clientsServicesHandoff?.scrollTrigger?.refresh();
             clientsServicesHandoff?.scrollTrigger?.update();
-            const releaseDistance = Math.abs(target - window.scrollY);
-            const releaseDuration = Math.min(0.82, Math.max(0.48, (releaseDistance / Math.max(window.innerHeight, 1)) * 0.7));
             servicesActive = false;
-            servicesReleasing = true;
+            servicesReleasing = false;
             servicesTransitionDirection = 0;
-            resetServicesGestureTotal();
-            resetServicesBlockedInput();
-            clearServicesPendingIntent();
-            setServicesPhase("releasing");
+            releaseServicesScroll();
             delete root.dataset.servicesPinned;
+            delete root.dataset.servicesActive;
+            delete root.dataset.servicesSequence;
+            if (!previewAfter)
+                setServicesStaticStop(null);
+            setServicesPhase("idle");
             setMotionInputState();
-            lenis.start();
-            servicesOwnsLenisLock = true;
-            let finalized = false;
-            const finalizeRelease = (snapToBoundary = false) => {
-                if (finalized || releaseToken !== servicesReleaseToken)
-                    return;
-                finalized = true;
-                window.clearTimeout(servicesReleaseTimer);
-                servicesReleaseTimer = 0;
-                releaseServicesLenisLock(snapToBoundary ? target : undefined);
-                resetServicesPortionState();
-                servicesReleasing = false;
-                delete root.dataset.servicesPinned;
-                delete root.dataset.servicesActive;
-                delete root.dataset.servicesSequence;
-                if (!previewAfter)
-                    setServicesStaticStop(null);
-                setServicesPhase("idle");
-                setMotionInputState();
-                if (previewAfter)
-                    showServicesIdlePreview(previewRevealed);
-            };
-            servicesReleaseTimer = window.setTimeout(() => finalizeRelease(true), Math.ceil(releaseDuration * 1000) + 260);
-            lenis.scrollTo(target, {
-                duration: releaseDuration,
-                force: true,
-                lock: true,
-                onComplete: () => finalizeRelease(false),
-            });
+            if (previewAfter)
+                showServicesIdlePreview(previewRevealed);
         };
         const releaseServicesForward = async () => {
             if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
@@ -3007,7 +2923,7 @@ export function TascLanding() {
             const token = ++servicesRunToken;
             beginServicesMediaAttempt("forward:exit");
             setServicesPhase("releasing");
-            resetServicesGestureTotal();
+            holdServicesScroll();
             const exitMediaReady = root.dataset.servicesMediaFallback === "true"
                 ? false
                 : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
@@ -3020,7 +2936,7 @@ export function TascLanding() {
                     }
                     else {
                         root.dataset.servicesTransportFailure = "exit-timeout";
-                        finishServicesRelease(servicesTrigger.end + 1);
+                        finishServicesRelease();
                         return;
                     }
                 }
@@ -3079,11 +2995,15 @@ export function TascLanding() {
                 return;
             }
             resetServicesMediaRetry();
-            finishServicesRelease(servicesTrigger.end + 1);
+            finishServicesRelease();
         };
-        const releaseServicesBackward = () => {
-            if (!servicesActive || !servicesTrigger)
-                return;
+        /*
+          Scrolling back up past the first stop rewinds the visual to the opening
+          frame and hands the input straight back. The story never replays and
+          never locks on the way up - a reader climbing out of Services is
+          leaving, not asking to watch it backwards.
+        */
+        const rewindServicesToStart = () => {
             servicesRunToken += 1;
             if (servicesVideo)
                 mediaRunCancels.get(servicesVideo)?.();
@@ -3094,10 +3014,10 @@ export function TascLanding() {
             root.dataset.servicesMediaDecoded = "true";
             setServicesStaticStop(null);
             pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[0], 0.12);
-            finishServicesRelease(servicesTrigger.start - 1, true, true);
+            finishServicesRelease(true, true);
         };
         const releaseServicesForNavigation = () => {
-            if (!servicesActive && !servicesReleasing && !servicesOwnsLenisLock && servicesEntryPreparing === 0)
+            if (!servicesActive && !servicesReleasing && !servicesScrollLock && servicesEntryPreparing === 0)
                 return;
             cancelServicesEntryPreparation("navigation-release");
             resetServicesMediaRetry();
@@ -3115,9 +3035,6 @@ export function TascLanding() {
             servicesReleasing = false;
             servicesTransitionDirection = 0;
             servicesGateUntil = 0;
-            resetServicesBlockedInput();
-            clearServicesPendingIntent();
-            resetServicesPortionState();
             setServicesPhase("idle");
             showServicesIdlePreview();
             if (servicesVideo)
@@ -3125,18 +3042,17 @@ export function TascLanding() {
             pauseAndSeek(servicesVideo, 0);
             delete root.dataset.servicesPinned;
             delete root.dataset.servicesInrange;
-            releaseServicesLenisLock();
+            releaseServicesScroll();
             setMotionInputState();
         };
         const resetHowWorkBoundaryPreview = () => {
             delete root.dataset.howWorkPinned;
             ScrollTrigger.getById("how-work-reversible")?.animation?.progress(0);
         };
-        const commitServicesForwardEntry = (lockY: number, entryDirection: 1 | -1, entrySource: string) => {
+        const commitServicesForwardEntry = (entrySource: string) => {
             if (servicesActive || servicesReleasing || disposed)
                 return;
             servicesEntryPreparing = 0;
-            servicesEntryLockY = 0;
             clearServicesEntryRetry();
             delete root.dataset.servicesEntryPreparing;
             root.dataset.servicesEntryPrepared = "true";
@@ -3148,14 +3064,10 @@ export function TascLanding() {
             const preservePreview = root.dataset.servicesPreview === "1";
             servicesActive = true;
             servicesReleasing = false;
-            servicesEntryDirection = entryDirection;
             root.dataset.servicesEntryDirection = "forward";
             root.dataset.servicesEntrySource = entrySource;
-            servicesLockY = lockY;
-            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_ENTRY_GATE_MS;
             servicesTransitionDirection = 1;
-            clearServicesPendingIntent();
             setServicesStaticStop(null);
             setServicesEntryPoster(true);
             root.dataset.servicesPinned = "true";
@@ -3172,26 +3084,20 @@ export function TascLanding() {
             }
             if (servicesVideo)
                 servicesVideo.dataset.segmentState = "idle";
-            servicesOwnsLenisLock = true;
-            lenis.stop();
-            lenis.scrollTo(servicesLockY, { immediate: true, force: true });
             setMotionInputState();
             setServicesPhase("idle");
             void runServicesStage(0, !preservePreview);
         };
-        const startServicesForward = (lockY: number, entryDirection: 1 | -1 = 1, entrySource = "direct") => {
+        const startServicesForward = (entrySource = "direct") => {
             if (servicesActive || servicesReleasing || disposed || servicesEntryPreparing === 1)
                 return;
             cancelServicesEntryPreparation("new-forward-entry");
             const token = servicesEntryToken;
             const entryVideo = servicesVideo;
             servicesEntryPreparing = 1;
-            servicesEntryLockY = lockY;
             root.dataset.servicesEntryPreparing = "forward";
             delete root.dataset.servicesEntryPrepared;
             delete root.dataset.servicesEntryAbortReason;
-            delete root.dataset.servicesReverseEntryFrameDecoded;
-            delete root.dataset.servicesReverseEntrySegmentWarm;
             setServicesStopPostersArmed(true);
             resetServicesMediaRetry();
             delete root.dataset.servicesTransportFailure;
@@ -3211,17 +3117,10 @@ export function TascLanding() {
                     reason = "effect-disposed";
                 else if (servicesVideoRef.current !== entryVideo)
                     reason = "media-owner-changed";
-                else if (getMotionInputOwnerId() === "domino")
-                    reason = "domino-active";
                 else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
                     reason = "other-navigation";
                 if (reason) {
                     root.dataset.servicesEntryRelevanceFailure = reason;
-                    return false;
-                }
-                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                if (Math.abs(window.scrollY - lockY) > viewportHeight * 1.25) {
-                    root.dataset.servicesEntryRelevanceFailure = "outside-lock-corridor";
                     return false;
                 }
                 if (!isServicesVisuallyNear(1.25)) {
@@ -3264,399 +3163,39 @@ export function TascLanding() {
                     return;
                 }
                 delete root.dataset.servicesEntrySkipped;
-                commitServicesForwardEntry(lockY, entryDirection, entrySource);
-            })();
-        };
-        const commitServicesReverseEntry = (lockY: number, entrySource: string) => {
-            if (servicesActive || servicesReleasing || disposed)
-                return;
-            servicesEntryPreparing = 0;
-            servicesEntryLockY = 0;
-            clearServicesEntryRetry();
-            delete root.dataset.servicesEntryPreparing;
-            delete root.dataset.servicesEntryAttempt;
-            root.dataset.servicesEntryPrepared = "true";
-            setServicesStopPostersArmed(true);
-            servicesWarmupClaimRef.current?.();
-            resetServicesMediaRetry();
-            delete root.dataset.servicesTransportFailure;
-            resetHowWorkBoundaryPreview();
-            servicesRunToken += 1;
-            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            servicesActive = true;
-            servicesReleasing = false;
-            servicesEntryDirection = -1;
-            root.dataset.servicesEntryDirection = "reverse";
-            root.dataset.servicesEntrySource = entrySource;
-            servicesLockY = lockY;
-            resetServicesGestureTotal();
-            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-            servicesEntryInputIgnoreUntil = performance.now() + 320;
-            servicesStoryInput?.ignoreCurrentTouchGesture();
-            servicesTransitionDirection = -1;
-            clearServicesPendingIntent();
-            setServicesEntryPoster(false);
-            setServicesStaticStop(null);
-            root.dataset.servicesPinned = "true";
-            root.dataset.servicesInrange = "true";
-            delete root.dataset.howWorkPinned;
-            root.dataset.servicesSequence = "autoplay";
-            lockClientsServicesHandoffAtServices();
-            delete root.dataset.servicesPreview;
-            setServicesPanel(lastStage);
-            root.dataset.servicesMediaDecoded = "true";
-            if (servicesVideo)
-                servicesVideo.dataset.segmentState = "ready";
-            servicesOwnsLenisLock = true;
-            lenis.stop();
-            lenis.scrollTo(servicesLockY, { immediate: true, force: true });
-            correctNativeScroll(servicesLockY);
-            setServicesPhase("waiting");
-            setMotionInputState();
-        };
-        const startServicesAtLastStage = (lockY: number, entrySource = "direct") => {
-            if (servicesActive || servicesReleasing || disposed || servicesEntryPreparing === -1)
-                return;
-            cancelServicesEntryPreparation("new-reverse-entry");
-            const token = servicesEntryToken;
-            const entryVideo = servicesVideo;
-            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            /*
-              The exit frame and the first reverse frame sit on either side of a hard
-              cut: everything up to the exit is fully transparent, the reverse segment
-              starts with the object back in shot. Landing half a frame inside the
-              reverse segment keeps decoder rounding from parking the entry on the
-              transparent side, which is what made Services look empty when the reader
-              came back up out of How we work.
-            */
-            const entryFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage] + SERVICES_SEAM_FRAME_NUDGE;
-            const nextFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage - 1];
-            servicesEntryPreparing = -1;
-            servicesEntryLockY = lockY;
-            root.dataset.servicesEntryPreparing = "reverse";
-            delete root.dataset.servicesEntryPrepared;
-            delete root.dataset.servicesEntryAbortReason;
-            delete root.dataset.servicesReverseEntryFrameDecoded;
-            delete root.dataset.servicesReverseEntrySegmentWarm;
-            setServicesStopPostersArmed(true);
-            resetServicesMediaRetry();
-            delete root.dataset.servicesTransportFailure;
-            setServicesPhase("preparing");
-            setMotionInputState();
-            const remainsRelevant = () => {
-                let reason = "";
-                if (token !== servicesEntryToken)
-                    reason = "token-invalidated";
-                else if (servicesEntryPreparing !== -1)
-                    reason = "preparation-cleared";
-                else if (servicesActive)
-                    reason = "already-active";
-                else if (servicesReleasing)
-                    reason = "releasing";
-                else if (disposed)
-                    reason = "effect-disposed";
-                else if (servicesVideoRef.current !== entryVideo)
-                    reason = "media-owner-changed";
-                else if (getMotionInputOwnerId() === "domino")
-                    reason = "domino-active";
-                else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
-                    reason = "other-navigation";
-                if (reason) {
-                    root.dataset.servicesEntryRelevanceFailure = reason;
-                    return false;
-                }
-                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                if (Math.abs(window.scrollY - lockY) > viewportHeight * 1.25) {
-                    root.dataset.servicesEntryRelevanceFailure = "outside-lock-corridor";
-                    return false;
-                }
-                if (!isServicesVisuallyNear(1.25)) {
-                    root.dataset.servicesEntryRelevanceFailure = "services-not-visible";
-                    return false;
-                }
-                delete root.dataset.servicesEntryRelevanceFailure;
-                return true;
-            };
-            const finishPreparation = () => {
-                if (token === servicesEntryToken)
-                    cancelServicesEntryPreparation(root.dataset.servicesEntryRelevanceFailure ?? "reverse-preflight-not-ready");
-            };
-            if (!entryVideo || root.dataset.servicesMediaFallback === "true") {
-                root.dataset.servicesEntrySkipped = "reverse-media-unavailable";
-                finishPreparation();
-                return;
-            }
-            void (async () => {
-                let entryFrameReady = false;
-                for (let attempt = 0; attempt < 2 && remainsRelevant(); attempt += 1) {
-                    root.dataset.servicesEntryAttempt = `reverse-seek-${attempt + 1}`;
-                    entryFrameReady = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
-                    if (entryFrameReady || !remainsRelevant() || entryVideo.error)
-                        break;
-                    await waitForServicesEntryRetry(180);
-                }
-                if (!entryFrameReady || !remainsRelevant()) {
-                    if (entryVideo.error)
-                        activateServicesMediaFallback();
-                    finishPreparation();
-                    return;
-                }
-                let segmentReady = false;
-                for (let attempt = 0; attempt < 2 && remainsRelevant(); attempt += 1) {
-                    root.dataset.servicesEntryAttempt = `reverse-range-${attempt + 1}`;
-                    segmentReady = await ensureServicesEntrySegmentReady(entryVideo, remainsRelevant, entryFrame, nextFrame);
-                    if (segmentReady || !remainsRelevant() || entryVideo.error)
-                        break;
-                    await waitForServicesEntryRetry(180);
-                }
-                if (!segmentReady || !remainsRelevant()) {
-                    if (entryVideo.error)
-                        activateServicesMediaFallback();
-                    finishPreparation();
-                    return;
-                }
-                root.dataset.servicesReverseEntrySegmentWarm = "true";
-                const restoredEntryFrame = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
-                if (!restoredEntryFrame || !remainsRelevant()) {
-                    finishPreparation();
-                    return;
-                }
-                root.dataset.servicesReverseEntryFrameDecoded = "true";
-                delete root.dataset.servicesEntrySkipped;
-                commitServicesReverseEntry(lockY, entrySource);
+                commitServicesForwardEntry(entrySource);
             })();
         };
         servicesControllerRef.current = {
             releaseForNavigation: releaseServicesForNavigation,
         };
-        const runServicesReverseStage = async (nextStage: number) => {
-            if (!servicesActive || servicesPhase !== "waiting" || nextStage < 0 || nextStage >= servicesStage)
+        /*
+          Which stop is due is read from where the reader has scrolled inside the
+          pinned band, not from accumulated gesture deltas. Each stop owns a slice
+          of the band: scrolling into it locks the input, plays that one segment
+          and hands the input straight back. Scrolling back up never locks and
+          never replays - a reader climbing out of Services is leaving.
+        */
+        const advanceServicesFromProgress = (progress: number, direction: number) => {
+            if (!servicesActive || servicesReleasing || disposed)
                 return;
-            const token = ++servicesRunToken;
-            beginServicesMediaAttempt(`reverse:${servicesStage}:${nextStage}`);
-            const legacyFrom = SERVICES_KEYFRAME_STOPS[servicesStage];
-            // The last reverse stop sits one frame past the transparent exit frame, so
-            // it gets the same half-frame nudge the reverse entry uses.
-            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[servicesStage] +
-                (servicesStage === SERVICES_KEYFRAME_STOPS.length - 1 ? SERVICES_SEAM_FRAME_NUDGE : 0);
-            const reverseTo = SERVICES_REVERSE_KEYFRAME_STOPS[nextStage];
-            root.dataset.servicesReverseTransport = "continuous";
-            const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
-            servicesTransitionDirection = -1;
-            resetServicesGestureTotal();
-            root.dataset.servicesActive = String(nextStage + 1);
-            setServicesStaticStop(servicesStage);
-            delete root.dataset.servicesMediaDecoded;
-            setServicesPhase("playing");
-            setMotionInputState();
-            const reverseStartReady = await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive, servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
-                ? SERVICES_SEAM_SEEK_TOLERANCE
-                : undefined);
-            if (token !== servicesRunToken || !servicesActive || disposed)
+            // Only a downward gesture is allowed to open the next stop. Scrolling
+            // back up through a stop must never re-lock the reader in a segment
+            // they have already watched.
+            if (direction < 0)
                 return;
-            if (!reverseStartReady) {
-                setServicesStaticStop(servicesStage);
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "buffering";
-                setServicesPhase("waiting");
-                servicesMediaRetryTimer = window.setTimeout(() => {
-                    servicesMediaRetryTimer = 0;
-                    if (token === servicesRunToken &&
-                        servicesActive &&
-                        !disposed &&
-                        servicesPhase === "waiting") {
-                        void runServicesReverseStage(nextStage);
-                    }
-                }, 180);
+            if (servicesPhase !== "waiting" || performance.now() < servicesGateUntil)
                 return;
-            }
-            const reverseReadyTarget = reverseTo;
-            const reverseBufferStart = isWebKitRuntime() &&
-                servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
-                ? legacyFrom
-                : reverseFrom;
-            const reverseMediaReady = root.dataset.servicesMediaFallback === "true"
-                ? false
-                : await ensureServicesPlayable(servicesVideo, reverseReadyTarget, () => token === servicesRunToken && servicesActive, reverseBufferStart, !isWebKitRuntime());
-            if (token !== servicesRunToken || !servicesActive || disposed)
-                return;
-            if (!reverseMediaReady && root.dataset.servicesMediaFallback !== "true") {
-                if (shouldFailOpenServicesMedia(servicesVideo)) {
-                    if (servicesVideo?.error) {
-                        activateServicesMediaFallback();
-                    }
-                    else {
-                        root.dataset.servicesTransportFailure = "reverse-timeout";
-                    }
-                    setServicesPanel(nextStage);
-                    setServicesStaticStop(nextStage);
-                    resetServicesMediaRetry();
-                    servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-                    setServicesPhase("waiting");
-                    flushServicesPendingIntent();
-                    return;
-                }
-                else {
-                    setServicesStaticStop(servicesStage);
-                    if (servicesVideo)
-                        servicesVideo.dataset.segmentState = "buffering";
-                    setServicesPhase("waiting");
-                    servicesMediaRetryTimer = window.setTimeout(() => {
-                        servicesMediaRetryTimer = 0;
-                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
-                            void runServicesReverseStage(nextStage);
-                        }
-                    }, 180);
-                    return;
-                }
-            }
-            if (!reverseMediaReady && root.dataset.servicesMediaFallback === "true") {
-                setServicesPanel(nextStage);
-                setServicesStaticStop(nextStage);
-                resetServicesMediaRetry();
-                servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-                setServicesPhase("waiting");
-                flushServicesPendingIntent();
-                return;
-            }
-            if (reverseMediaReady)
-                servicesWarmupClaimRef.current?.();
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            const reverseBranchAlreadyPrimed = Boolean(servicesVideo &&
-                servicesVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
-                Math.abs(servicesVideo.currentTime - reverseFrom) <= 0.12);
-            let continueFromWarmSeam = false;
-            if (!reverseBranchAlreadyPrimed &&
-                servicesStage === lastStage &&
-                reverseFrom > legacyFrom + 1 / 30) {
-                const seamCompleted = await playMediaSegment(servicesVideo, legacyFrom, reverseFrom, 2, () => token === servicesRunToken && servicesActive, false, false);
-                if (token !== servicesRunToken || !servicesActive || disposed)
-                    return;
-                const seamNearReverseStart = servicesVideo
-                    ? Math.abs(servicesVideo.currentTime - reverseFrom) <= 0.12
-                    : false;
-                continueFromWarmSeam = Boolean(servicesVideo &&
-                    !servicesVideo.seeking &&
-                    (seamCompleted || seamNearReverseStart));
-                if (!continueFromWarmSeam) {
-                    setServicesStaticStop(servicesStage);
-                    if (servicesVideo)
-                        servicesVideo.dataset.segmentState = "buffering";
-                    if (shouldFailOpenServicesMedia(servicesVideo)) {
-                        if (servicesVideo?.error) {
-                            activateServicesMediaFallback();
-                        }
-                        else {
-                            root.dataset.servicesTransportFailure = "reverse-seam-stall";
-                        }
-                        setServicesPanel(nextStage);
-                        setServicesStaticStop(nextStage);
-                        resetServicesMediaRetry();
-                        servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-                        setServicesPhase("waiting");
-                        flushServicesPendingIntent();
-                        return;
-                    }
-                    setServicesPhase("waiting");
-                    servicesMediaRetryTimer = window.setTimeout(() => {
-                        servicesMediaRetryTimer = 0;
-                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
-                            void runServicesReverseStage(nextStage);
-                        }
-                    }, 180);
-                    return;
-                }
-            }
-            root.dataset.servicesVideoDirection = "reverse-playback";
-            const mediaTransition: Promise<boolean> = playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive, true, true, continueFromWarmSeam, isMobileRuntime() ? 2200 : MEDIA_SEGMENT_GRACE_MS);
-            const textTransition = animateServicesReversePanel(nextStage, segmentDuration);
-            const [mediaCompleted] = await Promise.all([mediaTransition, textTransition]);
-            if (token !== servicesRunToken || !servicesActive || disposed)
-                return;
-            if (!mediaCompleted) {
-                setServicesPanel(servicesStage);
-                setServicesStaticStop(servicesStage);
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "buffering";
-                if (shouldFailOpenServicesMedia(servicesVideo)) {
-                    if (servicesVideo?.error) {
-                        activateServicesMediaFallback();
-                    }
-                    else {
-                        root.dataset.servicesTransportFailure = "reverse-stall";
-                    }
-                    setServicesPanel(nextStage);
-                    setServicesStaticStop(nextStage);
-                    resetServicesMediaRetry();
-                    servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-                    setServicesPhase("waiting");
-                    flushServicesPendingIntent();
-                    return;
-                }
-                setServicesPhase("waiting");
-                servicesMediaRetryTimer = window.setTimeout(() => {
-                    servicesMediaRetryTimer = 0;
-                    if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
-                        void runServicesReverseStage(nextStage);
-                    }
-                }, 180);
+            if (servicesStage >= lastStage) {
+                if (progress >= SERVICES_EXIT_PROGRESS)
+                    void releaseServicesForward();
                 return;
             }
-            pauseAndSeek(servicesVideo, reverseTo, 0.12);
-            delete root.dataset.servicesVideoDirection;
-            setServicesStaticStop(null);
-            root.dataset.servicesMediaDecoded = "true";
-            if (servicesVideo)
-                servicesVideo.dataset.segmentState = "ready";
-            setServicesPanel(nextStage);
-            resetServicesMediaRetry();
-            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-            setServicesPhase("waiting");
-            flushServicesPendingIntent();
-        };
-        const requestServicesDirection = (direction: 1 | -1) => {
-            if (!servicesActive || servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
-                resetServicesGestureTotal();
-                return;
-            }
-            resetServicesGestureTotal();
-            if (direction < 0) {
-                if (servicesStage > 0) {
-                    void runServicesReverseStage(servicesStage - 1);
-                }
-                else {
-                    releaseServicesBackward();
-                }
-            }
-            else if (servicesStage < SERVICES_KEYFRAME_STOPS.length - 1) {
+            const dueStage = SERVICES_STOP_PROGRESS.reduce<number>((stage, threshold, index) => (progress >= threshold ? index : stage), 0);
+            if (dueStage > servicesStage)
                 void runServicesStage(servicesStage + 1);
-            }
-            else {
-                void releaseServicesForward();
-            }
         };
-        servicesStoryInput = createServicesStoryInput({
-            root,
-            isDisposed: () => disposed,
-            isMacRuntime,
-            isServicesActive: () => servicesActive,
-            isServicesReleasing: () => servicesReleasing,
-            servicesOwnsLenisLock: () => servicesOwnsLenisLock,
-            getServicesPhase: () => servicesPhase,
-            getServicesStage: () => servicesStage,
-            getServicesGateUntil: () => servicesGateUntil,
-            getServicesEntryInputIgnoreUntil: () => servicesEntryInputIgnoreUntil,
-            getServicesTransitionDirection: () => servicesTransitionDirection,
-            getServicesLockY: () => servicesLockY,
-            getServicesTriggerActive: () => servicesTrigger ? servicesTrigger.isActive : null,
-            correctNativeScroll,
-            releaseServicesForNavigation,
-            requestServicesDirection,
-        });
-        cleanupCallbacks.push(() => {
-            servicesStoryInput?.dispose();
-            servicesStoryInput = null;
-        });
         const lensMotion = compactMotion
             ? {
                 intro: { ...getLensPose(0.84, 0.72, 1.52, 1), rotation: -4 },
@@ -4095,289 +3634,77 @@ export function TascLanding() {
                 onRefresh: (self) => syncServicesApproach(self.isActive),
             });
             cleanupCallbacks.push(() => servicesApproachTrigger.kill());
-            const shouldBypassServicesMotion = () => getMotionInputOwnerId() === "portion" ||
-                Boolean(servicesPortionTargetIds && !servicesPortionTargetIds.includes("services")) ||
-                (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
+            const shouldBypassServicesMotion = () => (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
                 (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
-            const howWorkBoundary = root.querySelector<HTMLElement>(".how-work-motion-section");
-            const syncServicesPinCompensation = () => {
-                const distance = Math.round(getVisualViewportHeight());
-                root.style.setProperty("--services-pin-flow-compensation", `${-distance}px`);
-                return distance;
-            };
-            syncServicesPinCompensation();
-            cleanupCallbacks.push(() => root.style.removeProperty("--services-pin-flow-compensation"));
+            /*
+              The band is real document now. It used to be exactly one viewport
+              and then cancelled again by a negative margin on the pin spacer,
+              because nothing ever scrolled through it - the story advanced on
+              gesture deltas while the page was frozen. The stops are read off
+              scroll progress instead, so the band has to be long enough to hold
+              them: roughly a viewport of reading between each one.
+            */
+            const getServicesPinDistance = () => Math.round(getVisualViewportHeight() * SERVICES_PIN_VIEWPORTS);
             const isNearServicesTrigger = (trigger: ScrollTrigger, viewportMargin = 1.25) => {
                 const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
                 const margin = viewportHeight * viewportMargin;
                 return window.scrollY >= trigger.start - margin && window.scrollY <= trigger.end + margin;
             };
-            const canStartServicesMotion = (trigger: ScrollTrigger) => isNearServicesTrigger(trigger) &&
-                isServicesVisuallyNear() &&
-                getMotionInputOwnerId() !== "domino";
-            const hasServicesReverseEntryIntent = (direction = 0) => {
-                if (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services")
-                    return false;
-                return servicesPortionDirection < 0 ||
-                    servicesLastPortionDirection < 0 ||
-                    direction < 0 ||
-                    documentScrollDirection < 0;
-            };
+            const canStartServicesMotion = (trigger: ScrollTrigger) => isNearServicesTrigger(trigger) && isServicesVisuallyNear();
             servicesTrigger = ScrollTrigger.create({
                 id: "services-reversible",
                 trigger: servicesSection,
                 start: "top top",
-                end: () => `+=${syncServicesPinCompensation()}`,
+                end: () => `+=${getServicesPinDistance()}`,
                 pin: useLegacyServicesFlow,
                 pinSpacing: true,
                 anticipatePin: 1,
                 refreshPriority: 30,
                 invalidateOnRefresh: true,
-                onRefreshInit: syncServicesPinCompensation,
                 onEnter: (self) => {
                     if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
                         return;
-                    if (hasServicesReverseEntryIntent(self.direction))
-                        startServicesAtLastStage(self.end - 1, "trigger-on-enter");
-                    else
-                        startServicesForward(self.start + 1, 1, "trigger-on-enter");
-                },
-                onEnterBack: (self) => {
-                    if (!canStartServicesMotion(self))
-                        return;
-                    if (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services") {
-                        startServicesForward((servicesTrigger?.start ?? window.scrollY) + 1, 1, "trigger-on-enter-back-programmatic");
-                        return;
-                    }
-                    if (shouldBypassServicesMotion())
-                        return;
-                    startServicesAtLastStage(self.end - 1, "trigger-on-enter-back");
+                    startServicesForward("trigger-on-enter");
                 },
                 onUpdate: (self) => {
-                    if (servicesActive && !isServicesVisuallyNear(1.5)) {
-                        releaseServicesForNavigation();
+                    if (servicesActive) {
+                        advanceServicesFromProgress(self.progress, self.direction);
                         return;
                     }
-                    if (!self.isActive || shouldBypassServicesMotion() || servicesActive || servicesReleasing)
+                    if (!self.isActive ||
+                        self.direction < 0 ||
+                        servicesReleasing ||
+                        servicesPhase !== "idle" ||
+                        self.progress >= SERVICES_STOP_PROGRESS[1] ||
+                        shouldBypassServicesMotion() ||
+                        !canStartServicesMotion(self)) {
                         return;
-                    if (servicesPhase !== "idle")
-                        return;
-                    if (hasServicesReverseEntryIntent(self.direction))
-                        startServicesAtLastStage(self.end - 1, "trigger-on-update");
-                    else
-                        startServicesForward(self.start + 1, 1, "trigger-on-update");
+                    }
+                    startServicesForward("trigger-on-update");
                 },
-                onLeave: (self) => {
-                    if (hasServicesReverseEntryIntent(self.direction) &&
-                        !servicesActive &&
-                        !servicesReleasing &&
-                        servicesPhase === "idle" &&
-                        !shouldBypassServicesMotion() &&
-                        canStartServicesMotion(self)) {
-                        startServicesAtLastStage(self.end - 1, "trigger-on-leave-reverse");
-                        return;
-                    }
-                    if (self.direction > 0 &&
-                        documentScrollDirection >= 0 &&
-                        servicesPortionDirection >= 0 &&
-                        servicesLastPortionDirection >= 0 &&
-                        !servicesActive &&
-                        !servicesReleasing &&
-                        servicesPhase === "idle" &&
-                        !shouldBypassServicesMotion() &&
-                        canStartServicesMotion(self)) {
-                        startServicesForward(self.start + 1, 1, "trigger-on-leave");
-                        return;
-                    }
-                    if (!servicesActive) {
+                onLeave: () => {
+                    if (!servicesActive && !servicesReleasing) {
                         delete root.dataset.servicesPinned;
                         delete root.dataset.servicesInrange;
                     }
                 },
                 onLeaveBack: () => {
-                    if (servicesReleasing)
-                        return;
-                    if (servicesEntryPreparing !== 0) {
-                        const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                        if (window.scrollY < servicesEntryLockY - viewportHeight * 0.35)
-                            cancelServicesEntryPreparation("left-corridor-backward");
-                        else
-                            return;
-                    }
-                    if (servicesActive) {
-                        correctNativeScroll(servicesLockY);
+                    cancelServicesEntryPreparation("left-band-backward");
+                    if (!servicesActive && !servicesReleasing) {
+                        delete root.dataset.servicesPinned;
+                        delete root.dataset.servicesInrange;
                         return;
                     }
-                    servicesRunToken += 1;
-                    servicesReleaseToken += 1;
-                    window.clearTimeout(servicesReleaseTimer);
-                    servicesReleaseTimer = 0;
-                    if (servicesVideo)
-                        mediaRunCancels.get(servicesVideo)?.();
-                    stopServicesTextTimeline();
-                    servicesActive = false;
-                    servicesReleasing = false;
-                    servicesTransitionDirection = 0;
-                    servicesGateUntil = 0;
-                    resetServicesBlockedInput();
-                    clearServicesPendingIntent();
-                    setServicesPhase("idle");
-                    showServicesIdlePreview();
-                    pauseAndSeek(servicesVideo, 0);
-                    delete root.dataset.servicesPinned;
-                    delete root.dataset.servicesInrange;
-                    resetServicesPortionState();
-                    releaseServicesLenisLock();
-                    setMotionInputState();
-                },
-                onRefresh: (self) => {
-                    syncServicesPinCompensation();
-                    if (servicesActive) {
-                        servicesLockY = servicesEntryDirection < 0 ? self.end - 1 : self.start + 1;
-                        correctNativeScroll(servicesLockY);
-                    }
+                    rewindServicesToStart();
                 },
             });
-            const servicesPrelockTrigger = ScrollTrigger.create({
-                id: "services-prelock",
-                trigger: servicesSection,
-                start: "top 12%",
-                end: "top top",
-                refreshPriority: 31,
-                invalidateOnRefresh: true,
-                onEnter: (self) => {
-                    if (hasServicesReverseEntryIntent(self.direction) ||
-                        shouldBypassServicesMotion() ||
-                        !canStartServicesMotion(servicesTrigger ?? self) ||
-                        servicesActive ||
-                        servicesReleasing) {
-                        return;
-                    }
-                    startServicesForward((servicesTrigger?.start ?? self.end) + 1, 1, "forward-prelock");
-                },
-            });
-            cleanupCallbacks.push(() => servicesPrelockTrigger.kill());
-            const startServicesReverseFromPrelock = () => {
-                if (shouldBypassServicesMotion() ||
-                    servicesActive ||
-                    servicesReleasing ||
-                    !servicesTrigger) {
-                    return;
-                }
-                startServicesAtLastStage(servicesTrigger.end - 1, "reverse-prelock");
-            };
-            const servicesReversePrelockTrigger = ScrollTrigger.create({
-                id: "services-reverse-prelock",
-                trigger: howWorkBoundary ?? servicesSection,
-                start: howWorkBoundary ? "top 92%" : "bottom 20%",
-                end: howWorkBoundary ? "top 12%" : "bottom top",
-                refreshPriority: 31,
-                invalidateOnRefresh: true,
-                onEnterBack: (self) => {
-                    if (hasServicesReverseEntryIntent(self.direction))
-                        startServicesReverseFromPrelock();
-                },
-                onLeaveBack: (self) => {
-                    if (hasServicesReverseEntryIntent(self.direction))
-                        startServicesReverseFromPrelock();
-                },
-            });
-            cleanupCallbacks.push(() => servicesReversePrelockTrigger.kill());
             const handleServicesPositionApplied = () => {
                 if (programmaticAnchorRef.current === "#services" && servicesTrigger) {
                     showServicesIdlePreview(true);
-                    startServicesForward(servicesTrigger.start + 1, 1, "position-applied");
+                    startServicesForward("position-applied");
                 }
-            };
-            const handleHowWorkReleaseBackward = () => {
-                if (!servicesTrigger || servicesActive || servicesReleasing)
-                    return;
-                anchorSettleCleanupRef.current?.();
-                servicesPortionDirection = -1;
-                servicesLastPortionDirection = -1;
-                servicesPortionTargetIds = ["services"];
-                root.dataset.servicesPortionDirection = "-1";
-                root.dataset.servicesPortionTarget = "services";
-                startServicesAtLastStage(servicesTrigger.end - 1, "how-release-backward");
-            };
-            const handleServicesPortionStart = (event: Event) => {
-                const detail = (event as CustomEvent<{ anchor?: string; direction?: number }>).detail;
-                const portionTargetIds = detail?.anchor?.split("+").filter(Boolean) ?? [];
-                const portionTargetsBeforeServices = portionTargetIds.some((id) => id === "hero" || id === "clients");
-                if (portionTargetsBeforeServices &&
-                    !servicesActive &&
-                    !servicesReleasing &&
-                    servicesEntryPreparing === 0) {
-                    resetServicesPortionState();
-                    return;
-                }
-                const direction = Math.sign(Number(detail?.direction ?? 0));
-                servicesPortionDirection = direction < 0 ? -1 : direction > 0 ? 1 : 0;
-                servicesLastPortionDirection = servicesPortionDirection;
-                root.dataset.servicesLastPortionDirection = String(servicesLastPortionDirection);
-                servicesPortionTargetIds = portionTargetIds;
-                root.dataset.servicesPortionTarget = servicesPortionTargetIds.join("+");
-                if (servicesPortionDirection === 0)
-                    delete root.dataset.servicesPortionDirection;
-                else
-                    root.dataset.servicesPortionDirection = String(servicesPortionDirection);
-                window.cancelAnimationFrame(servicesPortionDirectionClearFrame);
-                servicesPortionDirectionClearFrame = 0;
-            };
-            const clearServicesPortionDirection = () => {
-                window.cancelAnimationFrame(servicesPortionDirectionClearFrame);
-                servicesPortionDirectionClearFrame = window.requestAnimationFrame(() => {
-                    servicesPortionDirectionClearFrame = 0;
-                    servicesPortionDirection = 0;
-                    servicesPortionTargetIds = null;
-                    delete root.dataset.servicesPortionDirection;
-                    delete root.dataset.servicesPortionTarget;
-                });
-            };
-            const handleServicesPortionInterrupted = (event: Event) => {
-                const detail = (event as CustomEvent<{
-                    anchor?: string;
-                    settledY?: number;
-                    targetY?: number;
-                }>).detail;
-                const interruptedTargets = detail?.anchor?.split("+").filter(Boolean) ?? servicesPortionTargetIds ?? [];
-                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                const settledNearTarget = Number.isFinite(detail?.settledY) && Number.isFinite(detail?.targetY)
-                    ? Math.abs(Number(detail?.settledY) - Number(detail?.targetY)) <= viewportHeight * 0.4
-                    : false;
-                const servicesNavigationContinues =
-                    (programmaticNavigationRef.current && programmaticAnchorRef.current === "#services") ||
-                        (interruptedTargets.includes("services") && settledNearTarget);
-                if (!servicesNavigationContinues)
-                    cancelServicesEntryPreparation("portion-interrupted");
-                servicesLastPortionDirection = 0;
-                servicesPortionTargetIds = null;
-                delete root.dataset.servicesLastPortionDirection;
-                delete root.dataset.servicesPortionTarget;
-                clearServicesPortionDirection();
-            };
-            const handleServicesPortionSettled = (event: Event) => {
-                const detail = (event as CustomEvent<{
-                    anchor?: string;
-                    direction?: number;
-                }>).detail;
-                clearServicesPortionDirection();
-                if (!servicesTrigger || servicesActive || servicesReleasing)
-                    return;
-                const anchors = detail?.anchor?.split("+") ?? [];
-                if (!anchors.includes("services"))
-                    return;
-                if ((detail.direction ?? 1) < 0)
-                    startServicesAtLastStage(servicesTrigger.end - 1, "portion-settled");
-                else
-                    startServicesForward(servicesTrigger.start + 1, 1, "portion-settled");
-                ScrollTrigger.update();
             };
             window.addEventListener("tasc:scroll-position-applied", handleServicesPositionApplied);
-            window.addEventListener("tasc:how-work-release-backward", handleHowWorkReleaseBackward);
-            window.addEventListener("tasc:portion-start", handleServicesPortionStart);
-            window.addEventListener("tasc:portion-settled", handleServicesPortionSettled);
-            window.addEventListener("tasc:portion-interrupted", handleServicesPortionInterrupted);
             const settleServicesWhenHidden = (event: Event) => {
                 if (event.type !== "pagehide" && document.visibilityState !== "hidden")
                     return;
@@ -4389,8 +3716,6 @@ export function TascLanding() {
                 if (servicesVideo)
                     mediaRunCancels.get(servicesVideo)?.();
                 stopServicesTextTimeline();
-                clearServicesPendingIntent();
-                resetServicesBlockedInput();
                 pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[targetStage]);
                 setServicesPanel(targetStage);
                 servicesGateUntil = 0;
@@ -4401,13 +3726,6 @@ export function TascLanding() {
             window.addEventListener("pagehide", settleServicesWhenHidden);
             cleanupCallbacks.push(() => {
                 window.removeEventListener("tasc:scroll-position-applied", handleServicesPositionApplied);
-                window.removeEventListener("tasc:how-work-release-backward", handleHowWorkReleaseBackward);
-                window.removeEventListener("tasc:portion-start", handleServicesPortionStart);
-                window.removeEventListener("tasc:portion-settled", handleServicesPortionSettled);
-                window.removeEventListener("tasc:portion-interrupted", handleServicesPortionInterrupted);
-                window.cancelAnimationFrame(servicesPortionDirectionClearFrame);
-                delete root.dataset.servicesPortionTarget;
-                delete root.dataset.servicesLastPortionDirection;
                 document.removeEventListener("visibilitychange", settleServicesWhenHidden);
                 window.removeEventListener("pagehide", settleServicesWhenHidden);
             });
@@ -4882,24 +4200,19 @@ export function TascLanding() {
             resetServicesMediaRetry();
             window.clearTimeout(servicesReleaseTimer);
             servicesReleaseTimer = 0;
-            clearServicesPendingIntent();
             mediaRunCancels.forEach((cancel) => cancel());
             mediaRunCancels.clear();
             stopServicesTextTimeline();
             servicesActive = false;
             servicesReleasing = false;
-            releaseServicesLenisLock();
-            lenis.start();
+            releaseServicesScroll();
             lensVideo?.removeEventListener("loadedmetadata", handleLensMetadata);
             cleanupCallbacks.forEach((cleanup) => cleanup());
-            lenis.off("scroll", handleSmoothScrollUpdate);
-            cancelAnimationFrame(rafId);
             servicesTrigger?.kill();
             servicesVideo?.pause();
             dominoVideo?.pause();
             datumTimeline?.scrollTrigger?.kill();
             datumTimeline?.kill();
-            lenis.destroy();
             [
                 "servicesPinned",
                 "servicesInrange",
@@ -4918,20 +4231,16 @@ export function TascLanding() {
                 "servicesReverseTransport",
                 "servicesReversePrimeFrame",
                 "servicesReversePrimeTime",
-                "servicesReverseEntryFrameDecoded",
-                "servicesReverseEntrySegmentWarm",
                 "servicesVideoDirection",
                 "servicesStaticStop",
                 "servicesEntryPoster",
+                "servicesLocked",
                 "datumProgress",
                 "datumPinned",
                 "dominoPlayback",
                 "motionInputLocked",
                 "wheelScrollRate",
             ].forEach((key) => delete root.dataset[key]);
-            if (lenisRef.current === lenis) {
-                lenisRef.current = null;
-            }
             if (heroTimelineRef.current === heroTimeline) {
                 heroTimelineRef.current = null;
             }
@@ -5071,8 +4380,6 @@ export function TascLanding() {
     useReversibleScrollStories({
         rootRef,
         dominoVideoRef,
-        dominoReverseVideoRef,
-        lenisRef,
         transportKey: "how-authored-v1",
         enabled: preloaderRevealStarted && motionAllowed,
         story: "how",
@@ -5080,17 +4387,9 @@ export function TascLanding() {
     useReversibleScrollStories({
         rootRef,
         dominoVideoRef,
-        dominoReverseVideoRef,
-        lenisRef,
         transportKey: dominoTransportKey,
-        onForwardCompletedOnce: armDominoReverseMedia,
         enabled: preloaderRevealStarted && motionAllowed,
         story: "domino",
-    });
-    useMobilePortionedScroll({
-        rootRef,
-        lenisRef,
-        enabled: preloaderRevealStarted && motionAllowed,
     });
     useEffect(() => {
         if (!preloaderComplete || initialHashHandledRef.current) {
@@ -5206,11 +4505,11 @@ export function TascLanding() {
             section.style.removeProperty("--datum-media-space");
         };
     }, [preloaderComplete]);
-    return (<main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+    return (<main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyMounted && galaxyStatus === "pending")
             ? "pending"
-            : motionAllowed && galaxyStatus === "ready"
+            : motionAllowed && galaxyMounted && galaxyStatus === "ready"
                 ? "galaxy"
-                : "static"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-outcome={!motionAllowed
+                : "static"} data-galaxy-mounted={galaxyMounted ? "true" : "false"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-outcome={!motionAllowed
             ? "skipped"
             : lowerMediaHasFallback && lowerMediaSettled
                 ? "fallback"
@@ -5232,7 +4531,7 @@ export function TascLanding() {
       {preloaderComplete ? <CookieConsent /> : null}
       <div className="first-four-galaxy-stage" aria-hidden="true">
         <span className="static-starfield-fallback"/>
-        {heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed ? (<>
+        {galaxyMounted ? (<>
             <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode || webkitCompatibilityMode ? 1.05 : 1.3} starSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode || webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={webkitCompatibilityMode
                 ? mobilePerformanceMode
                     ? 0.9

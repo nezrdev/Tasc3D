@@ -1,0 +1,244 @@
+﻿[
+  {
+    "profile": "chromium-1440x900",
+    "docHeight": 14442,
+    "viewport": 900,
+    "starfield": "galaxy",
+    "down": {
+      "wheelTotal": 24720,
+      "lockedTotal": 9360,
+      "reached": 13542,
+      "stuckAt": null,
+      "ratio": 1.83,
+      "unlockedRatio": 1.13,
+      "markers": [
+        [
+          "services:1",
+          3120
+        ],
+        [
+          "services:2",
+          3840
+        ],
+        [
+          "services:3",
+          4320
+        ],
+        [
+          "how:1",
+          6000
+        ],
+        [
+          "how:2",
+          6960
+        ],
+        [
+          "how:3",
+          7440
+        ],
+        [
+          "datum",
+          8880
+        ],
+        [
+          "domino:forward",
+          11760
+        ],
+        [
+          "domino:complete",
+          11760
+        ]
+      ],
+      "locks": [
+        "services",
+        "domino"
+      ],
+      "maxDominoProgress": 1
+    },
+    "up": {
+      "wheelTotal": 15360,
+      "lockedTotal": 0,
+      "reached": 0,
+      "stuckAt": null,
+      "unlockedRatio": 1.13,
+      "markers": [
+        [
+          "domino:complete",
+          12822
+        ],
+        [
+          "datum",
+          9462
+        ],
+        [
+          "how:3",
+          7782
+        ],
+        [
+          "how:2",
+          7302
+        ],
+        [
+          "how:1",
+          6582
+        ]
+      ],
+      "locks": []
+    },
+    "consoleErrors": []
+  },
+  {
+    "profile": "chromium-390x844",
+    "docHeight": 14901,
+    "viewport": 844,
+    "starfield": "galaxy",
+    "down": {
+      "wheelTotal": 22320,
+      "lockedTotal": 6960,
+      "reached": 14057,
+      "stuckAt": null,
+      "ratio": 1.59,
+      "unlockedRatio": 1.09,
+      "markers": [
+        [
+          "services:1",
+          3849
+        ],
+        [
+          "services:2",
+          4444
+        ],
+        [
+          "services:3",
+          5014
+        ],
+        [
+          "how:1",
+          6544
+        ],
+        [
+          "how:2",
+          7444
+        ],
+        [
+          "how:3",
+          8119
+        ],
+        [
+          "datum",
+          9268
+        ],
+        [
+          "domino:forward",
+          12279
+        ],
+        [
+          "domino:complete",
+          12459
+        ]
+      ],
+      "locks": [
+        "services",
+        "domino"
+      ],
+      "maxDominoProgress": 1
+    },
+    "up": {
+      "wheelTotal": 16320,
+      "lockedTotal": 0,
+      "reached": 0,
+      "stuckAt": null,
+      "unlockedRatio": 1.16,
+      "markers": [
+        [
+          "domino:complete",
+          13382
+        ],
+        [
+          "datum",
+          9724
+        ],
+        [
+          "how:3",
+          8293
+        ],
+        [
+          "how:2",
+          7795
+        ],
+        [
+          "how:1",
+          7120
+        ]
+      ],
+      "locks": []
+    },
+    "consoleErrors": []
+  },
+  {
+    "profile": "webkit-iphone-390x844",
+    "docHeight": 14698,
+    "viewport": 844,
+    "starfield": "galaxy",
+    "down": {
+      "wheelTotal": 22320,
+      "lockedTotal": 13680,
+      "reached": 13854,
+      "stuckAt": null,
+      "ratio": 1.61,
+      "unlockedRatio": 0.62,
+      "markers": [
+        [
+          "how:1",
+          6240
+        ],
+        [
+          "how:2",
+          7440
+        ],
+        [
+          "how:3",
+          7920
+        ],
+        [
+          "domino:forward",
+          12480
+        ]
+      ],
+      "locks": [
+        "services",
+        "domino"
+      ],
+      "maxDominoProgress": 1
+    },
+    "up": {
+      "wheelTotal": 15360,
+      "lockedTotal": 0,
+      "reached": 0,
+      "stuckAt": null,
+      "unlockedRatio": 1.11,
+      "markers": [
+        [
+          "domino:complete",
+          13134
+        ],
+        [
+          "datum",
+          9774
+        ],
+        [
+          "how:2",
+          7614
+        ],
+        [
+          "how:1",
+          6654
+        ]
+      ],
+      "locks": []
+    },
+    "consoleErrors": []
+  }
+]
+
+PASS: every profile reached the bottom and came back to the top.

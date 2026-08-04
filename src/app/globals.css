@@ -358,11 +358,16 @@ h3 {
   background: linear-gradient(90deg, transparent, rgba(244, 239, 231, 0.64), transparent);
 }
 
+/*
+  The bar keeps its authored height; the notch is added on top of it so the
+  glass reaches the physical top of the screen and the logo sits below the
+  cutout. On anything without a cutout the inset is 0 and nothing moves.
+*/
 .site-header {
   position: fixed;
   inset: 0 0 auto;
   z-index: 400;
-  height: var(--header-h);
+  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
   pointer-events: none;
 }
 
@@ -371,7 +376,8 @@ h3 {
   top: 0;
   left: 0;
   width: 100%;
-  height: var(--header-h);
+  height: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+  padding-top: env(safe-area-inset-top, 0px);
   overflow: hidden;
   transform: none;
   border-top: 0;
@@ -3586,8 +3592,15 @@ body > div:first-child,
 }
 
 html,
+/*
+  `contain` still lets iOS rubber-band the document itself, and while the page
+  is bounced the fixed header rides down with it - which is the strip of page
+  content that shows above the logo on Safari. `none` stops the bounce, so the
+  header stays welded to the top of the screen.
+*/
+html,
 body {
-  overscroll-behavior-y: contain;
+  overscroll-behavior-y: none;
 }
 
 body::before {
@@ -5146,9 +5159,12 @@ body::before {
   isolation: isolate;
 }
 
-.site-shell .pin-spacer-services-reversible {
-  margin-bottom: var(--services-pin-flow-compensation, 0px) !important;
-}
+/*
+  The services pin spacer used to carry a negative margin that cancelled the
+  whole band out of the flow, because nothing scrolled through it. The stops are
+  driven by scroll progress now, so the band is real document and the spacer
+  keeps its natural height.
+*/
 
 .services-story-section::before,
 .services-story-section::after {

@@ -48,11 +48,26 @@ expect(!servicesTrigger.includes("endTrigger"), "services trigger still uses end
 expect(servicesTrigger.includes("pin: useLegacyServicesFlow"), "services trigger must preserve the legacy visual pin owner");
 expect(servicesTrigger.includes("pinSpacing: true"), "services trigger must reserve pin spacing");
 expect(servicesTrigger.includes("invalidateOnRefresh: true"), "services trigger must invalidate viewport measurements on refresh");
-expect(/end:\s*\(\)\s*=>\s*`\+=\$\{syncServicesPinCompensation\(\)\}`/.test(servicesTrigger), "services trigger must use the compensated fixed-pixel viewport end");
-expect(servicesTrigger.includes("onRefreshInit: syncServicesPinCompensation"), "services pin compensation must update before refresh measurement");
-expect(/--services-pin-flow-compensation[\s\S]{0,100}?\$\{\-distance\}px/.test(landing), "services pin compensation must negate only the external flow distance");
-expect(/\.site-shell\s+\.pin-spacer-services-reversible\s*\{[\s\S]{0,160}?margin-bottom:\s*var\(--services-pin-flow-compensation,\s*0px\)\s*!important/.test(styles), "services pin spacer must apply the flow compensation without overriding height or padding");
+/*
+  The band used to be one viewport of pin cancelled again by a negative spacer
+  margin, because the story advanced on gesture deltas while the page was
+  frozen. The stops are read off scroll progress now, so the band has to be real
+  document and the compensation is gone.
+*/
+expect(/end:\s*\(\)\s*=>\s*`\+=\$\{getServicesPinDistance\(\)\}`/.test(servicesTrigger), "services trigger must use the measured multi-viewport pin distance");
+expect(!landing.includes("--services-pin-flow-compensation"), "services pin flow compensation must stay removed");
+expect(!styles.includes("--services-pin-flow-compensation"), "the pin spacer must not re-introduce flow compensation");
+expect(/SERVICES_STOP_PROGRESS\s*=\s*\[/.test(landing), "services stops must be declared as scroll-progress thresholds");
 expect(servicesTrigger.includes("refreshPriority: 30"), "services trigger priority must be 30");
+
+/*
+  Nothing outside the scroll lock may write a scroll position. Anchor navigation
+  is the one exception and it is asserted separately below.
+*/
+const scrollWriteOwners = ["window.scrollTo(", "scrollIntoView(", ".scrollTo("];
+const storiesWritesScroll = scrollWriteOwners.some((owner) => stories.includes(owner));
+expect(!storiesWritesScroll, "the story hook must never write a scroll position");
+expect(!/new Lenis|from "lenis"/.test(`${landing}\n${stories}`), "Lenis must stay removed - every browser scrolls natively");
 
 expect(/id:\s*"hero-motion"[\s\S]{0,1200}?refreshPriority:\s*40/.test(landing), "hero priority must be 40");
 expect(/id:\s*"how-work-entrance"[\s\S]{0,1200}?refreshPriority:\s*25/.test(stories), "How entrance priority must be 25");
