@@ -2615,10 +2615,10 @@ export function TascLanding() {
             easing: (t: number) => Math.min(1, 1.001 - 2 ** (-10 * t)),
             smoothWheel: !isMacRuntime(),
             virtualScroll: () => !isMacRuntime(),
-            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.29 : 0.35,
+            wheelMultiplier: isMacRuntime() ? 1 : isMobileRuntime() ? 0.22 : 0.35,
             // Touch travel is damped to 0.8 on phones so the same swipe covers ~25%
             // less document. Sections stop flying past between two flicks.
-            touchMultiplier: isMobileRuntime() ? 0.6 : 0.9,
+            touchMultiplier: isMobileRuntime() ? 0.45 : 0.9,
         });
         lenisRef.current = lenis;
         root.dataset.wheelScrollRate = isMacRuntime() ? "native" : "lenis";

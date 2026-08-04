@@ -2,16 +2,21 @@ const FPS_30 = 30;
 const secondsAtFrame = (frame: number, fps = FPS_30) => frame / fps;
 export const RUNTIME_MEDIA = {
     hero: {
+        // The 640px `t1` pair traded too much away: at 60fps its bitrate left
+        // visible blocking on the glass refraction, which reads as judder. Both
+        // desktop sources are re-derived from the 720p master at roughly 1.75x
+        // the bitrate. Mobile is deliberately untouched so phones keep the
+        // smaller download.
         nativeAlpha: {
-            desktop: "/media/hero-earth-alpha-640-60fps-t1-20260731.webm",
+            desktop: "/media/hero-earth-alpha-720-60fps-t2-20260804.webm",
             mobile: "/media/hero-earth-alpha-480-30fps-mobile-20260722.webm",
-            desktopOutput: { width: 640, height: 640 },
+            desktopOutput: { width: 720, height: 720 },
             mobileOutput: { width: 480, height: 480 },
         },
         webkitPacked: {
-            desktop: "/media/hero-earth-safari-packed-640-60fps-t1-20260731.mp4",
+            desktop: "/media/hero-earth-safari-packed-720-60fps-t2-20260804.mp4",
             mobile: "/media/hero-earth-safari-packed-480-30fps-mobile-20260722.mp4",
-            desktopOutput: { width: 640, height: 640 },
+            desktopOutput: { width: 720, height: 720 },
             mobileOutput: { width: 480, height: 480 },
         },
         poster: "/media/hero-earth-poster-1080-20260715.webp",

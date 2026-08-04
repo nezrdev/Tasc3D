@@ -39,8 +39,8 @@ const HORIZONTAL_BIAS = 1.15;
   The tween now scales with the distance actually travelled: short hops stay
   as snappy as before, long ones get the time they need.
 */
-const PORTION_DURATION_BASE = 0.46;
-const PORTION_DURATION_MAX = 1.35;
+const PORTION_DURATION_BASE = 0.58;
+const PORTION_DURATION_MAX = 1.7;
 
 const resolvePortionDuration = (distance: number, viewportHeight: number) => {
     const viewports = Math.max(0, distance) / Math.max(1, viewportHeight);
