@@ -5156,7 +5156,7 @@ export function TascLanding() {
             window.removeEventListener("hashchange", navigateFromHistory);
         };
     }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
-    return (<main ref={rootRef} className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+    return (<main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"
                 ? "galaxy"

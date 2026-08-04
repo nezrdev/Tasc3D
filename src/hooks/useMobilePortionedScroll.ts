@@ -32,7 +32,21 @@ type StoryCorridor = {
 
 const TOUCH_COMMIT_PX = 8;
 const HORIZONTAL_BIAS = 1.15;
-const PORTION_DURATION = 0.53;
+/*
+  One swipe jumps to the next section anchor, and anchors can sit several
+  viewports apart. A flat duration therefore flung the long hops across the
+  page in the same time as a short one, which is what read as "insanely fast".
+  The tween now scales with the distance actually travelled: short hops stay
+  as snappy as before, long ones get the time they need.
+*/
+const PORTION_DURATION_BASE = 0.46;
+const PORTION_DURATION_MAX = 1.35;
+
+const resolvePortionDuration = (distance: number, viewportHeight: number) => {
+    const viewports = Math.max(0, distance) / Math.max(1, viewportHeight);
+    const scaled = PORTION_DURATION_BASE * Math.sqrt(Math.max(1, viewports));
+    return Math.min(PORTION_DURATION_MAX, scaled);
+};
 const ANCHOR_DEDUPLICATION_PX = 3;
 const ANCHOR_SETTLE_PX = 8;
 const FRAME_STEP_VIEWPORT_RATIO = 0.9;
@@ -191,7 +205,7 @@ export function useMobilePortionedScroll({
             }
             root.dataset.portionAnchorCount = String(cachedAnchors.length);
             root.dataset.portionAnchors = cachedAnchors.map((anchor) => anchor.ids.join("+")).join("|");
-            root.dataset.portionDuration = String(PORTION_DURATION);
+            root.dataset.portionDuration = String(PORTION_DURATION_BASE);
             root.dataset.portionEase = "power2.out";
         };
 
@@ -394,9 +408,14 @@ export function useMobilePortionedScroll({
                 targetY: target.y,
             });
             motionInputRegistration?.markProgress(`start:${sequence}:${targetIndex}`);
+            const portionDuration = resolvePortionDuration(
+                Math.abs(target.y - proxy.y),
+                readViewportHeight(),
+            );
+            root.dataset.portionDuration = String(Math.round(portionDuration * 100) / 100);
             portionTween = gsap.to(proxy, {
                 y: target.y,
-                duration: PORTION_DURATION,
+                duration: portionDuration,
                 ease: "power2.out",
                 overwrite: true,
                 onUpdate: () => writeScroll(proxy.y),

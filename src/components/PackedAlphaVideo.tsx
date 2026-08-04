@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef, memo, useEffect, useImperativeHandle, useRef, type ReactEventHandler, } from "react";
+import { forwardRef, memo, useEffect, useImperativeHandle, useRef, useState, type ReactEventHandler, } from "react";
 import { installRestorableWebglLifecycle, releaseWebglContext } from "./webglLifecycle";
 type PackedAlphaVideoProps = {
     armed?: boolean;
@@ -28,6 +28,7 @@ type VideoWithFrameCallback = HTMLVideoElement & {
     requestVideoFrameCallback?: (callback: (now: number) => void) => number;
 };
 type PlaybackRetrySignal = "initial" | "canplay" | "visibility" | "interaction" | "pause";
+const MAX_CANVAS_EPOCHS = 3;
 const MAX_PLAYBACK_RETRIES_PER_EPISODE = 4;
 const PLAY_PROMISE_WATCHDOG_MS = 3000;
 function createBoundedPlaybackController({ video, canPlay, onStarted, }: {
@@ -205,6 +206,7 @@ type PackedAlphaWebglResources = {
 };
 const PackedAlphaVideo = memo(forwardRef<HTMLVideoElement, PackedAlphaVideoProps>(function PackedAlphaVideo({ armed = true, autoPlay = false, className, compositeActive = true, loop = false, maxFps = 30, muted = true, onError, onFirstFrame, onLoadedMetadata, onReady, outputHeight, outputWidth, pauseWhenOffscreen = false, playsInline = true, preload = "metadata", renderMode = "webgl", src, tabIndex = -1, videoClassName, }, forwardedRef) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const [canvasEpoch, setCanvasEpoch] = useState(0);
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const onErrorRef = useRef(onError);
     const onFirstFrameRef = useRef(onFirstFrame);
@@ -467,6 +469,24 @@ const PackedAlphaVideo = memo(forwardRef<HTMLVideoElement, PackedAlphaVideoProps
             canvas.dataset.packedAlphaWebgl = "ready";
             return true;
         };
+        /*
+          A canvas hands back the same context object on every getContext call, so a
+          remount that follows an intentional release (StrictMode's double effect, a
+          src or fps change) picks up a context that is still lost, and restoreContext
+          does not reliably fire on WebKit. Swap in a fresh canvas element instead — the
+          old code reported a permanent error here, which retired the animation for the
+          whole session.
+        */
+        if (gl.isContextLost()) {
+            canvas.dataset.packedAlphaWebgl = "awaiting-canvas";
+            if (canvasEpoch < MAX_CANVAS_EPOCHS) {
+                setCanvasEpoch((epoch) => epoch + 1);
+                return;
+            }
+            canvas.dataset.packedAlphaWebgl = "unavailable";
+            onErrorRef.current?.();
+            return;
+        }
         if (!initializeResources()) {
             canvas.dataset.packedAlphaWebgl = "unavailable";
             releaseWebglContext(canvas, gl);
@@ -740,9 +760,9 @@ const PackedAlphaVideo = memo(forwardRef<HTMLVideoElement, PackedAlphaVideoProps
             document.removeEventListener("visibilitychange", handleVisibilityChange);
             disposeResources();
         };
-    }, [armed, autoPlay, compositeActive, maxFps, pauseWhenOffscreen, renderMode, src]);
+    }, [armed, autoPlay, canvasEpoch, compositeActive, maxFps, pauseWhenOffscreen, renderMode, src]);
     return (<div className={className} data-packed-alpha-video={armed ? (renderMode === "screen" ? "screen-crop" : "h264-side-by-side") : "dormant"} data-packed-alpha-composite={renderMode === "webgl" ? (compositeActive ? "active" : "suspended") : "screen"}>
-      {renderMode === "webgl" && compositeActive ? (<canvas ref={canvasRef} width={outputWidth} height={outputHeight} aria-hidden="true"/>) : null}
+      {renderMode === "webgl" && compositeActive ? (<canvas key={canvasEpoch} ref={canvasRef} width={outputWidth} height={outputHeight} aria-hidden="true"/>) : null}
         <video ref={videoRef} className={videoClassName} src={armed ? src : undefined} width={outputWidth * 2} height={outputHeight} autoPlay={autoPlay && (renderMode === "screen" || compositeActive)} loop={loop} muted={muted} playsInline={playsInline} preload={preload} disablePictureInPicture tabIndex={tabIndex} onLoadedMetadata={onLoadedMetadata} aria-hidden="true"/>
       </div>);
 }));

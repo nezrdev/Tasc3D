@@ -50,7 +50,13 @@ const DOMINO_PIN_TRAVEL_PX = () => {
     const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
     return Math.round(Math.min(1400, Math.max(620, viewportHeight * 1.15)));
 };
-const DOMINO_REVERSE_ENGAGE_PROGRESS = 0.12;
+/*
+  Coming up from the footer the reader had to travel 88% of the pin distance
+  before the reverse sequence engaged, which is most of a viewport of scrolling
+  spent looking at a still frame. Engaging at the halfway mark starts the replay
+  about a quarter of that journey sooner.
+*/
+const DOMINO_REVERSE_ENGAGE_PROGRESS = 0.5;
 export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReverseVideoRef, lenisRef, transportKey = "default", onForwardCompletedOnce, enabled, story, }: ReversibleScrollStoriesOptions) {
     const onForwardCompletedOnceRef = useRef(onForwardCompletedOnce);
     const forwardCompletionReportedRef = useRef(false);
@@ -789,7 +795,12 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 }
                 window.scrollTo({ top: safeTarget, left: 0, behavior: "auto" });
             };
-            const isDominoVisuallyNear = (viewportMargin = 0.8) => {
+            /*
+              A wider proximity margin keeps the wheel-driven reverse entry available
+              while the scene is still approaching, so a deliberate scroll up is not
+              rejected just because the scene has not reached the viewport yet.
+            */
+            const isDominoVisuallyNear = (viewportMargin = 1.05) => {
                 const viewportHeight = getViewportHeight();
                 const margin = viewportHeight * viewportMargin;
                 const dominoSpacer = dominoScene.closest<HTMLElement>(".pin-spacer-domino-reversible");
@@ -1959,7 +1970,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
                 id: "domino-input-range",
                 trigger: dominoSection,
                 start: "top 120%",
-                end: "bottom -20%",
+                end: "bottom -45%",
                 refreshPriority: 4,
                 invalidateOnRefresh: true,
                 onToggle: (self) => {
