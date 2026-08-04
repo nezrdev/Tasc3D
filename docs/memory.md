@@ -11,21 +11,24 @@
 
 - ScrollTrigger global `sort()` and `refresh()` calls are centralized through `src/lib/scroll-trigger-refresh.ts`.
 - Anchor navigation must not run immediate global refresh/sort or delayed retry ladders. It applies one settled position in one animation frame and clears `data-programmatic-anchor`.
-- Services keeps its authored one-viewport visual pin. The extra GSAP pin spacer flow is cancelled by `--services-pin-flow-compensation` on `.pin-spacer-services-reversible`, not by shortening the visual story.
+- Scrolling is native in every browser. Lenis was removed on 2026-08-04: it was already detached from input on Apple devices, so the site ran two scroll models at once and ScrollTrigger had to reconcile them.
+- Nothing in the motion runtime writes a scroll position. Anchor navigation is the single exception. Any future "settle", "snap" or "align" that moves the page is the bug the 2026-08-04 rebuild removed.
+- Services is pinned across `SERVICES_PIN_VIEWPORTS` (2.4) of real document and its three stops are read off trigger progress (`SERVICES_STOP_PROGRESS`, exit at `SERVICES_EXIT_PROGRESS`). The old one-viewport pin plus `--services-pin-flow-compensation` is gone; the band has to be real document for progress-driven stops to work.
 - Refresh priority order is intentional: hero `40`, Services `30`, How entrance `25`, How reversible `20`, Datum `10`, Domino `5`.
-- `src/lib/motion-input-bus.ts` is the only owner-level wheel/touch/key listener set. Services, How, Domino, and mobile portion scrolling register explicitly with priorities `100/80/70/10`; DOM `data-*` values are telemetry only.
-- The motion owner watchdog is fixed at 4000 ms and releases fail-open through the normal cleanup path.
+- `src/lib/scroll-lock.ts` is the only thing that holds the reader still: it swallows wheel/touchmove/keydown, never moves the page, and releases itself after `SCROLL_LOCK_SAFETY_MS` (6000). Only Services stops and the Domino sequence take it.
+- A story that has already played never re-locks. Services only advances on a downward gesture; Domino plays forward once per page load and leaves its final frame alone on the way back up.
+- `src/lib/motion-input-bus.ts` is now an observer-only tap on the input stream (all listeners passive, no ownership). Anchor settling and the reveal watchdog are its only consumers.
+- How we work and Datum keep their pins by the owner's decision (2026-08-04) but carry no input capture - the steps run on `scrub` while the frame is held.
 - Initial connection classification only accepts `saveData`, `slow-2g`, and `2g`. A low `downlink` value alone cannot select mobile assets; measured first-media throughput can constrain later assets.
 - T8 profile bootstrap is synchronous in `layout.tsx` and sets `data-tasc-profile-ready` last; React reads it through lazy initializers but only enables motion after hydration to avoid conditional DOM mismatches.
 - Mobile/desktop profile switching uses exact `> 80px` hysteresis from the width where the current mode was actually selected; same-mode resize drift does not reset the baseline. `visualViewport` resize is included.
 - A live reduced-motion preference disables and fully cleans the current runtime through a per-run GSAP context plus residual-trigger sweep. Returning to no-preference creates one clean replacement runtime; verified ScrollTrigger totals are `33→0→33` and ordinary profile rotations still reuse the original runtime.
 - Services video identity is transport-keyed only. Same-transport profile swaps reuse the same DOM node and call `video.load()` explicitly.
-- Mobile portion scrolling stops and writes through Lenis while it owns a transition, then synchronizes and resumes Lenis on every completion, interruption, watchdog release, and cleanup.
 - Real Safari acceptance still requires physical macOS/iPhone Safari or an equivalent real-device remote session. Windows Playwright WebKit is regression coverage only.
 - Browser QA must run against one stable local `next start` process. Do not rebuild `.next` or start a second server while Playwright/perf harnesses are running.
-- `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically, media state is owned by `useMediaOrchestrator`, and Services input behavior is created through `useServicesStory` inside that same runtime.
-- An active Services story survives ScrollTrigger refresh/profile changes; refresh recomputes and corrects the lock coordinate instead of releasing ownership.
-- Domino transport failure exits through the normal direction-aware boundary path. Forward failure exposes the form, reverse failure returns toward Process, and both paths release Lenis/document input.
+- `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically and media state is owned by `useMediaOrchestrator`. `useServicesStory` was deleted with the gesture machine.
+- Sections after a pin climb the z stack in document order on mobile (Datum `4`, Process `5`, footer `6`). A pinned section that outgrows its spacer would otherwise paint over whatever scrolled up under it.
+- Domino media failure releases the lock and settles the story as complete rather than retrying: the reader gets the form, not a frozen frame. The reverse Domino video is never armed, so it is neither downloaded nor decoded.
 
 ## Client Review Pass Decisions (2026-08-03)
 
