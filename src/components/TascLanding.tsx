@@ -5156,6 +5156,56 @@ export function TascLanding() {
             window.removeEventListener("hashchange", navigateFromHistory);
         };
     }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
+    /*
+      The Datum media used to be a fixed 147% wide plate whose top was cropped by a
+      hard-coded clip-path when the screen ran short. On phones the crop ate the
+      composition and read as the cards covering the video. Measure what is actually
+      free under the card stack and publish it, so the media can size itself to the
+      gap instead of being cut.
+    */
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root || !preloaderComplete)
+            return;
+        const section = root.querySelector<HTMLElement>(".datum-motion-section");
+        const cards = root.querySelector<HTMLElement>(".datum-motion-state-cards");
+        if (!section || !cards)
+            return;
+        const compactQuery = window.matchMedia("(max-width: 900px)");
+        let frame = 0;
+        const publish = () => {
+            frame = 0;
+            if (!compactQuery.matches) {
+                section.style.removeProperty("--datum-media-space");
+                return;
+            }
+            const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+            const cardsBottom = cards.getBoundingClientRect().bottom - section.getBoundingClientRect().top;
+            const space = Math.max(0, Math.round(viewportHeight - cardsBottom - 10));
+            section.style.setProperty("--datum-media-space", `${space}px`);
+        };
+        const schedule = () => {
+            if (frame)
+                return;
+            frame = window.requestAnimationFrame(publish);
+        };
+        const observer = new ResizeObserver(schedule);
+        observer.observe(cards);
+        observer.observe(section);
+        window.addEventListener("resize", schedule, { passive: true });
+        window.visualViewport?.addEventListener("resize", schedule);
+        compactQuery.addEventListener("change", schedule);
+        schedule();
+        return () => {
+            observer.disconnect();
+            if (frame)
+                window.cancelAnimationFrame(frame);
+            window.removeEventListener("resize", schedule);
+            window.visualViewport?.removeEventListener("resize", schedule);
+            compactQuery.removeEventListener("change", schedule);
+            section.style.removeProperty("--datum-media-space");
+        };
+    }, [preloaderComplete]);
     return (<main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"

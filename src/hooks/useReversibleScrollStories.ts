@@ -1864,7 +1864,12 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, dominoReve
             dominoReadinessTrigger = ScrollTrigger.create({
                 id: "domino-quarter-readiness",
                 trigger: dominoScene,
-                start: () => `top ${Math.round(getVisualViewportHeight() * 2.45)}px`,
+                /*
+                  Phones reach this section far faster than the sequence downloads,
+                  which is what left a black frame under the copy. Warm the media a
+                  further viewport out on compact screens.
+                */
+                start: () => `top ${Math.round(getVisualViewportHeight() * (isCompactDomino() ? 3.6 : 2.45))}px`,
                 end: "bottom top",
                 invalidateOnRefresh: true,
                 onEnter: warmDominoMedia,

@@ -102,3 +102,44 @@
     mask-image: none !important;
   }
 }
+
+/*
+ * Datum media — fit the composition into the space the cards leave.
+ *
+ * The mobile rules sized the plate at a fixed 147% of the viewport and then cut
+ * its top with a hard-coded clip-path once the screen ran short, so on phones
+ * the frame lost its top and read as the cards sitting on top of the video.
+ * `--datum-media-space` carries the measured gap under the card stack; the media
+ * now scales to it and is never cropped.
+ */
+@media (max-width: 900px) {
+  .site-shell .datum-motion-section .datum-motion-media {
+    top: auto !important;
+    right: auto !important;
+    bottom: 0 !important;
+    left: 50% !important;
+    height: clamp(104px, var(--datum-media-space, 32svh), 46svh) !important;
+    width: auto !important;
+    max-width: 154% !important;
+    aspect-ratio: 16 / 9;
+    transform: translateX(-50%) !important;
+    overflow: visible !important;
+    -webkit-clip-path: none !important;
+    clip-path: none !important;
+    background: none !important;
+  }
+
+  .site-shell[data-datum-media-armed="true"]
+    .datum-motion-section[data-datum-playback="fallback"]
+    .datum-motion-media {
+    background:
+      url("/media/datum-news-poster-20260714.webp") center bottom / contain no-repeat !important;
+  }
+
+  .site-shell .datum-motion-section .datum-motion-video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+    object-position: center bottom !important;
+  }
+}

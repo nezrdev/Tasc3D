@@ -39,8 +39,14 @@ const HORIZONTAL_BIAS = 1.15;
   The tween now scales with the distance actually travelled: short hops stay
   as snappy as before, long ones get the time they need.
 */
-const PORTION_DURATION_BASE = 0.58;
-const PORTION_DURATION_MAX = 1.7;
+/*
+  A swipe may not cross more than this share of the viewport. Section anchors are
+  subdivided down to it, which is what keeps the whole page from passing under a
+  single flick.
+*/
+const PORTION_STRIDE_VIEWPORT_RATIO = 0.34;
+const PORTION_DURATION_BASE = 0.5;
+const PORTION_DURATION_MAX = 0.95;
 
 const resolvePortionDuration = (distance: number, viewportHeight: number) => {
     const viewports = Math.max(0, distance) / Math.max(1, viewportHeight);
@@ -173,6 +179,35 @@ export function useMobilePortionedScroll({
                     return anchors;
                 }
                 anchors.push(candidate);
+                return anchors;
+            }, []);
+
+            /*
+              Section anchors sit whole screens apart, so one swipe used to fly the
+              reader past an entire block no matter how short the flick was. Any gap
+              wider than a stride is split into evenly spaced stops, so a swipe now
+              advances a fraction of a screen and several swipes are needed to cross
+              a section. The section anchors themselves survive as stops, so blocks
+              still land squarely.
+            */
+            const stride = Math.max(120, Math.round(readViewportHeight() * PORTION_STRIDE_VIEWPORT_RATIO));
+            cachedAnchors = cachedAnchors.reduce<PortionAnchor[]>((anchors, anchor, index) => {
+                if (index === 0) {
+                    anchors.push(anchor);
+                    return anchors;
+                }
+                const previous = anchors.at(-1)!;
+                const gap = anchor.y - previous.y;
+                if (gap > stride) {
+                    const steps = Math.ceil(gap / stride);
+                    for (let step = 1; step < steps; step += 1) {
+                        anchors.push({
+                            ids: [`${previous.ids[0]}-step-${step}`],
+                            y: Math.round(previous.y + (gap * step) / steps),
+                        });
+                    }
+                }
+                anchors.push(anchor);
                 return anchors;
             }, []);
 

@@ -5,6 +5,7 @@ import { ArrowRight } from "lucide-react";
 import { finalImpulseCopy } from "@/data/landing-content";
 import { RUNTIME_MEDIA } from "@/data/runtime-media";
 
+const DOMINO_POSTER = RUNTIME_MEDIA.domino.poster;
 const DOMINO_VIDEO_MP4 = RUNTIME_MEDIA.domino.forward.desktop;
 const DOMINO_VIDEO_MOBILE_MP4 = RUNTIME_MEDIA.domino.forward.mobile;
 const DOMINO_VIDEO_WEBM = RUNTIME_MEDIA.domino.forward.chromium.desktop;
@@ -68,6 +69,7 @@ export function DominoSection({
                                 className="domino-sequence domino-sequence-forward"
                                 data-domino-direction="forward"
                                 data-armed={dominoMediaArmed ? "true" : "false"}
+                                poster={DOMINO_POSTER}
                                 muted
                                 playsInline
                                 preload={dominoMediaArmed ? "auto" : "metadata"}
@@ -101,6 +103,7 @@ export function DominoSection({
                                 className="domino-sequence domino-sequence-reverse"
                                 data-domino-direction="reverse"
                                 data-armed={dominoReverseMediaArmed ? "true" : "false"}
+                                poster={DOMINO_POSTER}
                                 muted
                                 playsInline
                                 preload={dominoReverseMediaArmed ? "auto" : "metadata"}

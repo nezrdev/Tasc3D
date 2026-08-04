@@ -101,6 +101,9 @@ export const RUNTIME_MEDIA = {
                 mobile: "/media/domino-cta-reverse-mobile-vp9-20260718.webm",
             },
         },
+        // Both sequences carried no poster, so a phone that reached the section
+        // before the file buffered showed a black rectangle under the copy.
+        poster: "/media/domino-cta-poster-20260710.webp",
         fps: FPS_30,
         frameCount: 115,
         visibilityRatio: 0.25,
