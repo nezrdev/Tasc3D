@@ -3591,7 +3591,6 @@ body > div:first-child,
   background-color: #020303 !important;
 }
 
-html,
 /*
   `contain` still lets iOS rubber-band the document itself, and while the page
   is bounced the fixed header rides down with it - which is the strip of page
