@@ -26,6 +26,7 @@
 - Services video identity is transport-keyed only. Same-transport profile swaps reuse the same DOM node and call `video.load()` explicitly.
 - Real Safari acceptance still requires physical macOS/iPhone Safari or an equivalent real-device remote session. Windows Playwright WebKit is regression coverage only.
 - Browser QA must run against one stable local `next start` process. Do not rebuild `.next` or start a second server while Playwright/perf harnesses are running.
+- Run `scripts/tasc-deploy.ps1` with no output redirection. Piping it through `2>&1` in Windows PowerShell 5.1 turns the remote `ssh` build chatter on stderr into a terminating `NativeCommandError` and kills the deploy mid-upload (observed 2026-08-04; no release directory was created and the `current` symlink was left untouched, so it fails safe).
 - `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically and media state is owned by `useMediaOrchestrator`. `useServicesStory` was deleted with the gesture machine.
 - Sections after a pin climb the z stack in document order on mobile (Datum `4`, Process `5`, footer `6`). A pinned section that outgrows its spacer would otherwise paint over whatever scrolled up under it.
 - Domino media failure releases the lock and settles the story as complete rather than retrying: the reader gets the form, not a frozen frame. The reverse Domino video is never armed, so it is neither downloaded nor decoded.
