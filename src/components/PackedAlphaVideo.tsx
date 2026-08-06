@@ -615,7 +615,10 @@ const PackedAlphaVideo = memo(forwardRef<HTMLVideoElement, PackedAlphaVideoProps
             if (typeof video.requestVideoFrameCallback === "function") {
                 frameCallbackId = video.requestVideoFrameCallback((now) => {
                     frameCallbackId = undefined;
-                    renderFrame(now, true);
+                    // The callback can arrive faster than the authored transport.
+                    // Respect maxFps here so each decoded frame is not uploaded to
+                    // WebGL twice while keeping the full motion stream intact.
+                    renderFrame(now);
                     scheduleFrame();
                 });
             }

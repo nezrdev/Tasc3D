@@ -63,3 +63,9 @@ New review items:
 - Validate the approved build on physical iPhone Safari/Chrome, Android Chrome, and macOS Safari using `t5-physical-safari-acceptance.md`.
 - After an approved deployment, verify that Nginx emits one immutable media cache policy and rerun the live range/header check.
 - Verify real PostgreSQL persistence only in an authorized staging/production environment.
+
+## Scroll Repair Execution (2026-08-06)
+
+- Completed the approved main-branch repair for Domino footer capture, sequential Process reveals, Clients-to-Services backdrop/star handoff, and packed Services frame cadence.
+- Local acceptance is green through `pnpm check`, `qa:t8:static`, `qa:t12`, and manual Chromium/WebKit journeys. Physical Safari and Android hardware remain external acceptance surfaces.
+- Before future releases, refresh the stale T6/T7/T12 browser scripts so their contracts describe the current main-branch runtime instead of the removed preflight, mobile-portioned-scroll, and one-viewport Services implementations.

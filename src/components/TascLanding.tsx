@@ -3503,6 +3503,23 @@ export function TascLanding() {
                     onRefresh: (self) => syncClientsHandoff(self.progress),
                 });
                 let firstServicesHandoffDirection: 1 | -1 = 1;
+                const syncBackdropHandoff = (progress: number) => {
+                    const clamped = gsap.utils.clamp(0, 1, progress);
+                    const fadeOut = 1 - gsap.utils.clamp(0, 1, clamped / 0.34);
+                    clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
+                        gsap.set(element, { opacity: restingOpacity * fadeOut });
+                    });
+                    if (clientsStarStage) {
+                        const fadeToBlack = 1 - gsap.utils.clamp(0, 1, (clamped - 0.02) / 0.3);
+                        const returnFromBlack = gsap.utils.clamp(0, 1, (clamped - 0.32) / 0.4);
+                        gsap.set(clientsStarStage, { opacity: Math.max(0, fadeToBlack, returnFromBlack) });
+                    }
+                    if (servicesStarReveal) {
+                        gsap.set(servicesStarReveal, {
+                            opacity: gsap.utils.clamp(0, 1, (clamped - 0.3) / 0.42),
+                        });
+                    }
+                };
                 const syncFirstServicesHandoffY = (progress: number, direction: 1 | -1) => {
                     if (!firstServicesItems.length)
                         return;
@@ -3526,11 +3543,13 @@ export function TascLanding() {
                         onUpdate: (self) => {
                             setClientsHandoffMoving(self.progress > 0 && self.progress < 1);
                             firstServicesHandoffDirection = self.direction < 0 ? -1 : 1;
+                            syncBackdropHandoff(self.progress);
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
                         onScrubComplete: () => setClientsHandoffMoving(false),
                         onLeave: () => setClientsHandoffMoving(false),
                         onRefresh: (self) => {
+                            syncBackdropHandoff(self.progress);
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
                         onLeaveBack: () => {
@@ -3543,27 +3562,13 @@ export function TascLanding() {
                     },
                 });
                 syncClientsHandoff(clientsExitTrigger.progress);
+                syncBackdropHandoff(clientsServicesHandoff.scrollTrigger?.progress ?? 0);
                 /*
                   Handover order matters. Services has to arrive on a finished stage:
                   the Clients backdrops and starfield leave first, the Services stage
                   and its stars come back up on their own, and only then does the copy
                   and the media fade in. Reversed, the reader gets the same order back.
                 */
-                clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
-                    clientsServicesHandoff?.fromTo(element, { opacity: restingOpacity }, {
-                        opacity: 0,
-                        duration: 0.34,
-                        ease: "power2.inOut",
-                    }, 0);
-                });
-                if (clientsStarStage) {
-                    clientsServicesHandoff
-                        .fromTo(clientsStarStage, { opacity: 1 }, { opacity: 0, duration: 0.3, ease: "power2.in" }, 0.02)
-                        .to(clientsStarStage, { opacity: 1, duration: 0.4, ease: "power2.out" }, 0.32);
-                }
-                if (servicesStarReveal) {
-                    clientsServicesHandoff.fromTo(servicesStarReveal, { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power2.out" }, 0.3);
-                }
                 if (firstServicesItems.length) {
                     clientsServicesHandoff.fromTo(firstServicesItems, { autoAlpha: 0 }, {
                         autoAlpha: 1,
@@ -4129,50 +4134,59 @@ export function TascLanding() {
             }
         });
         const processRows = gsap.utils.toArray<HTMLElement>(".process-contact-row");
-        if (processRows.length > 0) {
+        if (processRows.length > 0 && processContactSection) {
             const processRowParts = new Map(processRows.map((row) => [
                 row,
                 Array.from(row.querySelectorAll<HTMLElement>(".process-contact-row-title > span, .process-contact-row-title > h3, :scope > p")),
             ]));
             const processParts = Array.from(processRowParts.values()).flat();
-            registerManagedRevealElements([...processRows, ...processParts]);
-            processRows.forEach(registerManagedRevealTrigger);
-            const revealProcessBatch = (batch: Element[], triggers: ScrollTrigger[]) => {
-                const rows = batch.filter((element): element is HTMLElement => element instanceof HTMLElement &&
-                    element.dataset.revealComplete !== "true");
-                triggers.forEach((trigger) => trigger.kill(false));
-                if (rows.length === 0)
+            const processRevealTargets = [...processRows, ...processParts];
+            registerManagedRevealElements(processRevealTargets);
+            registerManagedRevealTrigger(processContactSection);
+            gsap.set(processRevealTargets, { y: 30, autoAlpha: 0, overwrite: true });
+            let processRevealTimeline: gsap.core.Timeline | null = null;
+            let processRevealed = false;
+            const revealProcess = (fromY: number, trigger?: ScrollTrigger) => {
+                if (processRevealed)
                     return;
-                gsap.to(rows, {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: cardRevealTime(1.34),
-                    ease: "power4.out",
-                    stagger: cardRevealTime(0.18),
-                    overwrite: true,
-                    onComplete: () => completeManagedReveal(rows),
+                processRevealed = true;
+                trigger?.kill(false);
+                processRevealTimeline?.kill();
+                gsap.set(processRevealTargets, { y: fromY, autoAlpha: 0, overwrite: true });
+                processRevealTimeline = gsap.timeline({
+                    onComplete: () => completeManagedReveal(processRevealTargets),
                 });
-                rows.forEach((row, batchIndex) => {
-                    const parts = processRowParts.get(row);
-                    if (!parts?.length)
-                        return;
-                    gsap.to(parts, {
+                processRows.forEach((row, rowIndex) => {
+                    const parts = processRowParts.get(row) ?? [];
+                    const rowStart = cardRevealTime(rowIndex * 0.19);
+                    processRevealTimeline?.to(row, {
                         y: 0,
                         autoAlpha: 1,
                         duration: cardRevealTime(0.92),
-                        delay: cardRevealTime(0.16 + batchIndex * 0.14),
-                        ease: "power3.out",
-                        stagger: cardRevealTime(0.12),
-                        overwrite: true,
-                        onComplete: () => completeManagedReveal(parts),
-                    });
+                        ease: "power4.out",
+                    }, rowStart);
+                    if (parts.length) {
+                        processRevealTimeline?.to(parts, {
+                            y: 0,
+                            autoAlpha: 1,
+                            duration: cardRevealTime(0.64),
+                            stagger: cardRevealTime(0.08),
+                            ease: "power3.out",
+                        }, rowStart + cardRevealTime(0.12));
+                    }
                 });
             };
-            ScrollTrigger.batch(processRows, {
-                start: "top 80%",
-                batchMax: 5,
-                onEnter: revealProcessBatch,
-                onEnterBack: revealProcessBatch,
+            const processRevealTrigger = ScrollTrigger.create({
+                id: "process-sequential-reveal",
+                trigger: processContactSection,
+                start: "top 82%",
+                onEnter: (trigger) => revealProcess(30, trigger),
+                onEnterBack: (trigger) => revealProcess(-30, trigger),
+            });
+            cleanupCallbacks.push(() => {
+                processRevealTrigger.kill(false);
+                processRevealTimeline?.kill();
+                processRevealTimeline = null;
             });
         }
         gsap.utils.toArray<HTMLElement>(".motion-divider").forEach((element) => {

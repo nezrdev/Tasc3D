@@ -4,8 +4,8 @@
 
 - Worktree: `C:\workflow\Freelance\projects\tasc-3d-site`.
 - Active optimization chain: T6, T13, T12, T7, T8, T9, T10, and T11 are stacked in isolated branches and draft PRs.
-- Current branch in this worktree: `task/t11-final-verification`, based on the T10 branch.
-- Production deployment is intentionally out of scope until separately approved.
+- Current branch in this worktree: `main`.
+- Production deployment is approved for the current scroll-repair task after local QA.
 
 ## Runtime Decisions
 
@@ -30,6 +30,10 @@
 - `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically and media state is owned by `useMediaOrchestrator`. `useServicesStory` was deleted with the gesture machine.
 - Sections after a pin climb the z stack in document order on mobile (Datum `4`, Process `5`, footer `6`). A pinned section that outgrows its spacer would otherwise paint over whatever scrolled up under it.
 - Domino media failure releases the lock and settles the story as complete rather than retrying: the reader gets the form, not a frozen frame. The reverse Domino video is never armed, so it is neither downloaded nor decoded.
+- Domino readiness is now transport-only: a ready media event cannot start playback by itself. Forward playback requires a real forward pin entry at the scene boundary; backward entry warms media and never claims the reader.
+- Process rows have one sequential reveal owner with a bounded watchdog fail-open path. The old per-row `ScrollTrigger.batch` is not used, so rows and their internal copy cannot compete for reveal ownership.
+- Clients-to-Services backdrop opacity is synchronized directly from the bidirectional handoff progress. The Clients flare and gradient leave before Services copy, while the star stage remains visible through the handoff in both directions.
+- Packed alpha Services playback respects its authored `maxFps` when handling `requestVideoFrameCallback`, avoiding redundant WebGL texture uploads while preserving the video transport and motion.
 
 ## Client Review Pass Decisions (2026-08-03)
 
@@ -97,3 +101,10 @@
 - T11 candidate BUILD_ID `3il90V6IuZEtqb2tTRyTJ` passes lint, typecheck, 8/8 lead tests, 20/20 media contracts, T6/T8/T9/T10/T12 gates, exact Chromium/WebKit Services and How reverse journeys, 4/4 cold first visits, 8/8 Domino fault paths, 3/3 WebGL paths, and a 24-case performance matrix with zero structural or acceptance failures.
 - The strict mobile portion harness remains unmodified. Chromium 390/430 passes; Windows synthetic WebKit reaches every target with zero positional error but exceeds six rapid timing assertions. Physical Safari timing acceptance remains external.
 - See `docs/t11-verification-2026-08-02.md` for the authoritative final evidence and boundaries.
+
+## Scroll Repair Verification (2026-08-06)
+
+- `pnpm check` passed: lint, typecheck, 8/8 lead tests, 20/20 runtime media contracts, and production build.
+- `pnpm qa:t8:static` and `pnpm qa:t12` passed.
+- Stable `next start` QA passed in Chromium 1440x900 and WebKit mobile 390x844: footer-to-Domino small upward movement stayed `ready`/unpinned; forward boundary reached `complete`; Process rows revealed 01 through 05; Clients flare reached opacity 0 while Services stars remained visible in both handoff directions; no page errors or console errors were observed.
+- Existing `qa:t12:browser` still asserts the retired one-viewport Services pin and reports that stale geometry contract. Existing `qa:t6` asserts a removed Domino preflight machine, and `qa:t7:static` references the removed `useMobilePortionedScroll`; these scripts need contract refresh before they can be used as release gates.

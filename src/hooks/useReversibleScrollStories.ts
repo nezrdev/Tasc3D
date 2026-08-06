@@ -193,6 +193,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
             let lock: ScrollLockHandle | null = null;
             let readinessTrigger: ScrollTrigger | null = null;
             let pinTrigger: ScrollTrigger | null = null;
+            let forwardEntryRequested = false;
             let removeReadinessListeners = () => { };
 
             const getDuration = () => {
@@ -298,6 +299,21 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 });
                 monitorPlayback();
             };
+            const isAtDominoPinBoundary = () => {
+                if (!pinTrigger?.isActive)
+                    return false;
+                const sceneTop = dominoScene.getBoundingClientRect().top;
+                const boundaryTolerance = Math.max(10, getViewportHeight() * 0.018);
+                return Math.abs(sceneTop) <= boundaryTolerance;
+            };
+            const requestForwardPlayback = () => {
+                if (disposed || played || playing || !pinTrigger?.isActive ||
+                    pinTrigger.direction < 0 || !isAtDominoPinBoundary()) {
+                    return;
+                }
+                forwardEntryRequested = true;
+                startPlayback();
+            };
 
             const warmDominoMedia = () => {
                 removeReadinessListeners();
@@ -311,9 +327,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                     settled = true;
                     removeReadinessListeners();
                     root.dataset.dominoQuarterReady = "true";
-                    // The reader may already be standing inside the band waiting
-                    // for a frame that had not arrived yet.
-                    if (!played && !playing && pinTrigger?.isActive)
+                    // Readiness only warms media. Playback is allowed to begin
+                    // after a real forward pin entry requested it; otherwise a
+                    // tiny upward scroll from the footer can steal the reader.
+                    if (forwardEntryRequested && pinTrigger?.direction === 1)
                         startPlayback();
                 };
                 const markFallback = () => {
@@ -401,8 +418,16 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                   a reader climbing out of the brief is not asking to watch the
                   dominoes fall backwards.
                 */
-                onEnter: startPlayback,
+                onEnter: (self) => {
+                    if (self.direction > 0 && isAtDominoPinBoundary())
+                        requestForwardPlayback();
+                },
+                onEnterBack: () => {
+                    forwardEntryRequested = false;
+                    warmDominoMedia();
+                },
                 onLeaveBack: () => {
+                    forwardEntryRequested = false;
                     if (playing)
                         finishPlayback("left-band");
                 },
