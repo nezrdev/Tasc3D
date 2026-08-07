@@ -345,7 +345,8 @@ echo "Deployed $TS to $APP_ROOT/current"
 
 $LocalRemoteScript = Join-Path $ArchiveRoot.FullName "tascagency-remote-deploy-$Timestamp.sh"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-[System.IO.File]::WriteAllText($LocalRemoteScript, $RemoteScript, $Utf8NoBom)
+$RemoteScriptLf = $RemoteScript.Replace("`r`n", "`n").Replace("`r", "`n")
+[System.IO.File]::WriteAllText($LocalRemoteScript, $RemoteScriptLf, $Utf8NoBom)
 
 try {
   Invoke-CommandChecked "scp" ($ScpArgs + @($LocalRemoteScript, "${SshTarget}:${RemoteDeployScript}"))
