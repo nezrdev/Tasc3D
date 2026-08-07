@@ -33,3 +33,11 @@
 - Windows Playwright mobile profiles are regression coverage, not physical-device acceptance.
 - Final Nothing Phone (3a) acceptance belongs to the user.
 - Real iPhone/macOS Safari acceptance remains pending until observed on Apple hardware or an equivalent real-device session.
+
+## Production
+
+- Application commits: `ad83f15` and deploy hardening `5df474e`, both authored/committed by `netherdef` and pushed to `main`.
+- Active release: `/var/www/tascagency/releases/20260807-064628`.
+- PM2 and internal/public `/api/health` are healthy; root and `www` return HTTP 200.
+- All three new T14 media assets pass HTTP byte-range smoke with 206 responses and expected content types.
+- Live desktop/mobile Chromium smoke passed Services fixed-stage input, direct How cleanup, Domino form spacing, mobile Datum measured layout, static mobile starfield, header geometry, and zero console/page errors.

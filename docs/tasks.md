@@ -49,7 +49,7 @@ New review items:
 ## Remaining Goal Scope
 
 - No remaining T14 local software implementation scope after two independent frontend reviews.
-- Commit as `netherdef`, push to `main`, deploy production, and run one live smoke are authorized by this request.
+- T14 application commits `ad83f15` and `5df474e` are on `main`; production release `20260807-064628` and its live smoke are complete.
 
 ## Carried Performance Findings
 

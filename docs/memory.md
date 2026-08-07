@@ -117,3 +117,5 @@
 - The final three-profile browser matrix passed 28 Chromium desktop, 28 Android Chromium, and 16 WebKit checks with zero console/media errors; ordinary 200 px input moved 140 px.
 - Post-review desktop evidence additionally passes direct header `#work` navigation with zero visible Services panels, fixed story `scrollY`, momentum-burst isolation, two Domino forward/reverse cycles, and a 62.95 px title/form gap.
 - See `docs/t14-verification-2026-08-07.md`; synthetic Android/WebKit evidence is not physical-device acceptance.
+- Production release `20260807-064628` is active at `/var/www/tascagency/current` from application commit `5df474e`; PM2 PID `1274026` and internal/public health are healthy.
+- Live smoke passed root/www HTTP 200, all three T14 media range requests as HTTP 206, fixed Services stage input, direct How with zero Services ghosts, Domino form geometry, and mobile Datum/header/static-starfield checks with no console/page errors.
