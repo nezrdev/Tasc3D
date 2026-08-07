@@ -1,0 +1,286 @@
+/* T14: final cascade for discrete pinned stories and mobile runtime safety. */
+
+.site-header {
+  top: 0;
+  right: 0;
+  left: 0;
+  width: 100%;
+  height: calc(var(--header-h) + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.site-header > .site-header-glass.glass-surface {
+  top: 0 !important;
+  width: 100% !important;
+  height: calc(var(--header-h) + env(safe-area-inset-top)) !important;
+  padding-top: env(safe-area-inset-top);
+  box-sizing: border-box;
+}
+
+.site-header .site-header-inner {
+  height: var(--header-h);
+}
+
+.site-header .mobile-menu-panel {
+  top: calc(var(--header-h) + env(safe-area-inset-top));
+  max-height: calc(100dvh - var(--header-h) - env(safe-area-inset-top));
+}
+
+body:has(.site-shell[data-clients-inrange="true"]) .site-header::before {
+  opacity: 0.55;
+}
+
+body:has(.site-shell[data-process-inrange="true"]) .site-header-glass.glass-surface {
+  background: linear-gradient(180deg, rgba(5, 8, 10, 0.68), rgba(4, 6, 8, 0.58)) !important;
+}
+
+body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a) {
+  text-shadow: 0 1px 12px rgba(0, 0, 0, 0.72);
+}
+
+.site-shell[data-background-motion-paused="true"] .static-starfield-fallback,
+.site-shell[data-background-motion-paused="true"] .static-starfield-services {
+  animation-play-state: paused !important;
+  will-change: auto !important;
+}
+
+/* A header jump can cross the Services pin without running its release gesture. */
+.site-shell[data-services-bypassed="true"] .services-story-copy-layer {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.site-shell[data-mobile-performance="true"] > .first-four-galaxy-stage,
+.site-shell[data-mobile-performance="true"] .services-galaxy-stage {
+  height: 100dvh !important;
+}
+
+.site-shell[data-mobile-performance="true"] .static-starfield-fallback,
+.site-shell[data-mobile-performance="true"] .static-starfield-services {
+  display: block !important;
+  visibility: visible !important;
+}
+
+.domino-cta-section {
+  position: relative;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: clip;
+}
+
+.domino-cta-section .domino-scene {
+  position: relative !important;
+  width: 100% !important;
+  height: 100dvh !important;
+  min-height: 100dvh !important;
+  overflow: clip !important;
+}
+
+.domino-cta-section .domino-media {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.domino-cta-section .domino-poster {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  background-color: #000;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 1;
+}
+
+.domino-cta-section .domino-sequence {
+  z-index: 1;
+}
+
+.domino-cta-section .domino-loading-state {
+  position: absolute;
+  right: 0;
+  bottom: clamp(26px, 5dvh, 56px);
+  left: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 160ms linear;
+}
+
+.domino-cta-section .domino-loading-state > span {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.86);
+  border-radius: 50%;
+  animation: tasc-domino-loading-spin 700ms linear infinite;
+}
+
+.site-shell[data-domino-scene-state="loading"] .domino-loading-state {
+  opacity: 1;
+  visibility: visible;
+}
+
+@keyframes tasc-domino-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
+.domino-cta-section .domino-form-stage {
+  position: absolute !important;
+  inset: 0 !important;
+  z-index: 6 !important;
+  display: grid !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+  padding: clamp(112px, 17dvh, 180px) 0 clamp(36px, 7dvh, 72px) !important;
+  align-content: center;
+  box-sizing: border-box;
+  transform: none !important;
+  background: transparent !important;
+}
+
+.domino-cta-section .domino-form-stage .domino-copy,
+.site-shell:has(.cookie-consent.is-compact) .domino-form-stage .domino-copy {
+  position: relative !important;
+  inset: auto !important;
+  width: min(760px, calc(100% - 40px)) !important;
+  min-height: 0 !important;
+  margin: 0 auto !important;
+  transform: none !important;
+}
+
+.domino-cta-section + .site-footer {
+  margin-top: 0 !important;
+}
+
+/* Glass stays optically static; only its authored inner content moves. */
+:is(
+  .datum-glass-card,
+  .figma-client-card,
+  .site-header-glass,
+  .mobile-menu-glass,
+  .domino-impulse-row
+) {
+  transition-property: opacity, transform, color, border-color, background-color, box-shadow !important;
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .site-header .site-header-inner {
+    width: 100% !important;
+    min-width: 0;
+    padding-right: max(16px, env(safe-area-inset-right));
+    padding-left: max(16px, env(safe-area-inset-left));
+    box-sizing: border-box;
+    grid-template-columns: minmax(98px, 122px) 1fr 44px;
+    gap: 12px;
+  }
+
+  .site-header .brand-mark,
+  .site-header .brand-logo {
+    width: min(116px, 30vw) !important;
+    min-width: 0 !important;
+    max-width: 116px;
+  }
+
+  .site-header .brand-mark {
+    min-height: 44px;
+    overflow: visible;
+  }
+
+  .site-header .mobile-menu-toggle {
+    display: grid;
+    grid-column: 3;
+    width: 44px !important;
+    min-width: 44px;
+    height: 44px !important;
+    margin: 0;
+    place-self: center end;
+    overflow: visible;
+  }
+
+  .domino-cta-section .domino-form-stage {
+    --domino-form-lift: 0px !important;
+    margin: 0 !important;
+    margin-bottom: 0 !important;
+    padding: clamp(96px, 14dvh, 132px) 0 max(26px, env(safe-area-inset-bottom)) !important;
+    transform: none !important;
+  }
+
+  .domino-cta-section .domino-form-stage .domino-copy,
+  .site-shell:has(.cookie-consent.is-compact) .domino-form-stage .domino-copy {
+    width: min(347px, calc(100% - 40px)) !important;
+  }
+
+  .process-contact-section .process-contact-row {
+    display: grid !important;
+    grid-template-columns: 54px minmax(0, 1fr) !important;
+    align-items: start !important;
+    column-gap: 14px !important;
+    row-gap: 8px !important;
+  }
+
+  .process-contact-section .process-contact-row .process-contact-row-title {
+    display: contents !important;
+  }
+
+  .process-contact-section .process-contact-row .process-contact-row-title > span {
+    grid-column: 1;
+    grid-row: 1;
+    width: 54px !important;
+    height: auto !important;
+    line-height: 1 !important;
+    transform: translateY(4px);
+  }
+
+  .process-contact-section .process-contact-row .process-contact-row-title > h3 {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+    min-width: 0;
+    margin: 0;
+  }
+
+  .process-contact-section .process-contact-row > p {
+    grid-column: 2;
+    grid-row: 2;
+    width: 100% !important;
+    min-width: 0;
+    margin: 0 !important;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  .site-header,
+  .site-header > .site-header-glass.glass-surface {
+    min-height: calc(var(--header-h) + env(safe-area-inset-top));
+  }
+
+  .site-header .site-header-inner {
+    padding-right: max(20px, env(safe-area-inset-right));
+    padding-left: max(20px, env(safe-area-inset-left));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .domino-cta-section .domino-loading-state > span {
+    animation: none;
+  }
+}

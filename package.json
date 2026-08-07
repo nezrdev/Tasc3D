@@ -23,12 +23,14 @@
     "qa:t12": "node scripts/verify-t12-pin-seams.mjs",
     "qa:t12:browser": "node scripts/t12-browser-seam-qa.mjs",
     "qa:scroll-motion": "node scripts/qa-current-scroll-motion.mjs",
+    "qa:t14": "node scripts/t14-motion-story-qa.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test:leads && pnpm media:verify && pnpm build",
     "db:migrate": "node scripts/migrate.mjs"
   },
   "dependencies": {
     "@gsap/react": "2.1.2",
     "gsap": "3.15.0",
+    "lenis": "1.3.25",
     "lucide-react": "0.468.0",
     "next": "16.2.10",
     "ogl": "1.0.11",

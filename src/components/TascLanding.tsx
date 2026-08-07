@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
+import Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -18,19 +19,28 @@ import SitePreloader from "@/components/SitePreloader";
 import TascHeader from "@/components/TascHeader";
 import { useMediaOrchestrator } from "@/hooks/useMediaOrchestrator";
 import { useReversibleScrollStories } from "@/hooks/useReversibleScrollStories";
+import {
+    useServicesStory,
+    type ServicesStoryInputRuntime,
+} from "@/hooks/useServicesStory";
 import type { GalaxyHandle } from "@/components/Galaxy";
 import { useLeadSubmission } from "@/hooks/useLeadSubmission";
 import { RUNTIME_MEDIA, SERVICES_EXIT_STOP, SERVICES_KEYFRAME_STOPS, SERVICES_REVERSE_KEYFRAME_STOPS, } from "@/data/runtime-media";
-import { CONTENT_REVEAL_LAG, cardRevealTime, revealTime } from "@/lib/tasc-motion-timings";
+import { CONTENT_REVEAL_LAG, revealTime } from "@/lib/tasc-motion-timings";
 import {
     hasExplicitConstrainedConnectionSignal,
     MEASURED_CONSTRAINED_MEGABITS_PER_SECOND,
     observeFirstMediaThroughput,
 } from "@/lib/connection-profile";
 import { isMediaBufferedThrough } from "@/lib/media-buffer";
-import { registerMotionInputObserver } from "@/lib/motion-input-bus";
+import {
+    getMotionInputOwnerId,
+    registerMotionInputObserver,
+} from "@/lib/motion-input-bus";
+import { getMotionStoryController } from "@/lib/motion-story-controller";
+import { MediaPriorityQueue } from "@/lib/media-priority-queue";
+import { PRELOADER_HARD_FAIL_OPEN_MS } from "@/lib/preloader-timing";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
-import { acquireScrollLock, type ScrollLockHandle } from "@/lib/scroll-lock";
 import { getVisualViewportHeight } from "@/lib/visibility";
 import type { LensPose, MotionNavigationController, } from "@/types/landing";
 gsap.registerPlugin(ScrollTrigger, useGSAP);
@@ -48,7 +58,6 @@ const GALAXY_SHARED_PROPS = {
     disableOnReducedMotion: false,
 } as const;
 const PRIMARY_GALAXY_VISIBILITY_TARGETS = ".hero-motion, .figma-clients-section, .services-story-section, .how-work-motion-section";
-const INTERACTIVE_GALAXY_VISIBILITY_TARGETS = ".hero-motion, .figma-clients-inner";
 const DOMINO_VIDEO_MP4 = RUNTIME_MEDIA.domino.forward.desktop;
 const DOMINO_VIDEO_MOBILE_MP4 = RUNTIME_MEDIA.domino.forward.mobile;
 const DOMINO_VIDEO_WEBM = RUNTIME_MEDIA.domino.forward.chromium.desktop;
@@ -87,8 +96,10 @@ const VISION_LOGO_DEEP_LINKS = new Set([
     "#contact",
 ]);
 const SERVICES_PLAYBACK_RATE = 1;
-const SERVICES_ENTRY_GATE_MS = 120;
-const SERVICES_POST_STAGE_GATE_MS = 150;
+// Gesture de-duplication is owned centrally; authored media no longer needs a
+// second time gate that can swallow a legitimate new wheel/swipe.
+const SERVICES_ENTRY_GATE_MS = 0;
+const SERVICES_POST_STAGE_GATE_MS = 0;
 const MEDIA_SEGMENT_GRACE_MS = 700;
 const SERVICES_FIRST_SEGMENT_BUFFER_END = SERVICES_KEYFRAME_STOPS[0] + 2 / 30;
 const SERVICES_COMPLETE_STORY_BUFFER_END = Math.max(SERVICES_EXIT_STOP, SERVICES_REVERSE_KEYFRAME_STOPS[0]) + 1 / 60;
@@ -97,22 +108,11 @@ const SERVICES_REVERSE_STOP_FRAME_SIGNATURE = SERVICES_REVERSE_STOP_FRAMES.join(
 const SERVICES_REVERSE_STOP_TIME_LABELS = SERVICES_REVERSE_STOP_FRAMES.map((frame) => `${frame}/${RUNTIME_MEDIA.services.fps}`);
 const SERVICES_REVERSE_STOP_TIME_SIGNATURE = SERVICES_REVERSE_STOP_TIME_LABELS.join(",");
 const SERVICES_HAS_CONTINUOUS_REVERSE = SERVICES_REVERSE_KEYFRAME_STOPS.length === SERVICES_KEYFRAME_STOPS.length;
-const SERVICES_FORWARD_HOLD_STOP = SERVICES_REVERSE_KEYFRAME_STOPS[SERVICES_REVERSE_KEYFRAME_STOPS.length - 1];
 // Half a frame. Enough to land on the intended side of a cut, short enough that the
 // rendered frame is still the authored stop.
 const SERVICES_SEAM_FRAME_NUDGE = 1 / (RUNTIME_MEDIA.services.fps * 2);
 // Sub-frame acceptance window for seeks that have to resolve to one exact frame.
 const SERVICES_SEAM_SEEK_TOLERANCE = 1 / (RUNTIME_MEDIA.services.fps * 2);
-/*
-  Services is pinned across this many viewports of real document. The three
-  stops sit at the progress marks below, so the reader gets close to a viewport
-  of ordinary scrolling between one segment and the next. Past the last stop we
-  settle on the visually identical first reverse frame; the transparent frame at
-  the old exit seam must never become the pinned resting surface.
-*/
-const SERVICES_PIN_VIEWPORTS = 2.4;
-const SERVICES_STOP_PROGRESS = [0, 0.34, 0.63] as const;
-const SERVICES_EXIT_PROGRESS = 0.88;
 const MOBILE_PROFILE_WIDTH = 900;
 const MOBILE_PROFILE_HYSTERESIS_PX = 80;
 type RuntimePerformanceProfile = {
@@ -168,7 +168,6 @@ export function TascLanding() {
     const [initialRuntimeProfile] = useState(readInitialRuntimeProfile);
     const rootRef = useRef<HTMLElement | null>(null);
     const primaryGalaxyRef = useRef<GalaxyHandle | null>(null);
-    const interactiveGalaxyRef = useRef<GalaxyHandle | null>(null);
     const dominoVideoRef = useRef<HTMLVideoElement | null>(null);
     const dominoReverseVideoRef = useRef<HTMLVideoElement | null>(null);
     const dominoSourceErrorReporterRef = useRef<((direction: "forward" | "reverse") => void) | null>(null);
@@ -176,6 +175,9 @@ export function TascLanding() {
     const servicesVideoRef = useRef<HTMLVideoElement | null>(null);
     const servicesWarmupClaimRef = useRef<(() => void) | null>(null);
     const datumVideoRef = useRef<HTMLVideoElement | null>(null);
+    const lenisRef = useRef<Lenis | null>(null);
+    const mediaQueueRef = useRef<MediaPriorityQueue | null>(null);
+    const startupMediaSequenceRef = useRef(false);
     const heroTimelineRef = useRef<gsap.core.Timeline | null>(null);
     const servicesControllerRef = useRef<MotionNavigationController | null>(null);
     const programmaticNavigationRef = useRef(false);
@@ -198,6 +200,7 @@ export function TascLanding() {
     const [preloaderRevealStarted, setPreloaderRevealStarted] = useState(false);
     const [criticalStaticAssetsReady, setCriticalStaticAssetsReady] = useState(false);
     const [heroIntroReady, setHeroIntroReady] = useState(false);
+    const createServicesStoryInput = useServicesStory();
     const {
         actions: mediaActions,
         setters: {
@@ -229,7 +232,6 @@ export function TascLanding() {
             heroFallbackAnimationReady,
             heroVideoEligible,
             heroVideoState,
-            interactiveGalaxyArmed,
             packedAlphaOwner,
             servicesMediaArmed,
             servicesMediaFallback,
@@ -322,6 +324,23 @@ export function TascLanding() {
         preloaderRevealStarted,
         webkitCompatibilityMode,
     ]);
+    useLayoutEffect(() => {
+        const root = rootRef.current;
+        if (!root)
+            return;
+        root.dataset.heroStarfield = mobilePerformanceMode ? "css-starfield" : "react-bits-galaxy";
+        if (mobilePerformanceMode)
+            root.dataset.mobilePerformance = "true";
+        else
+            delete root.dataset.mobilePerformance;
+        root.dataset.starfieldMode = mobilePerformanceMode
+            ? "static"
+            : !performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+                ? "pending"
+                : motionAllowed && galaxyStatus === "ready"
+                    ? "galaxy"
+                    : "static";
+    }, [galaxyStatus, mobilePerformanceMode, motionAllowed, performanceModeResolved]);
     const activateServicesMediaFallback = useCallback(() => {
         const root = rootRef.current;
         const video = servicesVideoRef.current;
@@ -357,6 +376,10 @@ export function TascLanding() {
         }
         mediaActions.recoverServices();
     }, [mediaActions]);
+    const armDominoReverseMedia = useCallback(() => {
+        rootRef.current?.setAttribute("data-domino-reverse-media-armed", "true");
+        mediaActions.armDominoReverse();
+    }, [mediaActions]);
     const reportDominoSourceError = useCallback((direction: "forward" | "reverse") => {
         dominoPendingSourceErrorsRef.current[direction] = true;
         const reporter = dominoSourceErrorReporterRef.current;
@@ -387,18 +410,154 @@ export function TascLanding() {
         performanceModeResolved &&
         criticalStaticAssetsReady &&
         heroVisualReady;
-    /*
-      The starfield mode has to agree with whether the canvas is actually on the
-      page. A stale "ready" from a galaxy that has since unmounted put the shell
-      in galaxy mode with nothing rendering, and galaxy mode hides the static
-      fallback - which is a sky with no stars in it.
-    */
-    const galaxyMounted = heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed;
-    const interactiveGalaxyEnabled = interactiveGalaxyArmed &&
-        motionAllowed &&
-        performanceModeResolved &&
-        preloaderComplete &&
-        !mobilePerformanceMode;
+    useEffect(() => {
+        if (!performanceModeResolved)
+            return;
+        const root = rootRef.current;
+        if (!root)
+            return;
+        const queue = new MediaPriorityQueue(root, mobilePerformanceMode ? 1 : 2);
+        mediaQueueRef.current = queue;
+        const syncBackgroundMotion = () => {
+            const paused = root.dataset.backgroundMotionPaused === "true";
+            primaryGalaxyRef.current?.setActive(!paused && !mobilePerformanceMode);
+        };
+        const observer = new MutationObserver(syncBackgroundMotion);
+        observer.observe(root, {
+            attributeFilter: ["data-background-motion-paused"],
+            attributes: true,
+        });
+        syncBackgroundMotion();
+        return () => {
+            observer.disconnect();
+            queue.dispose();
+            if (mediaQueueRef.current === queue)
+                mediaQueueRef.current = null;
+        };
+    }, [mobilePerformanceMode, performanceModeResolved]);
+    useEffect(() => {
+        if (!motionAllowed ||
+            !motionPreferenceResolved ||
+            !performanceModeResolved ||
+            !heroVisualReady ||
+            startupMediaSequenceRef.current) {
+            return;
+        }
+        const root = rootRef.current;
+        const queue = mediaQueueRef.current;
+        if (!root || !queue)
+            return;
+        startupMediaSequenceRef.current = true;
+        let cancelled = false;
+        const startupDeadline = PRELOADER_HARD_FAIL_OPEN_MS;
+        const waitForPrepared = (
+            selector: string,
+            preparedAttribute: keyof DOMStringMap,
+            fallbackAttribute: keyof DOMStringMap,
+        ) => new Promise<boolean>((resolve) => {
+            let timer = 0;
+            const inspect = () => {
+                if (cancelled) {
+                    resolve(false);
+                    return;
+                }
+                const video = root.querySelector<HTMLVideoElement>(selector);
+                if (video?.readyState && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ||
+                    root.dataset[preparedAttribute] === "true" ||
+                    root.dataset[fallbackAttribute] === "true") {
+                    resolve(true);
+                    return;
+                }
+                if (performance.now() >= startupDeadline) {
+                    video?.pause();
+                    resolve(false);
+                    return;
+                }
+                timer = window.setTimeout(inspect, 50);
+            };
+            inspect();
+            if (cancelled)
+                window.clearTimeout(timer);
+        });
+        const run = async () => {
+            root.dataset.mediaStartupSequence = "hero";
+            await queue.enqueue({ id: "hero", priority: "hero", prepare: () => undefined });
+            if (cancelled)
+                return;
+            root.dataset.mediaStartupSequence = "services";
+            let servicesPrepared = false;
+            await queue.enqueue({
+                id: "services-first-segment",
+                priority: "active-story",
+                prepare: async () => {
+                    mediaActions.armServices();
+                    servicesPrepared = await waitForPrepared(
+                        "video.services-story-video, .services-story-video-wrap video.packed-alpha-video-source",
+                        "servicesMediaPrepared",
+                        "servicesMediaFallback",
+                    );
+                },
+            });
+            if (cancelled || !servicesPrepared) {
+                root.dataset.mediaStartupSequence = "deferred-services";
+                return;
+            }
+            root.dataset.mediaStartupSequence = "domino-forward";
+            let dominoForwardReady = false;
+            await queue.enqueue({
+                id: "domino-forward",
+                priority: "next-story",
+                prepare: async () => {
+                    mediaActions.armDomino();
+                    dominoForwardReady = await waitForPrepared(
+                        ".domino-sequence-forward",
+                        "dominoMediaPrepared",
+                        "dominoMediaFallback",
+                    );
+                },
+            });
+            if (cancelled || !dominoForwardReady) {
+                root.dataset.mediaStartupSequence = "deferred-domino-forward";
+                return;
+            }
+            root.dataset.mediaStartupSequence = "domino-reverse";
+            let dominoReverseReady = false;
+            await queue.enqueue({
+                id: "domino-reverse",
+                priority: "next-story",
+                prepare: async () => {
+                    armDominoReverseMedia();
+                    dominoReverseReady = await waitForPrepared(
+                        ".domino-sequence-reverse",
+                        "dominoReverseMediaPrepared",
+                        "dominoReverseMediaFallback",
+                    );
+                },
+            });
+            if (!cancelled && dominoReverseReady)
+                root.dataset.mediaStartupSequence = "ready";
+            else if (!cancelled)
+                root.dataset.mediaStartupSequence = "deferred-domino-reverse";
+        };
+        void run().catch((error) => {
+            if (!cancelled) {
+                root.dataset.mediaStartupSequence = "queue-error";
+                console.warn("[media-priority-queue] startup sequence stopped", error);
+            }
+        });
+        return () => {
+            cancelled = true;
+            startupMediaSequenceRef.current = false;
+        };
+    }, [
+        armDominoReverseMedia,
+        heroVisualReady,
+        mediaActions,
+        mobilePerformanceMode,
+        motionAllowed,
+        motionPreferenceResolved,
+        performanceModeResolved,
+    ]);
     useEffect(() => {
         if (!motionPreferenceResolved || motionAllowed)
             return;
@@ -613,113 +772,6 @@ export function TascLanding() {
         }
     }), []);
     useEffect(() => {
-        if (!motionAllowed ||
-            !performanceModeResolved ||
-            !preloaderComplete ||
-            mobilePerformanceMode) {
-            return;
-        }
-        const finePointer = window.matchMedia("(hover: hover) and (pointer: fine)");
-        if (!finePointer.matches) {
-            return;
-        }
-        let armed = false;
-        const armInteractiveGalaxy = () => {
-            if (armed)
-                return;
-            armed = true;
-            mediaActions.armInteractiveGalaxy();
-        };
-        const idleTimer = window.setTimeout(armInteractiveGalaxy, webkitCompatibilityMode ? 1800 : 850);
-        window.addEventListener("pointermove", armInteractiveGalaxy, {
-            once: true,
-            passive: true,
-        });
-        return () => {
-            window.clearTimeout(idleTimer);
-            window.removeEventListener("pointermove", armInteractiveGalaxy);
-        };
-    }, [
-        mobilePerformanceMode,
-        mediaActions,
-        motionAllowed,
-        performanceModeResolved,
-        preloaderComplete,
-        webkitCompatibilityMode,
-    ]);
-    useEffect(() => {
-        if (!interactiveGalaxyEnabled ||
-            mobilePerformanceMode ||
-            (!webkitCompatibilityMode && !macPerformanceMode)) {
-            return;
-        }
-        const root = rootRef.current;
-        const layer = root?.querySelector<HTMLElement>(".first-four-star-parallax");
-        if (!root || !layer)
-            return;
-        const xTo = gsap.quickTo(layer, "x", { duration: 0.65, ease: "power3.out" });
-        const yTo = gsap.quickTo(layer, "y", { duration: 0.65, ease: "power3.out" });
-        const visibleTargets = new Set<Element>();
-        let interactionActive = false;
-        let servicesBlocked = false;
-        const resetPosition = () => {
-            xTo(0);
-            yTo(0);
-        };
-        const syncInteraction = () => {
-            interactionActive = visibleTargets.size > 0 && !servicesBlocked;
-            layer.dataset.parallaxActive = String(interactionActive);
-            if (!interactionActive)
-                resetPosition();
-        };
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach((entry) => {
-                if (entry.isIntersecting)
-                    visibleTargets.add(entry.target);
-                else
-                    visibleTargets.delete(entry.target);
-            });
-            syncInteraction();
-        }, { threshold: 0.01 });
-        root
-            .querySelectorAll<HTMLElement>(INTERACTIVE_GALAXY_VISIBILITY_TARGETS)
-            .forEach((target) => observer.observe(target));
-        const servicesSection = root.querySelector<HTMLElement>(".services-story-section");
-        const servicesObserver = servicesSection
-            ? new IntersectionObserver((entries) => {
-                servicesBlocked = entries.some((entry) => entry.isIntersecting);
-                syncInteraction();
-            }, { threshold: 0.01 })
-            : null;
-        if (servicesSection)
-            servicesObserver?.observe(servicesSection);
-        const handlePointerMove = (event: PointerEvent) => {
-            if (!interactionActive)
-                return;
-            const normalizedX = event.clientX / Math.max(1, window.innerWidth) - 0.5;
-            const normalizedY = event.clientY / Math.max(1, window.innerHeight) - 0.5;
-            xTo(normalizedX * 44);
-            yTo(normalizedY * 26);
-        };
-        window.addEventListener("pointermove", handlePointerMove, { passive: true });
-        window.addEventListener("blur", resetPosition);
-        document.addEventListener("mouseleave", resetPosition);
-        return () => {
-            observer.disconnect();
-            servicesObserver?.disconnect();
-            window.removeEventListener("pointermove", handlePointerMove);
-            window.removeEventListener("blur", resetPosition);
-            document.removeEventListener("mouseleave", resetPosition);
-            delete layer.dataset.parallaxActive;
-            gsap.set(layer, { clearProps: "transform" });
-        };
-    }, [
-        interactiveGalaxyEnabled,
-        macPerformanceMode,
-        mobilePerformanceMode,
-        webkitCompatibilityMode,
-    ]);
-    useEffect(() => {
         const root = rootRef.current;
         const userAgent = navigator.userAgent;
         const isSafari = /^((?!chrome|android|crios|fxios|edg|opr).)*safari/i.test(userAgent);
@@ -896,10 +948,15 @@ export function TascLanding() {
         let firstSegmentSettled = shell.dataset.servicesFirstSegmentWarm === "true";
         let completeStorySettled = shell.dataset.servicesCompleteStoryWarm === "true";
         let interactiveClaimed = false;
+        let playPending = false;
         const cleanup = () => {
             media.removeEventListener("loadeddata", markDecodedStart);
             media.removeEventListener("canplay", inspectWarmState);
+            media.removeEventListener("canplay", startWarmPlayback);
+            media.removeEventListener("playing", markDecodedStart);
             media.removeEventListener("progress", inspectWarmState);
+            media.removeEventListener("timeupdate", inspectWarmState);
+            media.removeEventListener("waiting", startWarmPlayback);
         };
         const completeStoryWarmup = () => {
             if (completeStorySettled || disposed)
@@ -911,8 +968,7 @@ export function TascLanding() {
                 media.playbackRate = 1;
                 if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
                     try {
-                        if (Math.abs(media.currentTime) > 1 / 60)
-                            media.currentTime = 0;
+                        media.currentTime = 0;
                     }
                     catch {
                     }
@@ -929,8 +985,7 @@ export function TascLanding() {
                 media.pause();
                 media.playbackRate = 1;
                 try {
-                    if (Math.abs(media.currentTime - 0.001) > 1 / 60)
-                        media.currentTime = 0.001;
+                    media.currentTime = 0.001;
                 }
                 catch {
                 }
@@ -968,13 +1023,51 @@ export function TascLanding() {
             shell.dataset.servicesStartFrameDecoded = "true";
             inspectWarmState();
         }
+        async function startWarmPlayback() {
+            if (!webkitCompatibilityMode ||
+                disposed ||
+                completeStorySettled ||
+                firstSegmentSettled ||
+                interactiveClaimed ||
+                playPending ||
+                document.hidden ||
+                media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+                return;
+            }
+            playPending = true;
+            media.muted = true;
+            media.playsInline = true;
+            try {
+                await media.play();
+                if (!disposed && !completeStorySettled && !interactiveClaimed) {
+                    delete shell.dataset.servicesWarmupBlocked;
+                    markDecodedStart();
+                }
+            }
+            catch {
+                if (!disposed && !completeStorySettled && !interactiveClaimed) {
+                    shell.dataset.servicesWarmupBlocked = "true";
+                }
+            }
+            finally {
+                playPending = false;
+            }
+        }
         media.addEventListener("loadeddata", markDecodedStart);
         media.addEventListener("canplay", inspectWarmState);
+        media.addEventListener("playing", markDecodedStart);
         media.addEventListener("progress", inspectWarmState);
+        media.addEventListener("timeupdate", inspectWarmState);
+        if (webkitCompatibilityMode) {
+            media.addEventListener("canplay", startWarmPlayback);
+            media.addEventListener("waiting", startWarmPlayback);
+        }
         const claimInteractiveOwnership = () => {
             if (disposed || interactiveClaimed)
                 return;
             interactiveClaimed = true;
+            media.removeEventListener("canplay", startWarmPlayback);
+            media.removeEventListener("waiting", startWarmPlayback);
             media.pause();
             delete shell.dataset.servicesWarmupBlocked;
             shell.dataset.servicesWarmupOwner = "interactive";
@@ -983,6 +1076,8 @@ export function TascLanding() {
         if (media.networkState === HTMLMediaElement.NETWORK_EMPTY)
             media.load();
         inspectWarmState();
+        if (webkitCompatibilityMode)
+            void startWarmPlayback();
         return () => {
             disposed = true;
             cleanup();
@@ -1068,32 +1163,34 @@ export function TascLanding() {
                 mediaActions.armDomino();
         };
         armFromHash();
-        const targets = new Map<Element, { arm: () => void; marginViewports: number }>();
-        const register = (selector: string, arm: () => void, marginViewports: number) => {
+        const targets = new Map<Element, () => void>();
+        const register = (selector: string, arm: () => void) => {
             const target = root.querySelector(selector);
             if (target)
-                targets.set(target, { arm, marginViewports });
+                targets.set(target, arm);
         };
         register(".services-story-section", () => {
             mediaActions.armServices();
-        }, mobilePerformanceMode || constrainedConnection ? 1.75 : 2);
-        register(".figma-clients-section", mediaActions.armClientsFlare, 1);
-        register(".datum-motion-section", mediaActions.armDatum, 1.4);
-        register(".domino-cta-section", mediaActions.armDomino, mobilePerformanceMode || constrainedConnection ? 3.6 : 2.45);
-        const getArmMargin = (target: Element) => {
+        });
+        register(".figma-clients-section", mediaActions.armClientsFlare);
+        register(".datum-motion-section", mediaActions.armDatum);
+        register(".domino-cta-section", mediaActions.armDomino);
+        const getArmMargin = () => {
             const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-            const marginViewports = targets.get(target)?.marginViewports ?? 1;
-            return Math.max(600, Math.round(viewportHeight * marginViewports));
+            return mobilePerformanceMode || constrainedConnection
+                ? Math.round(viewportHeight * 0.75)
+                : Math.max(600, Math.round(viewportHeight));
         };
+        const armMargin = getArmMargin();
         const armedTargets = new Set<Element>();
-        const observers = new Map<Element, IntersectionObserver>();
+        let observer: IntersectionObserver | null = null;
         let proximityFrame = 0;
         let proximityListenersAttached = false;
         let unregisterProximityInputObserver = () => { };
         let nearbyReevaluationTimer = 0;
         function stopProximityTracking() {
-            observers.forEach((observer) => observer.disconnect());
-            observers.clear();
+            observer?.disconnect();
+            observer = null;
             if (proximityListenersAttached) {
                 unregisterProximityInputObserver();
                 unregisterProximityInputObserver = () => { };
@@ -1111,9 +1208,8 @@ export function TascLanding() {
             if (armedTargets.has(target))
                 return;
             armedTargets.add(target);
-            targets.get(target)?.arm();
-            observers.get(target)?.disconnect();
-            observers.delete(target);
+            targets.get(target)?.();
+            observer?.unobserve(target);
             if (armedTargets.size === targets.size)
                 stopProximityTracking();
         }
@@ -1124,7 +1220,7 @@ export function TascLanding() {
                     return;
                 const rect = target.getBoundingClientRect();
                 const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-                const currentMargin = getArmMargin(target);
+                const currentMargin = getArmMargin();
                 if (rect.top <= viewportHeight + currentMargin && rect.bottom >= -currentMargin) {
                     armTarget(target);
                 }
@@ -1148,14 +1244,13 @@ export function TascLanding() {
         };
         if ("IntersectionObserver" in window) {
             try {
-                targets.forEach((_, target) => {
-                    const observer = new IntersectionObserver((entries) => {
-                        if (entries.some((entry) => entry.isIntersecting))
-                            armTarget(target);
-                    }, { rootMargin: `${getArmMargin(target)}px 0px`, threshold: 0 });
-                    observers.set(target, observer);
-                    observer.observe(target);
-                });
+                observer = new IntersectionObserver((entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting)
+                            armTarget(entry.target);
+                    });
+                }, { rootMargin: `${armMargin}px 0px`, threshold: 0 });
+                targets.forEach((_, target) => observer?.observe(target));
             }
             catch {
                 startProximityFallback();
@@ -1422,7 +1517,7 @@ export function TascLanding() {
             stopChecks();
         };
     }, [heroVideoEligible, mediaActions, motionAllowed]);
-    const handleAnchorNavigate = useCallback((href: string, options?: { replaceHistory?: boolean }) => {
+    const handleAnchorNavigate = useCallback(async (href: string, options?: { replaceHistory?: boolean }) => {
         const replaceHistory = options?.replaceHistory !== false;
         if (href === "#services") {
             mediaActions.armServices();
@@ -1451,13 +1546,17 @@ export function TascLanding() {
             });
             return;
         }
+        const activeController = rootRef.current
+            ? getMotionStoryController(rootRef.current, () => lenisRef.current)
+            : null;
+        await activeController?.releaseActive("superseded");
         anchorSettleCleanupRef.current?.();
         if (rootRef.current)
             rootRef.current.dataset.programmaticAnchor = href;
         window.dispatchEvent(new Event("tasc:release-directional-domino"));
         programmaticAnchorRef.current = href;
         programmaticNavigationRef.current = true;
-        servicesControllerRef.current?.releaseForNavigation();
+        servicesControllerRef.current?.releaseForNavigation(href);
         const headerOffset = href === "#clients" ? 0 : -84;
         const getSectionTop = (selector: string) => {
             const section = document.querySelector<HTMLElement>(selector);
@@ -1513,6 +1612,13 @@ export function TascLanding() {
             anchorSettleCleanupRef.current = cancelSettle;
             const applyPosition = (nextTop: number) => {
                 const targetTop = Math.max(0, Math.round(nextTop));
+                if (lenisRef.current) {
+                    lenisRef.current.scrollTo(targetTop, {
+                        duration: 0.01,
+                        immediate: true,
+                        force: true,
+                    });
+                }
                 window.scrollTo({ top: targetTop, behavior: "auto" });
                 ScrollTrigger.update();
                 window.dispatchEvent(new CustomEvent("tasc:scroll-position-applied"));
@@ -1716,7 +1822,7 @@ export function TascLanding() {
             // scroll on desktop, which read as a long empty stretch before Clients.
             // Review pass two asked for another 20% off desktop and 15% off mobile,
             // so the Vision beat lands while the reader is still moving.
-            const pinMultiplier = isMacRuntime() ? 1.12 : isMobileRuntime() ? 1.36 : 1.26;
+            const pinMultiplier = isMacRuntime() ? 1.4 : isMobileRuntime() ? 1.36 : 1.64;
             return Math.round(stableHeroViewportHeight * pinMultiplier);
         };
         const lensVideo = root.querySelector<HTMLVideoElement>(".lens-video");
@@ -1754,15 +1860,13 @@ export function TascLanding() {
         let heroTimeline: gsap.core.Timeline | null = null;
         let servicesTrigger: ScrollTrigger | null = null;
         let clientsServicesHandoff: gsap.core.Timeline | null = null;
-        let datumTimeline: gsap.core.Timeline | null = null;
         let servicesTextTimeline: gsap.core.Timeline | null = null;
         let servicesTextWatchdog = 0;
         let servicesStage = -1;
         let servicesRunToken = 0;
         let servicesActive = false;
         let servicesReleasing = false;
-        let servicesForwardComplete = false;
-        let servicesSessionDirection: 1 | -1 | 0 = 0;
+        let servicesStoryInput: ServicesStoryInputRuntime | null = null;
         const lockClientsServicesHandoffAtServices = () => {
             const handoff = clientsServicesHandoff;
             const trigger = handoff?.scrollTrigger;
@@ -1778,20 +1882,37 @@ export function TascLanding() {
                 gsap.set(servicesMediaVisuals, { autoAlpha: 1 });
         };
         let servicesPhase: "idle" | "preparing" | "playing" | "waiting" | "releasing" | "reverse" = "idle";
+        let servicesEntryDirection: 1 | -1 = 1;
+        let servicesLockY = 0;
         let servicesGateUntil = 0;
+        let servicesEntryInputIgnoreUntil = 0;
         let servicesTransitionDirection: 1 | -1 | 0 = 0;
+        let documentScrollY = window.scrollY;
+        let documentScrollDirection: 1 | -1 | 0 = 0;
         let servicesReleaseToken = 0;
         let servicesReleaseTimer = 0;
         let servicesEntryToken = 0;
         let servicesEntryPreparing: 1 | -1 | 0 = 0;
+        let servicesEntryLockY = 0;
         let servicesEntryRetryTimer = 0;
         let servicesMediaRetryTimer = 0;
         let servicesMediaRetryKey = "";
         let servicesMediaRetryFailures = 0;
         let servicesMediaRetryStartedAt = 0;
-        let servicesScrollLock: ScrollLockHandle | null = null;
         let heroVideoSuspended = false;
         const cleanupCallbacks: Array<() => void> = [];
+        const trackDocumentScrollDirection = () => {
+            const nextY = window.scrollY;
+            const delta = nextY - documentScrollY;
+            if (Math.abs(delta) > 1)
+                documentScrollDirection = delta > 0 ? 1 : -1;
+            documentScrollY = nextY;
+        };
+        const unregisterDocumentDirectionObserver = registerMotionInputObserver("document-direction", ({ kind }) => {
+            if (kind === "scroll")
+                trackDocumentScrollDirection();
+        });
+        cleanupCallbacks.push(unregisterDocumentDirectionObserver);
         const managedRevealElements = new Set<HTMLElement>();
         const managedRevealTriggers = new Set<HTMLElement>();
         const registerManagedRevealElements = (elements: Iterable<HTMLElement>) => {
@@ -2194,10 +2315,8 @@ export function TascLanding() {
                 video.pause();
                 mediaRunCancels.delete(video);
                 if (completed && snapToEnd && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-                    // Playback monitoring intentionally has a small end guard so a
-                    // decoder cannot run past a stop. Do not let that guard become
-                    // the resting frame: wait for the authored frame to be decoded
-                    // before text/catch-up logic is allowed to continue.
+                    // The monitor stops just before the authored boundary. Wait for
+                    // that exact frame to decode before a story may advance/release.
                     void seekServicesFrame(video, to, isCurrent, SERVICES_SEAM_SEEK_TOLERANCE / 2)
                         .then((settledAtTarget) => resolve(settledAtTarget));
                     return;
@@ -2212,6 +2331,8 @@ export function TascLanding() {
                     finish(false);
                     return;
                 }
+                if (media === servicesVideo && servicesStoryInput?.isOwner())
+                    servicesStoryInput.markProgress(`media:${Math.floor(media.currentTime * 30)}`);
                 if (hasReachedSegmentTarget()) {
                     video.dataset.segmentState = "ready";
                     finish(true, snapToFinalFrame);
@@ -2535,14 +2656,33 @@ export function TascLanding() {
             gsap.set(".process-contact-bg", { y: 0, autoAlpha: 1 });
             return;
         }
-        /*
-          Every browser scrolls natively. Lenis used to sit in front of the wheel
-          on Windows while iOS and macOS were already on the native path, so the
-          site ran two different scroll models at once and ScrollTrigger had to
-          reconcile them. One model means the pinned stories and the document
-          agree about where the reader is.
-        */
-        root.dataset.wheelScrollRate = "native";
+        const lenis = new Lenis({
+            eventsTarget: window,
+            duration: isMobileRuntime() ? 0.72 : 0.9,
+            easing: (t: number) => Math.min(1, 1.001 - 2 ** (-10 * t)),
+            smoothWheel: true,
+            syncTouch: true,
+            syncTouchLerp: 0.08,
+            wheelMultiplier: 0.7,
+            touchMultiplier: 0.7,
+        });
+        lenisRef.current = lenis;
+        root.dataset.wheelScrollRate = "0.7";
+        root.dataset.touchScrollRate = "0.7";
+        const tickLenis = (time: number) => lenis.raf(time * 1000);
+        gsap.ticker.lagSmoothing(0);
+        const handleSmoothScrollUpdate = () => {
+            ScrollTrigger.update();
+        };
+        lenis.on("scroll", handleSmoothScrollUpdate);
+        gsap.ticker.add(tickLenis);
+        const correctNativeScroll = (target: number) => {
+            const safeTarget = Math.max(0, Math.round(target));
+            if (Math.abs(window.scrollY - safeTarget) <= 2)
+                return false;
+            window.scrollTo({ top: safeTarget, left: 0, behavior: "auto" });
+            return true;
+        };
         let servicesTextResolve: (() => void) | null = null;
         let servicesEntryRetryResolve: (() => void) | null = null;
         const clearServicesEntryRetry = () => {
@@ -2562,56 +2702,56 @@ export function TascLanding() {
                 pendingResolve?.();
             }, delayMs);
         });
-        /*
-          The stop only holds the reader while a segment is actually decoding and
-          playing. Everything else about Services - approaching it, reading a
-          settled stop, leaving it - is plain native scrolling.
-        */
-        const holdServicesScroll = () => {
-            if (servicesScrollLock?.isHeld())
-                return;
-            servicesScrollLock = acquireScrollLock("services");
-            root.dataset.servicesLocked = "true";
-        };
-        const releaseServicesScroll = () => {
-            servicesScrollLock?.release();
-            servicesScrollLock = null;
-            delete root.dataset.servicesLocked;
+        const releaseServicesLenisLock = (snapTarget?: number) => {
+            if (typeof snapTarget === "number" && Number.isFinite(snapTarget)) {
+                correctNativeScroll(snapTarget);
+            }
         };
         const setMotionInputState = () => {
-            if (servicesScrollLock?.isHeld()) {
+            if (servicesActive || servicesReleasing) {
                 root.dataset.motionInputLocked = "true";
             }
             else {
                 delete root.dataset.motionInputLocked;
             }
         };
-        /*
-          Loading and seeking happen while native scrolling remains available.
-          Only a concrete playing/releasing segment owns the temporary lock.
-        */
         const setServicesPhase = (phase: typeof servicesPhase) => {
             servicesPhase = phase;
             root.dataset.servicesPhase = phase;
-            if (phase === "playing" || phase === "releasing" || phase === "reverse")
-                holdServicesScroll();
+            const progress = `${phase}:${Math.max(0, servicesStage + 1)}`;
+            if (phase === "preparing")
+                servicesStoryInput?.claim(progress);
+            else if (phase === "playing" || phase === "reverse")
+                servicesStoryInput?.beginTransition();
+            else if (phase === "waiting")
+                servicesStoryInput?.settle();
+            else if (phase === "releasing")
+                servicesStoryInput?.beginRelease();
+            else if (servicesActive || servicesEntryPreparing !== 0)
+                servicesStoryInput?.beginTransition();
             else
-                releaseServicesScroll();
-            setMotionInputState();
+                servicesStoryInput?.release("out-of-range");
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
                 root.dataset.servicesEntryAbortReason = reason;
             servicesEntryToken += 1;
             servicesEntryPreparing = 0;
+            servicesEntryLockY = 0;
             clearServicesEntryRetry();
             delete root.dataset.servicesEntryPreparing;
             delete root.dataset.servicesEntryAttempt;
+            delete root.dataset.servicesReverseEntryFrameDecoded;
+            delete root.dataset.servicesReverseEntrySegmentWarm;
             if (!servicesActive && !servicesReleasing && servicesPhase === "preparing") {
                 setServicesPhase("idle");
             }
             setMotionInputState();
         };
+        const clearServicesPendingIntent = () => servicesStoryInput?.clearPendingIntent();
+        const flushServicesPendingIntent = () => servicesStoryInput?.flushPendingIntent();
+        const resetServicesBlockedInput = () => servicesStoryInput?.resetBlockedInput();
+        const resetServicesGestureTotal = () => servicesStoryInput?.resetGestureTotal();
         const stopServicesTextTimeline = () => {
             window.clearTimeout(servicesTextWatchdog);
             servicesTextWatchdog = 0;
@@ -2720,15 +2860,6 @@ export function TascLanding() {
                 .to({}, { duration: 0.01 }, segmentDuration);
             armServicesTextWatchdog(servicesTextTimeline, resolve, Math.max(1300, (segmentDuration + 0.55) * 1000));
         });
-        const scheduleServicesProgressCatchUp = (direction: 1 | -1, token: number) => {
-            window.clearTimeout(servicesReleaseTimer);
-            servicesReleaseTimer = window.setTimeout(() => {
-                servicesReleaseTimer = 0;
-                if (disposed || token !== servicesRunToken || !servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
-                    return;
-                advanceServicesFromProgress(servicesTrigger.progress, direction);
-            }, SERVICES_POST_STAGE_GATE_MS + 24);
-        };
         const runServicesStage = async (nextStage: number, revealPanel = true) => {
             if (!servicesActive || servicesPhase === "playing")
                 return;
@@ -2739,6 +2870,7 @@ export function TascLanding() {
             const from = nextStage === 0 ? 0 : SERVICES_KEYFRAME_STOPS[nextStage - 1];
             const to = SERVICES_KEYFRAME_STOPS[nextStage];
             const segmentDuration = (to - from) / SERVICES_PLAYBACK_RATE;
+            resetServicesGestureTotal();
             root.dataset.servicesActive = String(nextStage + 1);
             setServicesPhase("preparing");
             setMotionInputState();
@@ -2786,6 +2918,7 @@ export function TascLanding() {
                         resetServicesMediaRetry();
                         servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
                         setServicesPhase("waiting");
+                        flushServicesPendingIntent();
                         return;
                     }
                 }
@@ -2840,6 +2973,7 @@ export function TascLanding() {
                     resetServicesMediaRetry();
                     servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
                     setServicesPhase("waiting");
+                    flushServicesPendingIntent();
                     return;
                 }
                 setServicesPhase("idle");
@@ -2865,96 +2999,123 @@ export function TascLanding() {
             resetServicesMediaRetry();
             servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
             setServicesPhase("waiting");
-            scheduleServicesProgressCatchUp(1, token);
+            flushServicesPendingIntent();
         };
-        /*
-          Finishing the story does not move the page. The reader is standing
-          wherever their last gesture left them inside the pinned band; all we do
-          is hand the input back and let them carry on scrolling out of it.
-        */
-        const finishServicesRelease = (previewAfter = false, previewRevealed = false) => {
+        const finishServicesRelease = (target: number, previewAfter = false, previewRevealed = false) => {
             resetServicesMediaRetry();
             servicesReleaseToken += 1;
-            window.clearTimeout(servicesReleaseTimer);
-            servicesReleaseTimer = 0;
             clientsServicesHandoff?.scrollTrigger?.enable();
             clientsServicesHandoff?.scrollTrigger?.refresh();
             clientsServicesHandoff?.scrollTrigger?.update();
             servicesActive = false;
-            servicesReleasing = false;
-            servicesForwardComplete = false;
-            servicesSessionDirection = 0;
+            servicesReleasing = true;
             servicesTransitionDirection = 0;
-            releaseServicesScroll();
+            resetServicesGestureTotal();
+            resetServicesBlockedInput();
+            clearServicesPendingIntent();
+            setServicesPhase("releasing");
+            delete root.dataset.servicesPinned;
+            setMotionInputState();
+            window.clearTimeout(servicesReleaseTimer);
+            servicesReleaseTimer = 0;
+            servicesStoryInput?.release("completed", target);
+            servicesReleasing = false;
+            servicesPhase = "idle";
+            root.dataset.servicesPhase = "idle";
             delete root.dataset.servicesPinned;
             delete root.dataset.servicesActive;
             delete root.dataset.servicesSequence;
-            delete root.dataset.servicesSequenceComplete;
-            delete root.dataset.servicesVideoDirection;
-            delete root.dataset.servicesTarget;
-            if (!previewAfter)
+            if (!previewAfter) {
                 setServicesStaticStop(null);
-            setServicesPhase("idle");
+                resetServicesPanels();
+            }
             setMotionInputState();
             if (previewAfter)
                 showServicesIdlePreview(previewRevealed);
         };
         const releaseServicesForward = async () => {
-            if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger || servicesForwardComplete)
+            if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
                 return;
             const token = ++servicesRunToken;
-            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            beginServicesMediaAttempt("forward:hold");
-            setServicesPanel(lastStage);
-            // Frame 339 is deliberately transparent. Keep the authored stop poster
-            // over the decoder while it crosses that cut and lands on frame 340,
-            // which is visually identical to stop three and also primes reversal.
-            setServicesStaticStop(lastStage);
-            setServicesPhase("preparing");
-            const finalFrameBuffered = root.dataset.servicesMediaFallback === "true"
+            beginServicesMediaAttempt("forward:exit");
+            setServicesPhase("releasing");
+            resetServicesGestureTotal();
+            const exitMediaReady = root.dataset.servicesMediaFallback === "true"
                 ? false
-                : await ensureServicesPlayable(servicesVideo, SERVICES_FORWARD_HOLD_STOP, () => token === servicesRunToken && servicesActive, SERVICES_KEYFRAME_STOPS[lastStage]);
+                : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
             if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
-            const finalFrameReady = finalFrameBuffered
-                ? await seekServicesFrame(servicesVideo, SERVICES_FORWARD_HOLD_STOP, () => token === servicesRunToken && servicesActive, SERVICES_SEAM_SEEK_TOLERANCE / 2)
-                : false;
+            if (!exitMediaReady && root.dataset.servicesMediaFallback !== "true") {
+                if (shouldFailOpenServicesMedia(servicesVideo)) {
+                    if (servicesVideo?.error) {
+                        activateServicesMediaFallback();
+                    }
+                    else {
+                        root.dataset.servicesTransportFailure = "exit-timeout";
+                        finishServicesRelease(servicesTrigger.end + 1);
+                        return;
+                    }
+                }
+                else {
+                    if (servicesVideo)
+                        servicesVideo.dataset.segmentState = "buffering";
+                    setServicesPhase("waiting");
+                    servicesMediaRetryTimer = window.setTimeout(() => {
+                        servicesMediaRetryTimer = 0;
+                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
+                            void releaseServicesForward();
+                        }
+                    }, 180);
+                    return;
+                }
+            }
+            const outgoingItems = servicePanelItems[Math.max(0, servicesStage)] ?? [];
+            const outgoingPanel = servicePanels[Math.max(0, servicesStage)];
+            stopServicesTextTimeline();
+            const textExit = new Promise<void>((resolve) => {
+                servicesTextResolve = resolve;
+                servicesTextTimeline = gsap.timeline({
+                    onComplete: () => {
+                        window.clearTimeout(servicesTextWatchdog);
+                        servicesTextWatchdog = 0;
+                        servicesTextTimeline = null;
+                        servicesTextResolve = null;
+                        resolve();
+                    },
+                });
+                servicesTextTimeline
+                    .to(outgoingItems, {
+                    y: -44,
+                    autoAlpha: 0,
+                    duration: revealTime(0.58),
+                    stagger: revealTime(0.06),
+                    ease: "power3.inOut",
+                })
+                    .set(outgoingPanel, { autoAlpha: 0, pointerEvents: "none" });
+                armServicesTextWatchdog(servicesTextTimeline, resolve, 1200);
+            });
+            const [mediaCompleted] = await Promise.all([
+                exitMediaReady
+                    ? playMediaSegment(servicesVideo, SERVICES_KEYFRAME_STOPS[2], SERVICES_EXIT_STOP, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive)
+                    : Promise.resolve(true),
+                textExit,
+            ]);
             if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
-            if (finalFrameReady) {
-                setServicesStaticStop(null);
-                root.dataset.servicesMediaDecoded = "true";
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "ready";
-            }
-            else if (servicesVideo?.error) {
-                activateServicesMediaFallback();
-            }
-            else {
-                // A slow seek is not a decode failure. The stop poster stays as a
-                // temporary continuity surface, but the transport remains eligible
-                // for a live reverse-entry retry.
-                root.dataset.servicesTransportFailure = "final-frame-timeout";
+            if (!mediaCompleted) {
+                setServicesPanel(Math.max(0, servicesStage));
+                setServicesStaticStop(Math.max(0, servicesStage));
                 if (servicesVideo)
                     servicesVideo.dataset.segmentState = "buffering";
+                setServicesPhase("waiting");
+                return;
             }
             resetServicesMediaRetry();
-            servicesForwardComplete = true;
-            root.dataset.servicesSequenceComplete = "true";
-            root.dataset.servicesVideoDirection = "forward-complete";
-            setServicesPanel(lastStage);
-            setServicesPhase("waiting");
-            // Keep the final authored copy painted until the actual end of the
-            // pin; otherwise the remaining band is an empty starfield corridor.
-            if (!servicesTrigger.isActive)
-                finishServicesRelease();
+            finishServicesRelease(servicesTrigger.end + 1);
         };
-        /*
-          After the authored reverse path has reached stop one, scrolling back
-          past the pin rewinds the visual to its opening and hands native input
-          straight back. No fourth/cyclic reverse segment is started.
-        */
-        const rewindServicesToStart = () => {
+        const releaseServicesBackward = () => {
+            if (!servicesActive || !servicesTrigger)
+                return;
             servicesRunToken += 1;
             if (servicesVideo)
                 mediaRunCancels.get(servicesVideo)?.();
@@ -2965,11 +3126,14 @@ export function TascLanding() {
             root.dataset.servicesMediaDecoded = "true";
             setServicesStaticStop(null);
             pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[0], 0.12);
-            finishServicesRelease(true, true);
+            finishServicesRelease(servicesTrigger.start - 1, true, true);
         };
-        const releaseServicesForNavigation = () => {
-            if (!servicesActive && !servicesReleasing && !servicesScrollLock && servicesEntryPreparing === 0)
-                return;
+        const releaseServicesForNavigation = (targetHref?: string) => {
+            const keepServicesVisible = targetHref === "#services";
+            if (keepServicesVisible)
+                delete root.dataset.servicesBypassed;
+            else
+                root.dataset.servicesBypassed = "true";
             cancelServicesEntryPreparation("navigation-release");
             resetServicesMediaRetry();
             servicesRunToken += 1;
@@ -2984,34 +3148,36 @@ export function TascLanding() {
             stopServicesTextTimeline();
             servicesActive = false;
             servicesReleasing = false;
-            servicesForwardComplete = false;
-            servicesSessionDirection = 0;
             servicesTransitionDirection = 0;
             servicesGateUntil = 0;
+            resetServicesBlockedInput();
+            clearServicesPendingIntent();
             setServicesPhase("idle");
-            showServicesIdlePreview();
+            if (keepServicesVisible)
+                showServicesIdlePreview();
+            else
+                resetServicesPanels();
             if (servicesVideo)
                 servicesVideo.dataset.segmentState = "idle";
             pauseAndSeek(servicesVideo, 0);
             delete root.dataset.servicesPinned;
             delete root.dataset.servicesInrange;
-            delete root.dataset.servicesSequenceComplete;
-            delete root.dataset.servicesVideoDirection;
-            delete root.dataset.servicesTarget;
-            releaseServicesScroll();
+            releaseServicesLenisLock();
             setMotionInputState();
         };
         const resetHowWorkBoundaryPreview = () => {
             delete root.dataset.howWorkPinned;
             ScrollTrigger.getById("how-work-reversible")?.animation?.progress(0);
         };
-        const commitServicesForwardEntry = (entrySource: string) => {
+        const commitServicesForwardEntry = (lockY: number, entryDirection: 1 | -1, entrySource: string) => {
             if (servicesActive || servicesReleasing || disposed)
                 return;
             servicesEntryPreparing = 0;
+            servicesEntryLockY = 0;
             clearServicesEntryRetry();
             delete root.dataset.servicesEntryPreparing;
             root.dataset.servicesEntryPrepared = "true";
+            delete root.dataset.servicesBypassed;
             setServicesStopPostersArmed(true);
             servicesWarmupClaimRef.current?.();
             resetServicesMediaRetry();
@@ -3020,12 +3186,14 @@ export function TascLanding() {
             const preservePreview = root.dataset.servicesPreview === "1";
             servicesActive = true;
             servicesReleasing = false;
-            servicesForwardComplete = false;
-            servicesSessionDirection = 1;
+            servicesEntryDirection = entryDirection;
             root.dataset.servicesEntryDirection = "forward";
             root.dataset.servicesEntrySource = entrySource;
+            servicesLockY = lockY;
+            resetServicesGestureTotal();
             servicesGateUntil = performance.now() + SERVICES_ENTRY_GATE_MS;
             servicesTransitionDirection = 1;
+            clearServicesPendingIntent();
             setServicesStaticStop(null);
             setServicesEntryPoster(true);
             root.dataset.servicesPinned = "true";
@@ -3046,16 +3214,19 @@ export function TascLanding() {
             setServicesPhase("idle");
             void runServicesStage(0, !preservePreview);
         };
-        const startServicesForward = (entrySource = "direct") => {
+        const startServicesForward = (lockY: number, entryDirection: 1 | -1 = 1, entrySource = "direct") => {
             if (servicesActive || servicesReleasing || disposed || servicesEntryPreparing === 1)
                 return;
             cancelServicesEntryPreparation("new-forward-entry");
             const token = servicesEntryToken;
             const entryVideo = servicesVideo;
             servicesEntryPreparing = 1;
+            servicesEntryLockY = lockY;
             root.dataset.servicesEntryPreparing = "forward";
             delete root.dataset.servicesEntryPrepared;
             delete root.dataset.servicesEntryAbortReason;
+            delete root.dataset.servicesReverseEntryFrameDecoded;
+            delete root.dataset.servicesReverseEntrySegmentWarm;
             setServicesStopPostersArmed(true);
             resetServicesMediaRetry();
             delete root.dataset.servicesTransportFailure;
@@ -3075,10 +3246,17 @@ export function TascLanding() {
                     reason = "effect-disposed";
                 else if (servicesVideoRef.current !== entryVideo)
                     reason = "media-owner-changed";
+                else if (getMotionInputOwnerId() === "domino")
+                    reason = "domino-active";
                 else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
                     reason = "other-navigation";
                 if (reason) {
                     root.dataset.servicesEntryRelevanceFailure = reason;
+                    return false;
+                }
+                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+                if (Math.abs(window.scrollY - lockY) > viewportHeight * 1.25) {
+                    root.dataset.servicesEntryRelevanceFailure = "outside-lock-corridor";
                     return false;
                 }
                 if (!isServicesVisuallyNear(1.25)) {
@@ -3121,156 +3299,401 @@ export function TascLanding() {
                     return;
                 }
                 delete root.dataset.servicesEntrySkipped;
-                commitServicesForwardEntry(entrySource);
+                commitServicesForwardEntry(lockY, entryDirection, entrySource);
             })();
         };
-        const startServicesReverseEntry = (entrySource = "trigger-on-enter-back") => {
+        const commitServicesReverseEntry = (lockY: number, entrySource: string) => {
             if (servicesActive || servicesReleasing || disposed)
                 return;
-            cancelServicesEntryPreparation("new-reverse-entry");
+            servicesEntryPreparing = 0;
+            servicesEntryLockY = 0;
+            clearServicesEntryRetry();
+            delete root.dataset.servicesEntryPreparing;
+            delete root.dataset.servicesEntryAttempt;
+            root.dataset.servicesEntryPrepared = "true";
+            delete root.dataset.servicesBypassed;
+            setServicesStopPostersArmed(true);
+            servicesWarmupClaimRef.current?.();
             resetServicesMediaRetry();
-            const token = ++servicesRunToken;
+            delete root.dataset.servicesTransportFailure;
+            resetHowWorkBoundaryPreview();
+            servicesRunToken += 1;
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            const reverseEntryTime = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage] + SERVICES_SEAM_FRAME_NUDGE;
             servicesActive = true;
             servicesReleasing = false;
-            servicesForwardComplete = false;
-            servicesSessionDirection = -1;
-            servicesTransitionDirection = -1;
-            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+            servicesEntryDirection = -1;
             root.dataset.servicesEntryDirection = "reverse";
             root.dataset.servicesEntrySource = entrySource;
+            servicesLockY = lockY;
+            resetServicesGestureTotal();
+            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+            servicesEntryInputIgnoreUntil = performance.now() + 320;
+            servicesStoryInput?.ignoreCurrentTouchGesture();
+            servicesTransitionDirection = -1;
+            clearServicesPendingIntent();
+            setServicesEntryPoster(false);
+            setServicesStaticStop(null);
             root.dataset.servicesPinned = "true";
             root.dataset.servicesInrange = "true";
-            root.dataset.servicesSequence = "reverse";
-            delete root.dataset.servicesSequenceComplete;
-            delete root.dataset.servicesTransportFailure;
+            delete root.dataset.howWorkPinned;
+            root.dataset.servicesSequence = "autoplay";
             lockClientsServicesHandoffAtServices();
-            setServicesStopPostersArmed(true);
-            setServicesEntryPoster(false);
+            delete root.dataset.servicesPreview;
             setServicesPanel(lastStage);
-            setServicesStaticStop(lastStage);
+            root.dataset.servicesMediaDecoded = "true";
             if (servicesVideo)
-                servicesVideo.dataset.segmentState = "preparing";
+                servicesVideo.dataset.segmentState = "ready";
             setServicesPhase("waiting");
-            scheduleServicesProgressCatchUp(-1, token);
-
-            if (!servicesVideo || root.dataset.servicesMediaFallback === "true")
-                return;
-            void seekServicesFrame(servicesVideo, reverseEntryTime, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, SERVICES_SEAM_SEEK_TOLERANCE).then((ready) => {
-                if (!ready || token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
-                    return;
-                setServicesStaticStop(null);
-                root.dataset.servicesMediaDecoded = "true";
-                root.dataset.servicesReverseEntryFrameDecoded = "true";
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "ready";
-            });
+            setMotionInputState();
         };
-        const runServicesReverseStage = async (nextStage: number) => {
-            if (!servicesActive || servicesSessionDirection !== -1 || servicesPhase !== "waiting" || nextStage < 0 || nextStage !== servicesStage - 1)
+        const startServicesAtLastStage = (lockY: number, entrySource = "direct") => {
+            if (servicesActive || servicesReleasing || disposed || servicesEntryPreparing === -1)
                 return;
-            const token = ++servicesRunToken;
-            const currentStage = servicesStage;
-            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[currentStage] +
-                (currentStage === SERVICES_KEYFRAME_STOPS.length - 1 ? SERVICES_SEAM_FRAME_NUDGE : 0);
-            const reverseTo = SERVICES_REVERSE_KEYFRAME_STOPS[nextStage];
-            const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
-            beginServicesMediaAttempt(`reverse:${currentStage}:${nextStage}`);
-            servicesTransitionDirection = -1;
-            root.dataset.servicesTarget = String(nextStage + 1);
-            setServicesStaticStop(currentStage);
-            setServicesPhase("preparing");
-
-            const reverseStartReady = root.dataset.servicesMediaFallback === "true"
-                ? false
-                : await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, currentStage === SERVICES_KEYFRAME_STOPS.length - 1
-                    ? SERVICES_SEAM_SEEK_TOLERANCE
-                    : undefined);
-            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
-                return;
-            const reverseMediaReady = reverseStartReady && root.dataset.servicesMediaFallback !== "true"
-                ? await ensureServicesPlayable(servicesVideo, reverseTo, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, reverseFrom)
-                : false;
-            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
-                return;
-
-            if (!reverseMediaReady) {
-                if (servicesVideo?.error)
-                    activateServicesMediaFallback();
-                root.dataset.servicesTransportFailure = servicesVideo?.error ? "reverse-media-error" : "reverse-decode-timeout";
-                setServicesPanel(nextStage);
-                setServicesStaticStop(nextStage);
-                delete root.dataset.servicesTarget;
-                resetServicesMediaRetry();
-                servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-                setServicesPhase("waiting");
-                scheduleServicesProgressCatchUp(-1, token);
-                return;
-            }
-
-            servicesWarmupClaimRef.current?.();
-            root.dataset.servicesVideoDirection = "reverse-playback";
-            setServicesPhase("reverse");
-            const [mediaCompleted] = await Promise.all([
-                playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, true, true, true, isMobileRuntime() ? 2200 : MEDIA_SEGMENT_GRACE_MS),
-                animateServicesReversePanel(nextStage, segmentDuration),
-            ]);
-            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
-                return;
-            delete root.dataset.servicesTarget;
-            delete root.dataset.servicesVideoDirection;
-            if (!mediaCompleted) {
-                root.dataset.servicesTransportFailure = servicesVideo?.error ? "reverse-playback-error" : "reverse-playback-stall";
-                setServicesPanel(nextStage);
-                setServicesStaticStop(nextStage);
-            }
-            else {
-                setServicesStaticStop(null);
-                root.dataset.servicesMediaDecoded = "true";
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "ready";
-                setServicesPanel(nextStage);
-            }
+            cancelServicesEntryPreparation("new-reverse-entry");
+            const token = servicesEntryToken;
+            const entryVideo = servicesVideo;
+            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
+            /*
+              The exit frame and the first reverse frame sit on either side of a hard
+              cut: everything up to the exit is fully transparent, the reverse segment
+              starts with the object back in shot. Landing half a frame inside the
+              reverse segment keeps decoder rounding from parking the entry on the
+              transparent side, which is what made Services look empty when the reader
+              came back up out of How we work.
+            */
+            const entryFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage] + SERVICES_SEAM_FRAME_NUDGE;
+            const nextFrame = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage - 1];
+            servicesEntryPreparing = -1;
+            servicesEntryLockY = lockY;
+            root.dataset.servicesEntryPreparing = "reverse";
+            delete root.dataset.servicesEntryPrepared;
+            delete root.dataset.servicesEntryAbortReason;
+            delete root.dataset.servicesReverseEntryFrameDecoded;
+            delete root.dataset.servicesReverseEntrySegmentWarm;
+            setServicesStopPostersArmed(true);
             resetServicesMediaRetry();
-            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
-            setServicesPhase("waiting");
-            scheduleServicesProgressCatchUp(-1, token);
+            delete root.dataset.servicesTransportFailure;
+            setServicesPhase("preparing");
+            setMotionInputState();
+            const remainsRelevant = () => {
+                let reason = "";
+                if (token !== servicesEntryToken)
+                    reason = "token-invalidated";
+                else if (servicesEntryPreparing !== -1)
+                    reason = "preparation-cleared";
+                else if (servicesActive)
+                    reason = "already-active";
+                else if (servicesReleasing)
+                    reason = "releasing";
+                else if (disposed)
+                    reason = "effect-disposed";
+                else if (servicesVideoRef.current !== entryVideo)
+                    reason = "media-owner-changed";
+                else if (getMotionInputOwnerId() === "domino")
+                    reason = "domino-active";
+                else if (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services")
+                    reason = "other-navigation";
+                if (reason) {
+                    root.dataset.servicesEntryRelevanceFailure = reason;
+                    return false;
+                }
+                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+                if (Math.abs(window.scrollY - lockY) > viewportHeight * 1.25) {
+                    root.dataset.servicesEntryRelevanceFailure = "outside-lock-corridor";
+                    return false;
+                }
+                if (!isServicesVisuallyNear(1.25)) {
+                    root.dataset.servicesEntryRelevanceFailure = "services-not-visible";
+                    return false;
+                }
+                delete root.dataset.servicesEntryRelevanceFailure;
+                return true;
+            };
+            const finishPreparation = () => {
+                if (token === servicesEntryToken)
+                    cancelServicesEntryPreparation(root.dataset.servicesEntryRelevanceFailure ?? "reverse-preflight-not-ready");
+            };
+            if (!entryVideo || root.dataset.servicesMediaFallback === "true") {
+                root.dataset.servicesEntrySkipped = "reverse-media-unavailable";
+                finishPreparation();
+                return;
+            }
+            void (async () => {
+                let entryFrameReady = false;
+                for (let attempt = 0; attempt < 2 && remainsRelevant(); attempt += 1) {
+                    root.dataset.servicesEntryAttempt = `reverse-seek-${attempt + 1}`;
+                    entryFrameReady = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
+                    if (entryFrameReady || !remainsRelevant() || entryVideo.error)
+                        break;
+                    await waitForServicesEntryRetry(180);
+                }
+                if (!entryFrameReady || !remainsRelevant()) {
+                    if (entryVideo.error)
+                        activateServicesMediaFallback();
+                    finishPreparation();
+                    return;
+                }
+                let segmentReady = false;
+                for (let attempt = 0; attempt < 2 && remainsRelevant(); attempt += 1) {
+                    root.dataset.servicesEntryAttempt = `reverse-range-${attempt + 1}`;
+                    segmentReady = await ensureServicesEntrySegmentReady(entryVideo, remainsRelevant, entryFrame, nextFrame);
+                    if (segmentReady || !remainsRelevant() || entryVideo.error)
+                        break;
+                    await waitForServicesEntryRetry(180);
+                }
+                if (!segmentReady || !remainsRelevant()) {
+                    if (entryVideo.error)
+                        activateServicesMediaFallback();
+                    finishPreparation();
+                    return;
+                }
+                root.dataset.servicesReverseEntrySegmentWarm = "true";
+                const restoredEntryFrame = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
+                if (!restoredEntryFrame || !remainsRelevant()) {
+                    finishPreparation();
+                    return;
+                }
+                root.dataset.servicesReverseEntryFrameDecoded = "true";
+                delete root.dataset.servicesEntrySkipped;
+                commitServicesReverseEntry(lockY, entrySource);
+            })();
         };
         servicesControllerRef.current = {
             releaseForNavigation: releaseServicesForNavigation,
         };
-        /*
-          Which stop is due is read from where the reader has scrolled inside the
-          pinned band, not from accumulated gesture deltas. Each stop owns a slice
-          of the band: scrolling into it locks the input, plays that one segment
-          and hands the input straight back. Reverse entry uses the authored
-          palindrome branch and advances monotonically 3 -> 2 -> 1.
-        */
-        const advanceServicesFromProgress = (progress: number, direction: number) => {
-            if (!servicesActive || servicesReleasing || disposed)
+        const runServicesReverseStage = async (nextStage: number) => {
+            if (!servicesActive || servicesPhase !== "waiting" || nextStage < 0 || nextStage >= servicesStage)
                 return;
-            if (servicesPhase !== "waiting" || performance.now() < servicesGateUntil)
+            const token = ++servicesRunToken;
+            beginServicesMediaAttempt(`reverse:${servicesStage}:${nextStage}`);
+            const legacyFrom = SERVICES_KEYFRAME_STOPS[servicesStage];
+            // The last reverse stop sits one frame past the transparent exit frame, so
+            // it gets the same half-frame nudge the reverse entry uses.
+            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[servicesStage] +
+                (servicesStage === SERVICES_KEYFRAME_STOPS.length - 1 ? SERVICES_SEAM_FRAME_NUDGE : 0);
+            const reverseTo = SERVICES_REVERSE_KEYFRAME_STOPS[nextStage];
+            root.dataset.servicesReverseTransport = "continuous";
+            const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
+            servicesTransitionDirection = -1;
+            resetServicesGestureTotal();
+            root.dataset.servicesActive = String(nextStage + 1);
+            setServicesStaticStop(servicesStage);
+            delete root.dataset.servicesMediaDecoded;
+            setServicesPhase("playing");
+            setMotionInputState();
+            const reverseStartReady = await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive, servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
+                ? SERVICES_SEAM_SEEK_TOLERANCE
+                : undefined);
+            if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
-            const dueStage = SERVICES_STOP_PROGRESS.reduce<number>((stage, threshold, index) => (progress >= threshold ? index : stage), 0);
-            if (servicesSessionDirection === -1) {
-                if (direction >= 0)
+            if (!reverseStartReady) {
+                setServicesStaticStop(servicesStage);
+                if (servicesVideo)
+                    servicesVideo.dataset.segmentState = "buffering";
+                setServicesPhase("waiting");
+                servicesMediaRetryTimer = window.setTimeout(() => {
+                    servicesMediaRetryTimer = 0;
+                    if (token === servicesRunToken &&
+                        servicesActive &&
+                        !disposed &&
+                        servicesPhase === "waiting") {
+                        void runServicesReverseStage(nextStage);
+                    }
+                }, 180);
+                return;
+            }
+            const reverseReadyTarget = reverseTo;
+            const reverseBufferStart = isWebKitRuntime() &&
+                servicesStage === SERVICES_KEYFRAME_STOPS.length - 1
+                ? legacyFrom
+                : reverseFrom;
+            const reverseMediaReady = root.dataset.servicesMediaFallback === "true"
+                ? false
+                : await ensureServicesPlayable(servicesVideo, reverseReadyTarget, () => token === servicesRunToken && servicesActive, reverseBufferStart, !isWebKitRuntime());
+            if (token !== servicesRunToken || !servicesActive || disposed)
+                return;
+            if (!reverseMediaReady && root.dataset.servicesMediaFallback !== "true") {
+                if (shouldFailOpenServicesMedia(servicesVideo)) {
+                    if (servicesVideo?.error) {
+                        activateServicesMediaFallback();
+                    }
+                    else {
+                        root.dataset.servicesTransportFailure = "reverse-timeout";
+                    }
+                    setServicesPanel(nextStage);
+                    setServicesStaticStop(nextStage);
+                    resetServicesMediaRetry();
+                    servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+                    setServicesPhase("waiting");
+                    flushServicesPendingIntent();
                     return;
-                if (dueStage < servicesStage)
-                    void runServicesReverseStage(servicesStage - 1);
+                }
+                else {
+                    setServicesStaticStop(servicesStage);
+                    if (servicesVideo)
+                        servicesVideo.dataset.segmentState = "buffering";
+                    setServicesPhase("waiting");
+                    servicesMediaRetryTimer = window.setTimeout(() => {
+                        servicesMediaRetryTimer = 0;
+                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
+                            void runServicesReverseStage(nextStage);
+                        }
+                    }, 180);
+                    return;
+                }
+            }
+            if (!reverseMediaReady && root.dataset.servicesMediaFallback === "true") {
+                setServicesPanel(nextStage);
+                setServicesStaticStop(nextStage);
+                resetServicesMediaRetry();
+                servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+                setServicesPhase("waiting");
+                flushServicesPendingIntent();
                 return;
             }
-            if (servicesSessionDirection !== 1 || direction < 0)
-                return;
+            if (reverseMediaReady)
+                servicesWarmupClaimRef.current?.();
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
-            if (servicesStage >= lastStage) {
-                if (!servicesForwardComplete && progress >= SERVICES_EXIT_PROGRESS)
-                    void releaseServicesForward();
+            const reverseBranchAlreadyPrimed = Boolean(servicesVideo &&
+                servicesVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+                Math.abs(servicesVideo.currentTime - reverseFrom) <= 0.12);
+            let continueFromWarmSeam = false;
+            if (!reverseBranchAlreadyPrimed &&
+                servicesStage === lastStage &&
+                reverseFrom > legacyFrom + 1 / 30) {
+                const seamCompleted = await playMediaSegment(servicesVideo, legacyFrom, reverseFrom, 2, () => token === servicesRunToken && servicesActive, false, false);
+                if (token !== servicesRunToken || !servicesActive || disposed)
+                    return;
+                const seamNearReverseStart = servicesVideo
+                    ? Math.abs(servicesVideo.currentTime - reverseFrom) <= 0.12
+                    : false;
+                continueFromWarmSeam = Boolean(servicesVideo &&
+                    !servicesVideo.seeking &&
+                    (seamCompleted || seamNearReverseStart));
+                if (!continueFromWarmSeam) {
+                    setServicesStaticStop(servicesStage);
+                    if (servicesVideo)
+                        servicesVideo.dataset.segmentState = "buffering";
+                    if (shouldFailOpenServicesMedia(servicesVideo)) {
+                        if (servicesVideo?.error) {
+                            activateServicesMediaFallback();
+                        }
+                        else {
+                            root.dataset.servicesTransportFailure = "reverse-seam-stall";
+                        }
+                        setServicesPanel(nextStage);
+                        setServicesStaticStop(nextStage);
+                        resetServicesMediaRetry();
+                        servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+                        setServicesPhase("waiting");
+                        flushServicesPendingIntent();
+                        return;
+                    }
+                    setServicesPhase("waiting");
+                    servicesMediaRetryTimer = window.setTimeout(() => {
+                        servicesMediaRetryTimer = 0;
+                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
+                            void runServicesReverseStage(nextStage);
+                        }
+                    }, 180);
+                    return;
+                }
+            }
+            root.dataset.servicesVideoDirection = "reverse-playback";
+            const mediaTransition: Promise<boolean> = playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive, true, true, continueFromWarmSeam, isMobileRuntime() ? 2200 : MEDIA_SEGMENT_GRACE_MS);
+            const textTransition = animateServicesReversePanel(nextStage, segmentDuration);
+            const [mediaCompleted] = await Promise.all([mediaTransition, textTransition]);
+            if (token !== servicesRunToken || !servicesActive || disposed)
+                return;
+            if (!mediaCompleted) {
+                setServicesPanel(servicesStage);
+                setServicesStaticStop(servicesStage);
+                if (servicesVideo)
+                    servicesVideo.dataset.segmentState = "buffering";
+                if (shouldFailOpenServicesMedia(servicesVideo)) {
+                    if (servicesVideo?.error) {
+                        activateServicesMediaFallback();
+                    }
+                    else {
+                        root.dataset.servicesTransportFailure = "reverse-stall";
+                    }
+                    setServicesPanel(nextStage);
+                    setServicesStaticStop(nextStage);
+                    resetServicesMediaRetry();
+                    servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+                    setServicesPhase("waiting");
+                    flushServicesPendingIntent();
+                    return;
+                }
+                setServicesPhase("waiting");
+                servicesMediaRetryTimer = window.setTimeout(() => {
+                    servicesMediaRetryTimer = 0;
+                    if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
+                        void runServicesReverseStage(nextStage);
+                    }
+                }, 180);
                 return;
             }
-            if (dueStage > servicesStage)
-                void runServicesStage(servicesStage + 1);
+            pauseAndSeek(servicesVideo, reverseTo, 0.12);
+            delete root.dataset.servicesVideoDirection;
+            setServicesStaticStop(null);
+            root.dataset.servicesMediaDecoded = "true";
+            if (servicesVideo)
+                servicesVideo.dataset.segmentState = "ready";
+            setServicesPanel(nextStage);
+            resetServicesMediaRetry();
+            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+            setServicesPhase("waiting");
+            flushServicesPendingIntent();
         };
+        const requestServicesDirection = (direction: 1 | -1) => {
+            if (!servicesActive || servicesPhase !== "waiting" || performance.now() < servicesGateUntil) {
+                resetServicesGestureTotal();
+                return false;
+            }
+            resetServicesGestureTotal();
+            if (direction < 0) {
+                if (servicesStage > 0) {
+                    void runServicesReverseStage(servicesStage - 1);
+                }
+                else {
+                    releaseServicesBackward();
+                }
+            }
+            else if (servicesStage < SERVICES_KEYFRAME_STOPS.length - 1) {
+                void runServicesStage(servicesStage + 1);
+            }
+            else {
+                void releaseServicesForward();
+            }
+            return true;
+        };
+        servicesStoryInput = createServicesStoryInput({
+            root,
+            getLenis: () => lenisRef.current,
+            isDisposed: () => disposed,
+            isServicesActive: () => servicesActive,
+            isServicesReleasing: () => servicesReleasing,
+            getServicesPhase: () => servicesPhase,
+            getServicesStage: () => servicesStage,
+            getServicesEntryDirection: () => servicesEntryDirection,
+            getServicesLockY: () => servicesEntryPreparing !== 0 ? servicesEntryLockY : servicesLockY,
+            getServicesRange: () => servicesTrigger
+                ? { start: servicesTrigger.start, end: servicesTrigger.end }
+                : null,
+            enterServices: (direction, lockY, source) => {
+                if (direction < 0)
+                    startServicesAtLastStage(lockY, source);
+                else
+                    startServicesForward(lockY, 1, source);
+            },
+            releaseServicesForNavigation,
+            requestServicesDirection,
+        });
+        cleanupCallbacks.push(() => {
+            servicesStoryInput?.dispose();
+            servicesStoryInput = null;
+        });
         const lensMotion = compactMotion
             ? {
                 intro: { ...getLensPose(0.84, 0.72, 1.52, 1), rotation: -4 },
@@ -3470,8 +3893,11 @@ export function TascLanding() {
             }
             if (clientsCardStage && clientsCardItems.length) {
                 clientsCardItems.forEach((card, cardIndex) => {
-                    const cardBase = 0.72;
-                    const detailBase = 0.72;
+                    // Each case gets its own authored portion. In particular the
+                    // second card must not be fully visible while the first case is
+                    // still being introduced.
+                    const cardBase = 0.62 + cardIndex * 0.72;
+                    const detailBase = cardBase;
                     const group = clientsCardRevealGroups[cardIndex];
                     clientsEntrance.to(card, { y: 0, autoAlpha: 1, duration: 0.58 }, cardBase);
                     if (!group)
@@ -3578,23 +4004,6 @@ export function TascLanding() {
                     onRefresh: (self) => syncClientsHandoff(self.progress),
                 });
                 let firstServicesHandoffDirection: 1 | -1 = 1;
-                const syncBackdropHandoff = (progress: number) => {
-                    const clamped = gsap.utils.clamp(0, 1, progress);
-                    const fadeOut = 1 - gsap.utils.clamp(0, 1, clamped / 0.34);
-                    clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
-                        gsap.set(element, { opacity: restingOpacity * fadeOut });
-                    });
-                    // Cross-fade the two star surfaces on one shared progress curve.
-                    // Their combined opacity stays at one, so neither direction can
-                    // expose a black frame after the Clients flare has disappeared.
-                    const starHandoff = gsap.utils.clamp(0, 1, (clamped - 0.08) / 0.5);
-                    if (clientsStarStage) {
-                        gsap.set(clientsStarStage, { opacity: 1 - starHandoff });
-                    }
-                    if (servicesStarReveal) {
-                        gsap.set(servicesStarReveal, { opacity: starHandoff });
-                    }
-                };
                 const syncFirstServicesHandoffY = (progress: number, direction: 1 | -1) => {
                     if (!firstServicesItems.length)
                         return;
@@ -3618,13 +4027,11 @@ export function TascLanding() {
                         onUpdate: (self) => {
                             setClientsHandoffMoving(self.progress > 0 && self.progress < 1);
                             firstServicesHandoffDirection = self.direction < 0 ? -1 : 1;
-                            syncBackdropHandoff(self.progress);
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
                         onScrubComplete: () => setClientsHandoffMoving(false),
                         onLeave: () => setClientsHandoffMoving(false),
                         onRefresh: (self) => {
-                            syncBackdropHandoff(self.progress);
                             syncFirstServicesHandoffY(self.progress, firstServicesHandoffDirection);
                         },
                         onLeaveBack: () => {
@@ -3637,13 +4044,27 @@ export function TascLanding() {
                     },
                 });
                 syncClientsHandoff(clientsExitTrigger.progress);
-                syncBackdropHandoff(clientsServicesHandoff.scrollTrigger?.progress ?? 0);
                 /*
                   Handover order matters. Services has to arrive on a finished stage:
                   the Clients backdrops and starfield leave first, the Services stage
                   and its stars come back up on their own, and only then does the copy
                   and the media fade in. Reversed, the reader gets the same order back.
                 */
+                clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
+                    clientsServicesHandoff?.fromTo(element, { opacity: restingOpacity }, {
+                        opacity: 0,
+                        duration: 0.34,
+                        ease: "power2.inOut",
+                    }, 0);
+                });
+                if (clientsStarStage) {
+                    // The shared stars are the visual bridge across Clients and
+                    // Services. Keep the layer continuously visible during handoff.
+                    clientsServicesHandoff.set(clientsStarStage, { opacity: 1 }, 0);
+                }
+                if (servicesStarReveal) {
+                    clientsServicesHandoff.fromTo(servicesStarReveal, { opacity: 0 }, { opacity: 1, duration: 0.42, ease: "power2.out" }, 0.3);
+                }
                 if (firstServicesItems.length) {
                     clientsServicesHandoff.fromTo(firstServicesItems, { autoAlpha: 0 }, {
                         autoAlpha: 1,
@@ -3679,7 +4100,9 @@ export function TascLanding() {
                 });
             }
             const syncServicesApproach = (active: boolean) => {
-                primaryGalaxyRef.current?.setActive(true);
+                primaryGalaxyRef.current?.setActive(
+                    !mobilePerformanceMode && root.dataset.backgroundMotionPaused !== "true",
+                );
                 primaryGalaxyRef.current?.setMotion(active
                     ? {
                         density: isMobileRuntime() || isWebKitRuntime() ? 1.05 : 1,
@@ -3695,8 +4118,6 @@ export function TascLanding() {
                         speed: isMobileRuntime() || isWebKitRuntime() ? 1.08 : 1.44,
                         rotationSpeed: isMobileRuntime() || isWebKitRuntime() ? 0.1 : 0.15,
                     });
-                interactiveGalaxyRef.current?.setActive(!active);
-                interactiveGalaxyRef.current?.setInteractionEnabled(!active);
                 if (active) {
                     root.dataset.servicesInrange = "true";
                 }
@@ -3714,100 +4135,82 @@ export function TascLanding() {
                 onRefresh: (self) => syncServicesApproach(self.isActive),
             });
             cleanupCallbacks.push(() => servicesApproachTrigger.kill());
-            const shouldBypassServicesMotion = () => (programmaticNavigationRef.current && programmaticAnchorRef.current !== "#services") ||
-                (!initialHashHandledRef.current && Boolean(window.location.hash) && window.location.hash !== "#services");
-            /*
-              The band is real document now. It used to be exactly one viewport
-              and then cancelled again by a negative margin on the pin spacer,
-              because nothing ever scrolled through it - the story advanced on
-              gesture deltas while the page was frozen. The stops are read off
-              scroll progress instead, so the band has to be long enough to hold
-              them: roughly a viewport of reading between each one.
-            */
-            const getServicesPinDistance = () => Math.round(getVisualViewportHeight() * SERVICES_PIN_VIEWPORTS);
-            const isNearServicesTrigger = (trigger: ScrollTrigger, viewportMargin = 1.25) => {
-                const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-                const margin = viewportHeight * viewportMargin;
-                return window.scrollY >= trigger.start - margin && window.scrollY <= trigger.end + margin;
+            const syncServicesPinCompensation = () => {
+                const distance = Math.round(getVisualViewportHeight());
+                root.style.setProperty("--services-pin-flow-compensation", `${-distance}px`);
+                return distance;
             };
-            const canStartServicesMotion = (trigger: ScrollTrigger) => isNearServicesTrigger(trigger) && isServicesVisuallyNear();
+            syncServicesPinCompensation();
+            cleanupCallbacks.push(() => root.style.removeProperty("--services-pin-flow-compensation"));
             servicesTrigger = ScrollTrigger.create({
                 id: "services-reversible",
                 trigger: servicesSection,
                 start: "top top",
-                end: () => `+=${getServicesPinDistance()}`,
+                end: () => `+=${syncServicesPinCompensation()}`,
                 pin: useLegacyServicesFlow,
                 pinSpacing: true,
                 anticipatePin: 1,
                 refreshPriority: 30,
                 invalidateOnRefresh: true,
-                onEnter: (self) => {
-                    if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
-                        return;
-                    startServicesForward("trigger-on-enter");
-                },
-                onEnterBack: (self) => {
-                    if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
-                        return;
-                    startServicesReverseEntry("trigger-on-enter-back");
-                },
-                onUpdate: (self) => {
-                    if (servicesActive) {
-                        advanceServicesFromProgress(self.progress, self.direction);
-                        return;
-                    }
-                    if (self.isActive &&
-                        self.direction < 0 &&
-                        !servicesReleasing &&
-                        servicesPhase === "idle" &&
-                        !shouldBypassServicesMotion() &&
-                        canStartServicesMotion(self)) {
-                        startServicesReverseEntry("trigger-on-update-back");
-                        return;
-                    }
-                    if (!self.isActive ||
-                        self.direction < 0 ||
-                        servicesReleasing ||
-                        servicesPhase !== "idle" ||
-                        self.progress >= SERVICES_STOP_PROGRESS[1] ||
-                        shouldBypassServicesMotion() ||
-                        !canStartServicesMotion(self)) {
-                        return;
-                    }
-                    startServicesForward("trigger-on-update");
-                },
+                onRefreshInit: syncServicesPinCompensation,
                 onLeave: () => {
-                    // A very large native gesture can leave the pin while the
-                    // final-frame seek is still preparing. Leaving the real band
-                    // always wins; invalidate that seek instead of retaining an
-                    // offscreen Services session.
-                    if (servicesActive && servicesSessionDirection === 1) {
-                        finishServicesRelease();
-                        return;
-                    }
-                    if (servicesActive && servicesSessionDirection === -1) {
-                        finishServicesRelease();
-                        return;
-                    }
-                    if (!servicesActive && !servicesReleasing) {
+                    if (!servicesActive) {
                         delete root.dataset.servicesPinned;
                         delete root.dataset.servicesInrange;
                     }
                 },
                 onLeaveBack: () => {
-                    cancelServicesEntryPreparation("left-band-backward");
-                    if (!servicesActive && !servicesReleasing) {
-                        delete root.dataset.servicesPinned;
-                        delete root.dataset.servicesInrange;
+                    if (servicesReleasing)
+                        return;
+                    if (servicesEntryPreparing !== 0) {
+                        const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+                        if (window.scrollY < servicesEntryLockY - viewportHeight * 0.35)
+                            cancelServicesEntryPreparation("left-corridor-backward");
+                        else
+                            return;
+                    }
+                    if (servicesActive) {
+                        correctNativeScroll(servicesLockY);
                         return;
                     }
-                    rewindServicesToStart();
+                    servicesRunToken += 1;
+                    servicesReleaseToken += 1;
+                    window.clearTimeout(servicesReleaseTimer);
+                    servicesReleaseTimer = 0;
+                    if (servicesVideo)
+                        mediaRunCancels.get(servicesVideo)?.();
+                    stopServicesTextTimeline();
+                    servicesActive = false;
+                    servicesReleasing = false;
+                    servicesTransitionDirection = 0;
+                    servicesGateUntil = 0;
+                    resetServicesBlockedInput();
+                    clearServicesPendingIntent();
+                    setServicesPhase("idle");
+                    showServicesIdlePreview();
+                    pauseAndSeek(servicesVideo, 0);
+                    delete root.dataset.servicesPinned;
+                    delete root.dataset.servicesInrange;
+                    releaseServicesLenisLock();
+                    setMotionInputState();
+                },
+                onRefresh: (self) => {
+                    syncServicesPinCompensation();
+                    if (servicesActive) {
+                        servicesLockY = servicesEntryDirection < 0 ? self.end - 1 : self.start + 1;
+                        correctNativeScroll(servicesLockY);
+                    }
                 },
             });
             const handleServicesPositionApplied = () => {
                 if (programmaticAnchorRef.current === "#services" && servicesTrigger) {
                     showServicesIdlePreview(true);
-                    startServicesForward("position-applied");
+                    startServicesForward(servicesTrigger.start + 1, 1, "position-applied");
+                    return;
+                }
+                if (programmaticAnchorRef.current) {
+                    root.dataset.servicesBypassed = "true";
+                    resetServicesPanels();
                 }
             };
             window.addEventListener("tasc:scroll-position-applied", handleServicesPositionApplied);
@@ -3815,18 +4218,16 @@ export function TascLanding() {
                 if (event.type !== "pagehide" && document.visibilityState !== "hidden")
                     return;
                 cancelServicesEntryPreparation("document-hidden");
-                if (!servicesActive || !["playing", "reverse", "releasing"].includes(servicesPhase))
+                if (!servicesActive || servicesPhase !== "playing")
                     return;
                 const targetStage = Math.min(SERVICES_KEYFRAME_STOPS.length - 1, Math.max(0, Number(root.dataset.servicesActive ?? 1) - 1));
                 servicesRunToken += 1;
                 if (servicesVideo)
                     mediaRunCancels.get(servicesVideo)?.();
                 stopServicesTextTimeline();
-                const targetTime = servicesSessionDirection === -1
-                    ? SERVICES_REVERSE_KEYFRAME_STOPS[targetStage]
-                    : SERVICES_KEYFRAME_STOPS[targetStage];
-                pauseAndSeek(servicesVideo, targetTime, SERVICES_SEAM_SEEK_TOLERANCE / 2);
-                setServicesStaticStop(targetStage);
+                clearServicesPendingIntent();
+                resetServicesBlockedInput();
+                pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[targetStage]);
                 setServicesPanel(targetStage);
                 servicesGateUntil = 0;
                 setServicesPhase("waiting");
@@ -3847,278 +4248,232 @@ export function TascLanding() {
             const datumWaitlistState = datumSection.querySelector<HTMLElement>(".datum-motion-state-waitlist");
             const datumWaitlistSegments = Array.from(datumSection.querySelectorAll<HTMLElement>(".datum-waitlist-segment"));
             if (datumCardsState && datumWaitlistState) {
-                const datumHeading = datumCardsState.querySelector<HTMLElement>(".datum-motion-heading");
                 const datumCardsRevealItems = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".datum-glass-card.stagger-reveal-item"));
                 const datumHeadingItems = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".datum-motion-heading > *"));
                 const datumCardsExitItems = [...datumHeadingItems, ...datumCardsRevealItems];
                 const datumCardDetailGroups = Array.from(datumCardsState.querySelectorAll<HTMLElement>(".datum-glass-card")).map((card) => Array.from(card.querySelectorAll<HTMLElement>(".datum-card-top, .datum-card-rule, h3, :scope > p")));
                 const datumCardDetails = datumCardDetailGroups.flat();
-                let datumContentState: "cards" | "waitlist" | "transition" | null = null;
-                let stableDatumViewportWidth = getRuntimeViewport().width;
-                let stableDatumViewportHeight = getRuntimeViewport().height;
-                const getStableDatumPinDistance = () => {
-                    const { height: nextHeight, width: nextWidth } = getRuntimeViewport();
-                    const isRealViewportChange = Math.abs(nextWidth - stableDatumViewportWidth) > 80 ||
-                        Math.abs(nextHeight - stableDatumViewportHeight) >
-                            Math.max(180, stableDatumViewportHeight * 0.28);
-                    if (isRealViewportChange) {
-                        stableDatumViewportWidth = nextWidth;
-                        stableDatumViewportHeight = nextHeight;
-                    }
-                    const coarse = isMobileRuntime();
-                    const proportionalTravel = stableDatumViewportHeight * (coarse ? 0.86 : 0.74);
-                    return Math.round(Math.min(coarse ? 760 : 700, Math.max(coarse ? 560 : 500, proportionalTravel)));
-                };
-                gsap.set(datumCardsState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
-                gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 0 });
-                if (datumHeading) {
-                    gsap.set(datumHeading, { autoAlpha: 1, clearProps: "transform,willChange" });
-                }
-                gsap.set(datumHeadingItems, { y: 0, autoAlpha: 1, force3D: false });
-                gsap.set(datumCardDetails, { y: 0, autoAlpha: 1 });
-                gsap.set(datumWaitlistState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
-                gsap.set(datumWaitlistSegments, { y: 30, autoAlpha: 0 });
-                setRegionInteractive(datumCardsState, false);
-                setRegionInteractive(datumWaitlistState, false);
-                let datumCardsRevealMoving = false;
-                let datumCardsScrubMoving = false;
-                let datumResetTimer = 0;
-                const syncDatumCardsMoving = () => {
-                    if (datumCardsRevealMoving || datumCardsScrubMoving)
+                const controller = getMotionStoryController(root, () => lenisRef.current);
+                let activeDatumTimeline: gsap.core.Timeline | null = null;
+                let datumTrigger: ScrollTrigger | null = null;
+                let datumEntryDirection: 1 | -1 = 1;
+                let datumDisposed = false;
+
+                const runDatumTimeline = (build: (finish: () => void) => gsap.core.Timeline) =>
+                    new Promise<void>((resolve) => {
+                        activeDatumTimeline?.kill();
+                        let settled = false;
+                        const finish = () => {
+                            if (settled)
+                                return;
+                            settled = true;
+                            activeDatumTimeline = null;
+                            delete datumCardsState.dataset.datumCardsMoving;
+                            resolve();
+                        };
                         datumCardsState.dataset.datumCardsMoving = "true";
-                    else
-                        delete datumCardsState.dataset.datumCardsMoving;
-                };
-                const setDatumCardsRevealMoving = (moving: boolean) => {
-                    datumCardsRevealMoving = moving;
-                    syncDatumCardsMoving();
-                };
-                const setDatumCardsScrubMoving = (moving: boolean) => {
-                    datumCardsScrubMoving = moving;
-                    syncDatumCardsMoving();
-                };
-                const cardsRevealTimeline = gsap
-                    .timeline({
-                    paused: true,
-                    onStart: () => setDatumCardsRevealMoving(true),
-                    onComplete: () => setDatumCardsRevealMoving(false),
-                    onReverseComplete: () => setDatumCardsRevealMoving(false),
-                })
-                    .set(datumWaitlistState, { pointerEvents: "none" }, 0)
-                    .set(datumCardsState, { autoAlpha: 1, pointerEvents: "auto" }, 0)
-                    .set(datumHeading ?? [], { autoAlpha: 1, clearProps: "transform,willChange" }, 0)
-                    .fromTo(datumCardsRevealItems, { y: 46, autoAlpha: 0 }, {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: cardRevealTime(1.34),
-                    ease: "power4.out",
-                    stagger: cardRevealTime(0.2),
-                }, 0)
-                    .fromTo(datumHeadingItems, { y: 18, autoAlpha: 0 }, {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: cardRevealTime(0.82),
-                    ease: "power3.out",
-                    stagger: cardRevealTime(0.14),
-                    force3D: false,
-                    onComplete: () => {
-                        gsap.set(datumHeadingItems, { clearProps: "transform,willChange" });
-                    },
-                }, 0.1 + CONTENT_REVEAL_LAG)
-                    .to(datumWaitlistSegments, { y: 30, autoAlpha: 0, duration: 0.28, stagger: 0.02, ease: "power2.inOut" }, 0)
-                    .set(datumWaitlistState, { autoAlpha: 0 }, 0.32);
-                datumCardDetailGroups.forEach((items, cardIndex) => {
-                    cardsRevealTimeline.fromTo(items, { y: 16, autoAlpha: 0 }, {
-                        y: 0,
-                        autoAlpha: 1,
-                        duration: cardRevealTime(1.02),
-                        ease: "power3.out",
-                        stagger: cardRevealTime(0.14),
-                    }, 0.3 + CONTENT_REVEAL_LAG + cardIndex * cardRevealTime(0.24));
-                });
-                const resetDatumContent = () => {
-                    datumContentState = null;
-                    datumCardsRevealMoving = false;
-                    datumCardsScrubMoving = false;
-                    syncDatumCardsMoving();
-                    cardsRevealTimeline.timeScale(1).pause(0);
-                    gsap.set(datumCardsState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
-                    if (datumHeading) {
-                        gsap.set(datumHeading, { autoAlpha: 1, clearProps: "transform,willChange" });
-                    }
-                    gsap.set(datumCardsRevealItems, { y: 46, autoAlpha: 0 });
-                    gsap.set(datumHeadingItems, { y: 18, autoAlpha: 0, force3D: false });
-                    gsap.set(datumCardDetails, { y: 16, autoAlpha: 0 });
-                    gsap.set(datumWaitlistState, { y: 0, autoAlpha: 0, pointerEvents: "none" });
-                    gsap.set(datumWaitlistSegments, { y: 30, autoAlpha: 0 });
-                    setRegionInteractive(datumCardsState, false);
-                    setRegionInteractive(datumWaitlistState, false);
-                };
-                const cancelDatumReset = () => {
-                    window.clearTimeout(datumResetTimer);
-                    datumResetTimer = 0;
-                };
-                const settleDatumResetAfterScrub = () => {
-                    cancelDatumReset();
-                    resetDatumContent();
-                    // A scrubbed timeline can render its captured start values
-                    // after onLeaveBack. Re-assert reset once that short scrub has
-                    // settled, unless the reader has already entered again.
-                    datumResetTimer = window.setTimeout(() => {
-                        datumResetTimer = 0;
-                        const trigger = datumTimeline?.scrollTrigger;
-                        if (!trigger?.isActive && (trigger?.progress ?? 0) <= 0.001)
-                            resetDatumContent();
-                    }, 340);
-                };
-                const showDatumCards = () => {
-                    if (datumContentState === "cards")
-                        return;
-                    datumContentState = "cards";
-                    setRegionInteractive(datumCardsState, true);
-                    setRegionInteractive(datumWaitlistState, false);
-                    gsap.set(datumCardsState, { pointerEvents: "auto" });
-                    gsap.set(datumWaitlistState, { pointerEvents: "none" });
-                    cardsRevealTimeline.timeScale(1).restart();
-                };
-                const syncDatumContent = (progress: number) => {
-                    const nextState = progress <= 0.44
-                        ? "cards"
-                        : progress >= 0.8
-                            ? "waitlist"
-                            : "transition";
-                    if (nextState === datumContentState)
-                        return;
-                    datumContentState = nextState;
-                    root.dataset.datumProgress = nextState === "cards" ? "0.000" : nextState === "waitlist" ? "1.000" : "0.500";
-                    const cardsInteractive = nextState === "cards";
-                    const waitlistInteractive = nextState === "waitlist";
+                        activeDatumTimeline = build(finish);
+                        activeDatumTimeline.eventCallback("onInterrupt", finish);
+                    });
+
+                const setDatumInteractivity = (state: "cards" | "waitlist" | "transition") => {
+                    const cardsInteractive = state === "cards";
+                    const waitlistInteractive = state === "waitlist";
                     setRegionInteractive(datumCardsState, cardsInteractive);
                     setRegionInteractive(datumWaitlistState, waitlistInteractive);
                     gsap.set(datumCardsState, { pointerEvents: cardsInteractive ? "auto" : "none" });
                     gsap.set(datumWaitlistState, { pointerEvents: waitlistInteractive ? "auto" : "none" });
+                    root.dataset.datumProgress = state;
                 };
-                resetDatumContent();
-                // Visibility only arms the card reveal; the pinned transition below
-                // is the sole ScrollTrigger owner for Datum state and reversal.
-                let datumVisibilityObserver: IntersectionObserver | null = null;
-                let datumPinHasActivated = false;
-                if (typeof IntersectionObserver !== "undefined") {
-                    datumVisibilityObserver = new IntersectionObserver((entries) => {
-                        entries.forEach((entry) => {
-                            if (entry.isIntersecting) {
-                                // IntersectionObserver is only the cold-entry arm.
-                                // Once the pin has owned Datum, ScrollTrigger owns
-                                // every replay/reset; otherwise a leave-back geometry
-                                // update can immediately re-fire this observer and
-                                // undo the reset with a second reveal.
-                                if (!datumPinHasActivated && datumContentState === null)
-                                    showDatumCards();
-                                return;
-                            }
-                            const rootBottom = entry.rootBounds?.bottom ?? getVisualViewportHeight();
-                            if (entry.boundingClientRect.top >= rootBottom)
-                                resetDatumContent();
-                        });
-                    }, {
-                        rootMargin: "0px 0px -25% 0px",
-                        threshold: 0.01,
+
+                const prepareCards = () => {
+                    setDatumInteractivity("transition");
+                    gsap.set(datumWaitlistState, { autoAlpha: 0, pointerEvents: "none" });
+                    gsap.set(datumWaitlistSegments, { autoAlpha: 0, y: 30 });
+                    gsap.set(datumCardsState, { autoAlpha: 1, y: 0 });
+                    gsap.set(datumHeadingItems, { autoAlpha: 0, y: 18 });
+                    gsap.set(datumCardsRevealItems, { autoAlpha: 0, y: 46 });
+                    gsap.set(datumCardDetails, { autoAlpha: 0, y: 16 });
+                };
+
+                const showCards = async (entry = false) => {
+                    if (entry) {
+                        prepareCards();
+                    }
+                    else {
+                        setDatumInteractivity("transition");
+                        gsap.set(datumCardsState, { autoAlpha: 0, y: 0 });
+                        gsap.set(datumHeadingItems, { autoAlpha: 0, y: 18 });
+                        gsap.set(datumCardsRevealItems, { autoAlpha: 0, y: 46 });
+                        gsap.set(datumCardDetails, { autoAlpha: 0, y: 16 });
+                    }
+                    await runDatumTimeline((finish) => {
+                        const revealAt = entry ? 0 : 0.26;
+                        const timeline = gsap.timeline({ onComplete: finish });
+                        timeline
+                            .to(entry ? [] : datumWaitlistSegments, {
+                                autoAlpha: 0,
+                                duration: 0.24,
+                                ease: "power2.in",
+                                stagger: 0.02,
+                                y: 28,
+                            }, 0)
+                            .set(datumWaitlistState, { autoAlpha: 0, pointerEvents: "none" }, revealAt)
+                            .set(datumCardsState, { autoAlpha: 1, pointerEvents: "none" }, revealAt)
+                            .to(datumHeadingItems, {
+                                autoAlpha: 1,
+                                duration: entry ? revealTime(0.78) : 0.42,
+                                ease: "power3.out",
+                                stagger: entry ? revealTime(0.12) : 0.045,
+                                y: 0,
+                            }, revealAt)
+                            .to(datumCardsRevealItems, {
+                                autoAlpha: 1,
+                                duration: entry ? revealTime(1.08) : 0.54,
+                                ease: "power4.out",
+                                stagger: entry ? revealTime(0.17) : 0.07,
+                                y: 0,
+                            }, revealAt + (entry ? 0.1 + CONTENT_REVEAL_LAG : 0.06))
+                            .to(datumCardDetails, {
+                                autoAlpha: 1,
+                                duration: entry ? revealTime(0.74) : 0.42,
+                                ease: "power3.out",
+                                stagger: entry ? revealTime(0.055) : 0.025,
+                                y: 0,
+                            }, revealAt + (entry ? 0.3 + CONTENT_REVEAL_LAG : 0.16));
+                        return timeline;
                     });
-                    datumVisibilityObserver.observe(datumSection);
-                }
+                    if (!datumDisposed)
+                        setDatumInteractivity("cards");
+                };
+
+                const showWaitlist = async (entry = false) => {
+                    setDatumInteractivity("transition");
+                    await runDatumTimeline((finish) => gsap.timeline({ onComplete: finish })
+                        .to(datumCardsExitItems, {
+                            autoAlpha: 0,
+                            duration: entry ? 0 : 0.28,
+                            ease: "power3.in",
+                            stagger: entry ? 0 : 0.025,
+                            y: -32,
+                        }, 0)
+                        .set(datumCardsState, { autoAlpha: 0, pointerEvents: "none" }, entry ? 0 : 0.28)
+                        .set(datumWaitlistState, { autoAlpha: 1, pointerEvents: "none" }, entry ? 0 : 0.3)
+                        .fromTo(datumWaitlistSegments, { autoAlpha: 0, y: 32 }, {
+                            autoAlpha: 1,
+                            duration: entry ? 0.5 : 0.42,
+                            ease: "power3.out",
+                            stagger: entry ? 0.045 : 0.035,
+                            y: 0,
+                        }, entry ? 0 : 0.32));
+                    if (!datumDisposed)
+                        setDatumInteractivity("waitlist");
+                };
+
+                prepareCards();
                 root.dataset.datumPinned = "false";
-                datumTimeline = gsap.timeline({
-                    defaults: { ease: "none" },
-                    scrollTrigger: {
-                        id: "datum-reversible",
-                        trigger: datumSection,
-                        start: "top top",
-                        end: () => `+=${getStableDatumPinDistance()}`,
-                        pin: true,
-                        pinSpacing: true,
-                        anticipatePin: 1,
-                        scrub: 0.28,
-                        refreshPriority: 10,
-                        invalidateOnRefresh: true,
-                        onToggle: (self) => {
-                            root.dataset.datumPinned = String(self.isActive);
-                        },
-                        onEnter: (self) => {
-                            cancelDatumReset();
-                            datumPinHasActivated = true;
-                            if (datumContentState === null)
-                                showDatumCards();
-                            if (cardsRevealTimeline.progress() < 1) {
-                                cardsRevealTimeline.timeScale(1).play();
+                const datumRegistration = controller.register({
+                    id: "datum",
+                    priority: 75,
+                    stageCount: 2,
+                    getLockY: () => datumEntryDirection > 0
+                        ? (datumTrigger?.start ?? window.scrollY) + 1
+                        : (datumTrigger?.end ?? window.scrollY) - 1,
+                    canEnter: (gesture) => {
+                        if (!datumTrigger || datumDisposed || gesture.direction === 0)
+                            return false;
+                        const corridor = Math.min(220, Math.max(78, gesture.viewportHeight * 0.22));
+                        const predicted = gesture.scrollY + gesture.deltaY;
+                        const enters = gesture.direction > 0
+                            ? gesture.scrollY <= datumTrigger.start + corridor && predicted >= datumTrigger.start - corridor
+                            : gesture.scrollY >= datumTrigger.end - corridor && predicted <= datumTrigger.end + corridor;
+                        if (!enters)
+                            return false;
+                        return {
+                            direction: gesture.direction,
+                            lockY: gesture.direction > 0 ? datumTrigger.start + 1 : datumTrigger.end - 1,
+                            stage: gesture.direction > 0 ? 0 : 1,
+                        };
+                    },
+                    onEnter: async ({ direction }) => {
+                        datumEntryDirection = direction;
+                        root.dataset.datumPinned = "true";
+                        if (direction > 0) {
+                            await showCards(true);
+                            return { stage: 0 };
+                        }
+                        await showWaitlist(true);
+                        return { stage: 1 };
+                    },
+                    onIntent: async ({ direction, stage }) => {
+                        if (direction > 0 && stage === 0) {
+                            await showWaitlist();
+                            return { stage: 1 };
+                        }
+                        if (direction < 0 && stage === 1) {
+                            await showCards();
+                            return { stage: 0 };
+                        }
+                        return direction > 0
+                            ? {
+                                release: true,
+                                releaseTo: () => (datumTrigger?.end ?? window.scrollY) + 2,
+                                stage: 1,
                             }
-                            syncDatumContent(self.progress);
-                        },
-                        onEnterBack: (self) => {
-                            cancelDatumReset();
-                            datumPinHasActivated = true;
-                            syncDatumContent(self.progress);
-                        },
-                        onUpdate: (self) => {
-                            setDatumCardsScrubMoving(self.progress > 0 && self.progress < 1);
-                            syncDatumContent(self.progress);
-                        },
-                        onScrubComplete: () => {
-                            setDatumCardsScrubMoving(false);
-                            const trigger = datumTimeline?.scrollTrigger;
-                            if (!trigger?.isActive && (trigger?.progress ?? 0) <= 0.001)
-                                resetDatumContent();
-                        },
-                        onRefresh: (self) => {
-                            if (self.isActive) {
-                                syncDatumContent(self.progress);
-                            }
-                        },
-                        onLeave: () => {
-                            setDatumCardsScrubMoving(false);
-                            syncDatumContent(1);
-                        },
-                        onLeaveBack: () => {
-                            setDatumCardsScrubMoving(false);
-                            settleDatumResetAfterScrub();
-                        },
+                            : {
+                                release: true,
+                                releaseTo: () => Math.max(0, (datumTrigger?.start ?? window.scrollY) - 2),
+                                stage: 0,
+                            };
+                    },
+                    onRelease: () => {
+                        root.dataset.datumPinned = "false";
+                        delete datumCardsState.dataset.datumCardsMoving;
                     },
                 });
-                datumTimeline
-                    .addLabel("cards", 0)
-                    .to({}, { duration: 0.4 })
-                    .to(datumCardsExitItems, {
-                    y: -30,
-                    autoAlpha: 0,
-                    duration: 0.28,
-                    stagger: 0.018,
-                    ease: "power2.inOut",
-                    overwrite: "auto",
-                }, 0.4)
-                    // Bring the next state up while the last cards are still
-                    // readable. The old 0.64 -> 0.72 gap made both states hidden
-                    // for a real wheel frame and presented as an empty black page.
-                    .set(datumWaitlistState, { autoAlpha: 1, pointerEvents: "none" }, 0.46)
-                    .addLabel("waitlist", 0.46)
-                    .fromTo(datumWaitlistSegments, { y: 34, autoAlpha: 0 }, {
-                    y: 0,
-                    autoAlpha: 1,
-                    duration: 0.36,
-                    stagger: 0.03,
-                    ease: "power3.out",
-                    immediateRender: false,
-                    overwrite: "auto",
-                }, 0.47)
-                    .set(datumCardsState, { autoAlpha: 0, pointerEvents: "none" }, 0.72)
-                    .to({}, { duration: 0.18 });
+
+                const enterDatum = (direction: 1 | -1, lockY: number) => {
+                    if (controller.currentState !== "idle" || datumRegistration.isActive())
+                        return;
+                    void datumRegistration.enter({
+                        direction,
+                        lockY,
+                        stage: direction > 0 ? 0 : 1,
+                    });
+                };
+
+                datumTrigger = ScrollTrigger.create({
+                    id: "datum-reversible",
+                    trigger: datumSection,
+                    start: "top top",
+                    end: () => `+=${Math.round(Math.min(760, Math.max(520, getRuntimeViewport().height * 0.82)))}`,
+                    pin: true,
+                    pinSpacing: true,
+                    anticipatePin: 1,
+                    refreshPriority: 10,
+                    invalidateOnRefresh: true,
+                    onRefresh: (self) => {
+                        if (datumRegistration.isActive()) {
+                            datumRegistration.updateLock(datumEntryDirection > 0 ? self.start + 1 : self.end - 1);
+                        }
+                    },
+                });
+
+                const handleDatumPositionApplied = () => {
+                    if (root.dataset.programmaticAnchor === "#datum" && datumTrigger)
+                        enterDatum(1, datumTrigger.start + 1);
+                };
+                window.addEventListener("tasc:scroll-position-applied", handleDatumPositionApplied);
+
                 cleanupCallbacks.push(() => {
-                    datumVisibilityObserver?.disconnect();
-                    cancelDatumReset();
-                    cardsRevealTimeline.kill();
+                    datumDisposed = true;
+                    activeDatumTimeline?.kill();
+                    datumTrigger?.kill();
+                    datumRegistration.unregister();
+                    window.removeEventListener("tasc:scroll-position-applied", handleDatumPositionApplied);
                     delete root.dataset.datumPinned;
                     delete root.dataset.datumProgress;
-                    datumCardsRevealMoving = false;
-                    datumCardsScrubMoving = false;
-                    syncDatumCardsMoving();
+                    delete datumCardsState.dataset.datumCardsMoving;
                 });
             }
         }
@@ -4192,7 +4547,7 @@ export function TascLanding() {
                 gsap.to(element, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: cardRevealTime(1.34),
+                    duration: revealTime(1.34),
                     ease: "power4.out",
                     overwrite: true,
                     onComplete: () => completeManagedReveal([element]),
@@ -4241,9 +4596,9 @@ export function TascLanding() {
                 gsap.to(items, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: cardRevealTime(1.36),
+                    duration: revealTime(1.36),
                     ease: "power4.out",
-                    stagger: cardRevealTime(0.18),
+                    stagger: revealTime(0.18),
                     overwrite: true,
                     onComplete: () => completeManagedReveal(items),
                 });
@@ -4264,65 +4619,54 @@ export function TascLanding() {
             }
         });
         const processRows = gsap.utils.toArray<HTMLElement>(".process-contact-row");
-        if (processRows.length > 0 && processContactSection) {
+        if (processRows.length > 0) {
             const processRowParts = new Map(processRows.map((row) => [
                 row,
                 Array.from(row.querySelectorAll<HTMLElement>(".process-contact-row-title > span, .process-contact-row-title > h3, :scope > p")),
             ]));
             const processParts = Array.from(processRowParts.values()).flat();
-            const processRevealTargets = [...processRows, ...processParts];
-            registerManagedRevealElements(processRevealTargets);
-            registerManagedRevealTrigger(processContactSection);
-            gsap.set(processRevealTargets, { y: 30, autoAlpha: 0 });
-            const resetProcessRevealState = (fromY = 30) => {
-                processRevealTargets.forEach((target) => delete target.dataset.revealComplete);
-                gsap.set(processRevealTargets, { y: fromY, autoAlpha: 0 });
-            };
-            const processRevealTimeline = gsap.timeline({
-                paused: true,
-                onComplete: () => completeManagedReveal(processRevealTargets),
-                onReverseComplete: () => resetProcessRevealState(-30),
-            });
-            processRows.forEach((row, rowIndex) => {
-                const parts = processRowParts.get(row) ?? [];
-                const rowStart = cardRevealTime(rowIndex * 0.19);
-                processRevealTimeline.to(row, {
+            registerManagedRevealElements([...processRows, ...processParts]);
+            processRows.forEach(registerManagedRevealTrigger);
+            const revealProcessBatch = (batch: Element[], triggers: ScrollTrigger[]) => {
+                const rows = batch.filter((element): element is HTMLElement => element instanceof HTMLElement &&
+                    element.dataset.revealComplete !== "true");
+                triggers.forEach((trigger) => trigger.kill(false));
+                if (rows.length === 0)
+                    return;
+                gsap.to(rows, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: cardRevealTime(0.92),
+                    duration: revealTime(1.34),
                     ease: "power4.out",
-                }, rowStart);
-                if (parts.length) {
-                    processRevealTimeline.to(parts, {
+                    stagger: revealTime(0.18),
+                    overwrite: true,
+                    onComplete: () => completeManagedReveal(rows),
+                });
+                rows.forEach((row, batchIndex) => {
+                    const parts = processRowParts.get(row);
+                    if (!parts?.length)
+                        return;
+                    gsap.to(parts, {
                         y: 0,
                         autoAlpha: 1,
-                        duration: cardRevealTime(0.64),
-                        stagger: cardRevealTime(0.08),
+                        duration: revealTime(0.92),
+                        delay: revealTime(0.16 + batchIndex * 0.14),
                         ease: "power3.out",
-                    }, rowStart + cardRevealTime(0.12));
-                }
-            });
-            const revealProcess = (fromY: number) => {
-                if (processRevealTimeline.progress() <= 0.001)
-                    resetProcessRevealState(fromY);
-                processRevealTimeline.timeScale(1).play();
+                        stagger: revealTime(0.12),
+                        overwrite: true,
+                        onComplete: () => completeManagedReveal(parts),
+                    });
+                });
             };
-            const processRevealTrigger = ScrollTrigger.create({
-                id: "process-sequential-reveal",
-                trigger: processContactSection,
-                start: "top 82%",
-                end: "bottom 18%",
-                onEnter: () => revealProcess(30),
-                onEnterBack: () => revealProcess(-30),
-                onLeaveBack: () => processRevealTimeline.timeScale(1.15).reverse(),
-            });
-            cleanupCallbacks.push(() => {
-                processRevealTrigger.kill(false);
-                processRevealTimeline.kill();
+            ScrollTrigger.batch(processRows, {
+                start: "top 80%",
+                batchMax: 5,
+                onEnter: revealProcessBatch,
+                onEnterBack: revealProcessBatch,
             });
         }
         gsap.utils.toArray<HTMLElement>(".motion-divider").forEach((element) => {
-            const revealDivider = () => gsap.to(element, { "--line-progress": "100%", duration: cardRevealTime(1.36), ease: "power2.out" });
+            const revealDivider = () => gsap.to(element, { "--line-progress": "100%", duration: revealTime(1.36), ease: "power2.out" });
             const resetDivider = () => gsap.set(element, { "--line-progress": "0%" });
             resetDivider();
             ScrollTrigger.create({
@@ -4346,19 +4690,22 @@ export function TascLanding() {
             resetServicesMediaRetry();
             window.clearTimeout(servicesReleaseTimer);
             servicesReleaseTimer = 0;
+            clearServicesPendingIntent();
             mediaRunCancels.forEach((cancel) => cancel());
             mediaRunCancels.clear();
             stopServicesTextTimeline();
             servicesActive = false;
             servicesReleasing = false;
-            releaseServicesScroll();
+            releaseServicesLenisLock();
+            lenis.start();
             lensVideo?.removeEventListener("loadedmetadata", handleLensMetadata);
             cleanupCallbacks.forEach((cleanup) => cleanup());
+            lenis.off("scroll", handleSmoothScrollUpdate);
+            gsap.ticker.remove(tickLenis);
             servicesTrigger?.kill();
             servicesVideo?.pause();
             dominoVideo?.pause();
-            datumTimeline?.scrollTrigger?.kill();
-            datumTimeline?.kill();
+            lenis.destroy();
             [
                 "servicesPinned",
                 "servicesInrange",
@@ -4377,16 +4724,21 @@ export function TascLanding() {
                 "servicesReverseTransport",
                 "servicesReversePrimeFrame",
                 "servicesReversePrimeTime",
+                "servicesReverseEntryFrameDecoded",
+                "servicesReverseEntrySegmentWarm",
                 "servicesVideoDirection",
                 "servicesStaticStop",
                 "servicesEntryPoster",
-                "servicesLocked",
+                "servicesBypassed",
                 "datumProgress",
                 "datumPinned",
                 "dominoPlayback",
                 "motionInputLocked",
                 "wheelScrollRate",
             ].forEach((key) => delete root.dataset[key]);
+            if (lenisRef.current === lenis) {
+                lenisRef.current = null;
+            }
             if (heroTimelineRef.current === heroTimeline) {
                 heroTimelineRef.current = null;
             }
@@ -4526,6 +4878,8 @@ export function TascLanding() {
     useReversibleScrollStories({
         rootRef,
         dominoVideoRef,
+        dominoReverseVideoRef,
+        lenisRef,
         transportKey: "how-authored-v1",
         enabled: preloaderRevealStarted && motionAllowed,
         story: "how",
@@ -4533,7 +4887,10 @@ export function TascLanding() {
     useReversibleScrollStories({
         rootRef,
         dominoVideoRef,
+        dominoReverseVideoRef,
+        lenisRef,
         transportKey: dominoTransportKey,
+        onForwardCompletedOnce: armDominoReverseMedia,
         enabled: preloaderRevealStarted && motionAllowed,
         story: "domino",
     });
@@ -4601,13 +4958,6 @@ export function TascLanding() {
             window.removeEventListener("hashchange", navigateFromHistory);
         };
     }, [handleAnchorNavigate, motionAllowed, preloaderComplete]);
-    /*
-      The Datum media used to be a fixed 147% wide plate whose top was cropped by a
-      hard-coded clip-path when the screen ran short. On phones the crop ate the
-      composition and read as the cards covering the video. Measure what is actually
-      free under the card stack and publish it, so the media can size itself to the
-      gap instead of being cut.
-    */
     useEffect(() => {
         const root = rootRef.current;
         if (!root || !preloaderComplete)
@@ -4630,9 +4980,8 @@ export function TascLanding() {
             section.style.setProperty("--datum-media-space", `${space}px`);
         };
         const schedule = () => {
-            if (frame)
-                return;
-            frame = window.requestAnimationFrame(publish);
+            if (!frame)
+                frame = window.requestAnimationFrame(publish);
         };
         const observer = new ResizeObserver(schedule);
         observer.observe(cards);
@@ -4651,11 +5000,15 @@ export function TascLanding() {
             section.style.removeProperty("--datum-media-space");
         };
     }, [preloaderComplete]);
-    return (<main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyMounted && galaxyStatus === "pending")
+    return (<>
+      <TascHeader onNavigate={handleAnchorNavigate}/>
+      <main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield={mobilePerformanceMode ? "css-starfield" : "react-bits-galaxy"} data-starfield-mode={mobilePerformanceMode
+            ? "static"
+            : !performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
-            : motionAllowed && galaxyMounted && galaxyStatus === "ready"
+            : motionAllowed && galaxyStatus === "ready"
                 ? "galaxy"
-                : "static"} data-galaxy-mounted={galaxyMounted ? "true" : "false"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-outcome={!motionAllowed
+                : "static"} data-hero-video={motionAllowed ? heroVideoState : "fallback"} data-services-galaxy-status={servicesGalaxyStatus} data-services-galaxy-shared="true" data-packed-alpha-owner={packedAlphaOwner} data-services-media-fallback={servicesMediaFallback ? "true" : undefined} data-lower-media-outcome={!motionAllowed
             ? "skipped"
             : lowerMediaHasFallback && lowerMediaSettled
                 ? "fallback"
@@ -4673,11 +5026,10 @@ export function TascLanding() {
             }} onComplete={() => {
                 setPreloaderComplete(true);
             }}/>) : null}
-      <TascHeader onNavigate={handleAnchorNavigate}/>
       {preloaderComplete ? <CookieConsent /> : null}
       <div className="first-four-galaxy-stage" aria-hidden="true">
         <span className="static-starfield-fallback"/>
-        {galaxyMounted ? (<>
+        {heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed && !mobilePerformanceMode ? (<>
             <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode || webkitCompatibilityMode ? 1.05 : 1.3} starSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode || webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={webkitCompatibilityMode
                 ? mobilePerformanceMode
                     ? 0.9
@@ -4687,8 +5039,6 @@ export function TascLanding() {
                     : mobilePerformanceMode
                         ? 1
                         : 1} maxFps={mobilePerformanceMode || webkitCompatibilityMode || macPerformanceMode ? 30 : 60}/>
-            {interactiveGalaxyEnabled && !webkitCompatibilityMode && !macPerformanceMode ? (<Galaxy {...GALAXY_SHARED_PROPS} ref={interactiveGalaxyRef} className="first-four-galaxy-interactive" data-galaxy-layer="interactive" density={0.5} glowIntensity={0.14} starSpeed={0.6} speed={0.6} autoCenterRepulsion={0} mouseInteraction trackBoundsOnScroll={false} visibilityTargetSelector={INTERACTIVE_GALAXY_VISIBILITY_TARGETS} maxDevicePixelRatio={webkitCompatibilityMode ? 0.3 : macPerformanceMode ? 0.36 : 0.5} maxFps={webkitCompatibilityMode ? 16 : macPerformanceMode ? 18 : 24}/>) : null}
-            {interactiveGalaxyEnabled && (webkitCompatibilityMode || macPerformanceMode) ? (<span className="first-four-star-parallax" data-star-layer="interactive-compositor"/>) : null}
           </>) : null}
       </div>
       <div className="vision-clients-flare-stage" aria-hidden="true">
@@ -4781,5 +5131,6 @@ export function TascLanding() {
       />
 
       <SiteFooter onNavigate={handleAnchorNavigate}/>
-    </main>);
+    </main>
+    </>);
 }

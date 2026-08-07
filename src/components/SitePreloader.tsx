@@ -6,6 +6,7 @@ import { useGSAP } from "@gsap/react";
 import {
     PRELOADER_HARD_FAIL_OPEN_MS,
     PRELOADER_REVEAL_SAFETY_MS,
+    PRELOADER_SOFT_REVEAL_MS,
 } from "@/lib/preloader-timing";
 gsap.registerPlugin(useGSAP);
 type SitePreloaderProps = {
@@ -110,7 +111,18 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             loadingTween.kill();
             timeline.play(0);
         };
+        let softRevealTimer = 0;
         const revealWithinDeadline = () => {
+            if (performance.now() < PRELOADER_SOFT_REVEAL_MS) {
+                if (!softRevealTimer) {
+                    softRevealTimer = window.setTimeout(() => {
+                        softRevealTimer = 0;
+                        if (readyRef.current)
+                            revealWithinDeadline();
+                    }, Math.max(0, PRELOADER_SOFT_REVEAL_MS - performance.now()));
+                }
+                return;
+            }
             const remainingMs = PRELOADER_HARD_FAIL_OPEN_MS - performance.now();
             const requiredMs = timeline.duration() * 1000 + PRELOADER_REVEAL_SAFETY_MS;
             if (remainingMs <= requiredMs) {
@@ -129,6 +141,7 @@ export default function SitePreloader({ ready, onComplete, onRevealStart }: Site
             window.removeEventListener("tasc:preloader-deadline", handleNavigationDeadline);
             window.removeEventListener("tasc:preloader-hard-fail-open", handleHardFailOpen);
             revealRef.current = null;
+            window.clearTimeout(softRevealTimer);
             loadingTween.kill();
             timeline.kill();
         };

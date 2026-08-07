@@ -7,5 +7,5 @@ export type LensPose = {
 };
 export type HeroVideoState = "pending" | "ready" | "fallback";
 export type MotionNavigationController = {
-    releaseForNavigation: () => void;
+    releaseForNavigation: (targetHref?: string) => void;
 };

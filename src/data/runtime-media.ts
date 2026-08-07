@@ -40,14 +40,18 @@ export const RUNTIME_MEDIA = {
             // `services-keyframes-mobile-lean-20260721.webm` carried the
             // `ALPHA_MODE=1` tag but no alpha plane, so every phone painted the
             // Services frame on an opaque black rectangle instead of the starfield.
-            // Re-derived from the desktop alpha master at 960x540 / yuva420p.
-            mobile: "/media/services-keyframes-mobile-alpha-960-20260803.webm",
+            // Re-derived from the desktop alpha master with the libvpx decoder
+            // forced so that FFmpeg preserves the real alpha plane.
+            mobile: "/media/services-keyframes-mobile-alpha-640-gop15-20260807.webm",
+            desktopOutput: { width: 1280, height: 720 },
+            mobileOutput: { width: 640, height: 360 },
         },
         webkitPacked: {
             desktop: "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
-            mobile: "/media/services-keyframes-packed-960-gop15-t4-20260801.mp4",
+            mobile: "/media/services-keyframes-packed-1280x360-gop15-20260807.mp4",
             desktopOutput: { width: 1280, height: 720 },
-            mobileOutput: { width: 960, height: 540 },
+            // The transport is 1280x360: 640px colour + 640px alpha mask.
+            mobileOutput: { width: 640, height: 360 },
         },
         poster: "/media/services-frame-0-poster-final-20260718.webp",
         stopPosters: [
@@ -85,6 +89,8 @@ export const RUNTIME_MEDIA = {
         },
     },
     domino: {
+        poster: "/media/domino-forward-poster-1120-20260807.webp",
+        posterOutput: { width: 1120, height: 630 },
         forward: {
             desktop: "/media/domino-cta-forward-desktop-20260718.mp4",
             mobile: "/media/domino-cta-forward-mobile-20260718.mp4",
@@ -101,9 +107,6 @@ export const RUNTIME_MEDIA = {
                 mobile: "/media/domino-cta-reverse-mobile-vp9-20260718.webm",
             },
         },
-        // Both sequences carried no poster, so a phone that reached the section
-        // before the file buffered showed a black rectangle under the copy.
-        poster: "/media/domino-cta-poster-20260710.webp",
         fps: FPS_30,
         frameCount: 115,
         visibilityRatio: 0.25,

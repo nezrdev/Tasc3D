@@ -61,6 +61,11 @@ export function DominoSection({
         <section className="domino-cta-section glass-editorial-section" id="brief" aria-label="One impulse CTA">
             <div className="domino-scene">
                 <div className="domino-media" aria-label="Autonomous domino animation">
+                    <span
+                        className="domino-poster"
+                        style={{ backgroundImage: `url("${DOMINO_POSTER}")` }}
+                        aria-hidden="true"
+                    />
                     {motionAllowed ? (
                         <>
                             <video
@@ -145,49 +150,52 @@ export function DominoSection({
                             </video>
                         </>
                     ) : null}
+                    <div className="domino-loading-state" role="status" aria-live="polite">
+                        <span aria-hidden="true" />
+                        Preparing motion
+                    </div>
                 </div>
                 <h2 className="domino-video-title" aria-live="polite">
                     <span>{finalImpulseCopy.title}</span>
                     <span>{finalImpulseCopy.accent}</span>
                 </h2>
-            </div>
-
-            <div className="domino-form-stage">
-                <div className="domino-copy domino-impulse-copy stagger-reveal-group">
-                    <p className="domino-body domino-body-primary stagger-reveal-item">
-                        {finalImpulseCopy.bodyPrimary}
-                    </p>
-                    <p className="domino-body domino-body-signal stagger-reveal-item">
-                        {finalImpulseCopy.bodySignal}
-                    </p>
-                    <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={dominoLead.submit}>
-                        <div className="domino-impulse-row stagger-reveal-item">
-                            <label className="sr-only" htmlFor="domino-email">
-                                Email
-                            </label>
-                            <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" required maxLength={254} autoComplete="email" onFocus={dominoLead.captureFirstInteraction} />
-                            <button type="submit" disabled={dominoLead.state.status === "submitting"}>
-                                {dominoLead.state.status === "submitting" ? "Sending" : finalImpulseCopy.action}
-                                <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5} />
-                            </button>
-                        </div>
-                        <label className="domino-privacy-row stagger-reveal-item">
-                            <input name="privacy" type="checkbox" onFocus={dominoLead.captureFirstInteraction} required />
-                            <span className="domino-privacy-desktop">
-                                I agree to the processing of my email under the <a href="/privacy-policy">Privacy Policy</a>.
-                            </span>
-                            <span className="domino-privacy-mobile">
-                                By clicking you agree to our <a href="/privacy-policy">Policy</a>
-                            </span>
-                        </label>
-                        <label className="lead-honeypot" aria-hidden="true">
-                            Company website
-                            <input name="website" type="text" tabIndex={-1} autoComplete="off" />
-                        </label>
-                        <p className={`lead-form-status stagger-reveal-item is-${dominoLead.state.status}`} role={dominoLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
-                            {dominoLead.state.message}
+                <div className="domino-form-stage">
+                    <div className="domino-copy domino-impulse-copy stagger-reveal-group">
+                        <p className="domino-body domino-body-primary stagger-reveal-item">
+                            {finalImpulseCopy.bodyPrimary}
                         </p>
-                    </form>
+                        <p className="domino-body domino-body-signal stagger-reveal-item">
+                            {finalImpulseCopy.bodySignal}
+                        </p>
+                        <form className="domino-impulse-form" data-submit-state={dominoLead.state.status} onSubmit={dominoLead.submit}>
+                            <div className="domino-impulse-row stagger-reveal-item">
+                                <label className="sr-only" htmlFor="domino-email">
+                                    Email
+                                </label>
+                                <input id="domino-email" name="email" type="email" placeholder="ENTERYOUREMAIL@HERE.COM" required maxLength={254} autoComplete="email" onFocus={dominoLead.captureFirstInteraction} />
+                                <button type="submit" disabled={dominoLead.state.status === "submitting"}>
+                                    {dominoLead.state.status === "submitting" ? "Sending" : finalImpulseCopy.action}
+                                    <ArrowRight aria-hidden="true" size={18} strokeWidth={1.5} />
+                                </button>
+                            </div>
+                            <label className="domino-privacy-row stagger-reveal-item">
+                                <input name="privacy" type="checkbox" onFocus={dominoLead.captureFirstInteraction} required />
+                                <span className="domino-privacy-desktop">
+                                    I agree to the processing of my email under the <a href="/privacy-policy">Privacy Policy</a>.
+                                </span>
+                                <span className="domino-privacy-mobile">
+                                    By clicking you agree to our <a href="/privacy-policy">Policy</a>
+                                </span>
+                            </label>
+                            <label className="lead-honeypot" aria-hidden="true">
+                                Company website
+                                <input name="website" type="text" tabIndex={-1} autoComplete="off" />
+                            </label>
+                            <p className={`lead-form-status stagger-reveal-item is-${dominoLead.state.status}`} role={dominoLead.state.status === "error" ? "alert" : "status"} aria-live="polite">
+                                {dominoLead.state.message}
+                            </p>
+                        </form>
+                    </div>
                 </div>
             </div>
         </section>

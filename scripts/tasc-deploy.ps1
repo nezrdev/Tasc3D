@@ -118,8 +118,10 @@ $DeployPublicAllowlist = @(
   "media/services-frame-0-poster-final-20260718.webp",
   "media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
   "media/services-keyframes-packed-960-gop15-t4-20260801.mp4",
+  "media/services-keyframes-packed-1280x360-gop15-20260807.mp4",
   "media/services-keyframes-desktop-final-20260718.webm",
   "media/services-keyframes-mobile-alpha-960-20260803.webm",
+  "media/services-keyframes-mobile-alpha-640-gop15-20260807.webm",
   "media/services-mobile-static-frame.webp",
   "media/services-stop-1-poster-final-20260718.webp",
   "media/services-stop-2-poster-final-20260718.webp",
@@ -137,7 +139,7 @@ $DeployPublicAllowlist = @(
   "media/domino-cta-reverse-mobile-20260718.mp4",
   "media/domino-cta-reverse-desktop-vp9-20260718.webm",
   "media/domino-cta-reverse-mobile-vp9-20260718.webm",
-  "media/domino-cta-poster-20260710.webp",
+  "media/domino-forward-poster-1120-20260807.webp",
   "media/vision-logo-glass-20260710.webp",
   "media/process-gradient-original-20260709.webp",
   "media/process-horizon-bg.webp",
@@ -208,7 +210,7 @@ Write-Host "Archive size: $([Math]::Round($ArchiveItem.Length / 1MB, 2)) MB"
 
 if ($PackageOnly -or -not $Deploy) {
   Write-Host ""
-  Write-Host "Package is ready. To deploy with the same gate, run: pnpm deploy" -ForegroundColor Green
+  Write-Host "Package is ready. To deploy with the same gate, run: scripts/tasc-deploy.ps1 -Deploy -SkipInstall" -ForegroundColor Green
   exit 0
 }
 

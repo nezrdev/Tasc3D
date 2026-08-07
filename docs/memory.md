@@ -2,33 +2,23 @@
 
 ## Project State
 
-- Worktree: `C:\workflow\Freelance\projects\tasc-3d-site`.
-- Active optimization chain: T6, T13, T12, T7, T8, T9, T10, and T11 are stacked in isolated branches and draft PRs.
-- Current branch in this worktree: `main`.
-- Production deployment is approved for the current scroll-repair task after local QA.
+- Worktree: `C:\workflow\Freelance\projects\tasc-3d-site\worktrees\t14-motion-story-controller`.
+- Active optimization chain includes T0-T13 plus the T14 motion/story controller hardening.
+- Current branch: `task/t14-motion-story-controller`, rebased on production `main` at `a1d612a`.
+- This T14 request explicitly authorizes commit, push to `main`, production deployment, and one live smoke after local GO. Physical Nothing Phone (3a) and real Safari acceptance remain external gates.
 
-## Scroll Repair Release (2026-08-07)
+## Prior Scroll Repair Baseline (superseded by T14)
 
-- Release candidate `20260807-042641` keeps document scrolling native at `1.0`; only an actively playing Services or Domino media segment owns the bounded scroll lock.
-- Services settles every authored stop on a decoded frame (`90/187/307`) and holds the visually complete frame `340` through the real pin exit. Reverse traversal is monotonic `3 -> 2 -> 1`; the transparent frame `339` is never a resting surface.
-- Clients flare/gradient and the two star layers use one direction-independent handoff with a combined star-opacity floor of `1.0`, so Services cannot open on a black intermediate frame.
-- Datum has one pinned ScrollTrigger owner. Cards reveal in order, cards/waitlist overlap during the handoff, and post-scrub leave-back reasserts the hidden reset instead of allowing the timeline start frame to overwrite it.
-- How copy transitions are nearly sequential and spatially separated, removing doubled ghost text. Process keeps one sequential `01 -> 05` reveal owner. Domino may prewarm offscreen but starts only after a real forward crossing of its top boundary.
-- Local production build `Md-Pecx963W7tGl_DiEWH` passed exact Services stop checks in desktop Chromium, touch Chromium and mobile WebKit. Datum's 17-point transition floor is at least `0.78` in the final WebKit run, with reverse cards visible and leave-back opacity `0`; console errors are `0`.
-- Physical iPhone Safari and Android hardware remain an external acceptance gate; Windows Playwright WebKit is regression evidence, not physical Safari acceptance.
+- The 2026-08-04 native/progress-driven rebuild reached production candidate `20260807-042641` and supplied later Safari-alpha, media, stacking, deployment, and process-reveal fixes.
+- T14 intentionally supersedes its native `1.0` scroll, progress-driven stories, and Domino played-once behavior with the approved Lenis/discrete-story contract below.
 
 ## Runtime Decisions
 
 - ScrollTrigger global `sort()` and `refresh()` calls are centralized through `src/lib/scroll-trigger-refresh.ts`.
 - Anchor navigation must not run immediate global refresh/sort or delayed retry ladders. It applies one settled position in one animation frame and clears `data-programmatic-anchor`.
-- Scrolling is native in every browser. Lenis was removed on 2026-08-04: it was already detached from input on Apple devices, so the site ran two scroll models at once and ScrollTrigger had to reconcile them.
-- Nothing in the motion runtime writes a scroll position. Anchor navigation is the single exception. Any future "settle", "snap" or "align" that moves the page is the bug the 2026-08-04 rebuild removed.
-- Services is pinned across `SERVICES_PIN_VIEWPORTS` (2.4) of real document and its three stops are read off trigger progress (`SERVICES_STOP_PROGRESS`, exit at `SERVICES_EXIT_PROGRESS`). The old one-viewport pin plus `--services-pin-flow-compensation` is gone; the band has to be real document for progress-driven stops to work.
-- Refresh priority order is intentional: hero `40`, Services `30`, How entrance `25`, How reversible `20`, Datum `10`, Domino `5`.
-- `src/lib/scroll-lock.ts` is the only thing that holds the reader still: it swallows wheel/touchmove/keydown, never moves the page, and releases itself after `SCROLL_LOCK_SAFETY_MS` (6000). Only Services stops and the Domino sequence take it.
-- A settled story never keeps the scroll lock. Services advances forward and traverses its authored palindrome backward `3 -> 2 -> 1`; Domino plays forward once per page load and leaves its final frame alone on the way back up.
-- `src/lib/motion-input-bus.ts` is now an observer-only tap on the input stream (all listeners passive, no ownership). Anchor settling and the reveal watchdog are its only consumers.
-- How we work and Datum keep their pins by the owner's decision (2026-08-04) but carry no input capture - the steps run on `scrub` while the frame is held.
+- `src/lib/motion-input-bus.ts` is the only raw wheel/touch/key listener set. `MotionStoryController` owns Services, How, Datum, and Domino with priorities `100/80/75/70`; stories request transitions and never install competing gesture listeners.
+- The motion owner watchdog is fixed at 4000 ms and releases fail-open through the normal cleanup path.
+- Lenis is the single document scroll owner with wheel/touch multipliers `0.7` and one GSAP ticker. A story holds one lock coordinate through each transition and releases only after the current wheel burst or touch gesture ends.
 - Initial connection classification only accepts `saveData`, `slow-2g`, and `2g`. A low `downlink` value alone cannot select mobile assets; measured first-media throughput can constrain later assets.
 - T8 profile bootstrap is synchronous in `layout.tsx` and sets `data-tasc-profile-ready` last; React reads it through lazy initializers but only enables motion after hydration to avoid conditional DOM mismatches.
 - Mobile/desktop profile switching uses exact `> 80px` hysteresis from the width where the current mode was actually selected; same-mode resize drift does not reset the baseline. `visualViewport` resize is included.
@@ -37,13 +27,15 @@
 - Real Safari acceptance still requires physical macOS/iPhone Safari or an equivalent real-device remote session. Windows Playwright WebKit is regression coverage only.
 - Browser QA must run against one stable local `next start` process. Do not rebuild `.next` or start a second server while Playwright/perf harnesses are running.
 - Run `scripts/tasc-deploy.ps1` with no output redirection. Piping it through `2>&1` in Windows PowerShell 5.1 turns the remote `ssh` build chatter on stderr into a terminating `NativeCommandError` and kills the deploy mid-upload (observed 2026-08-04; no release directory was created and the `current` symlink was left untouched, so it fails safe).
-- `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically and media state is owned by `useMediaOrchestrator`. `useServicesStory` was deleted with the gesture machine.
+- `TascLanding` keeps one event-gated `useGSAP` runtime. Section markup is split mechanically, media state is owned by `useMediaOrchestrator`, and Services input behavior is created through `useServicesStory` inside that same runtime.
 - Sections after a pin climb the z stack in document order on mobile (Datum `4`, Process `5`, footer `6`). A pinned section that outgrows its spacer would otherwise paint over whatever scrolled up under it.
-- Domino media failure releases the lock and settles the story as complete rather than retrying: the reader gets the form, not a frozen frame. The reverse Domino video is never armed, so it is neither downloaded nor decoded.
-- Domino readiness is now transport-only: a ready media event cannot start playback by itself. Forward playback requires a real forward pin entry at the scene boundary; backward entry warms media and never claims the reader.
 - Process rows have one sequential reveal owner with a bounded watchdog fail-open path. The old per-row `ScrollTrigger.batch` is not used, so rows and their internal copy cannot compete for reveal ownership.
 - Clients-to-Services backdrop opacity is synchronized directly from the bidirectional handoff progress. The Clients flare and gradient leave before Services copy, while the star stage remains visible through the handoff in both directions.
 - Packed alpha Services playback respects its authored `maxFps` when handling `requestVideoFrameCallback`, avoiding redundant WebGL texture uploads while preserving the video transport and motion.
+- An active Services story survives ScrollTrigger refresh/profile changes; refresh recomputes and corrects the lock coordinate instead of releasing ownership.
+- Domino transport failure exits through the normal direction-aware boundary path. Forward failure exposes the form, reverse failure returns toward Process, and both paths release Lenis/document input.
+- T14 replaces progress-driven Services/How/Datum behavior with discrete stages. Domino is one pinned `video -> title -> form` scene and replays without a session-wide played-once flag.
+- `MediaPriorityQueue` serializes startup preparation and enforces at most one playing decoder on mobile and two on desktop. Mobile uses the packed 1280x360 H.264 transport / 640x360 alpha output and CSS starfields instead of WebGL.
 
 ## Client Review Pass Decisions (2026-08-03)
 
@@ -118,3 +110,10 @@
 - `pnpm qa:t8:static` and `pnpm qa:t12` passed.
 - Stable `next start` QA passed in Chromium 1440x900 and WebKit mobile 390x844: footer-to-Domino small upward movement stayed `ready`/unpinned; forward boundary reached `complete`; Process rows revealed 01 through 05; Clients flare reached opacity 0 while Services stars remained visible in both handoff directions; no page errors or console errors were observed.
 - Existing `qa:t12:browser` still asserts the retired one-viewport Services pin and reports that stale geometry contract. Existing `qa:t6` asserts a removed Domino preflight machine, and `qa:t7:static` references the removed `useMobilePortionedScroll`; these scripts need contract refresh before they can be used as release gates.
+
+## T14 Verification (2026-08-07)
+
+- T14 production build, typecheck, lint, 8/8 lead tests, 20/20 media contracts, and diff checks pass.
+- The final three-profile browser matrix passed 28 Chromium desktop, 28 Android Chromium, and 16 WebKit checks with zero console/media errors; ordinary 200 px input moved 140 px.
+- Post-review desktop evidence additionally passes direct header `#work` navigation with zero visible Services panels, fixed story `scrollY`, momentum-burst isolation, two Domino forward/reverse cycles, and a 62.95 px title/form gap.
+- See `docs/t14-verification-2026-08-07.md`; synthetic Android/WebKit evidence is not physical-device acceptance.

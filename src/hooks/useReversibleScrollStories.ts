@@ -1,515 +1,792 @@
 "use client";
-import { type RefObject } from "react";
+
+import { useEffect, useRef, type RefObject } from "react";
+import type Lenis from "lenis";
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { DOMINO_DURATION } from "@/data/runtime-media";
+import {
+    getMotionStoryController,
+    type MotionStoryDirection,
+    type MotionStoryEntry,
+    type MotionStoryRegistration,
+} from "@/lib/motion-story-controller";
 import { scheduleScrollTriggerRefresh } from "@/lib/scroll-trigger-refresh";
-import { acquireScrollLock, type ScrollLockHandle } from "@/lib/scroll-lock";
-import { revealTime } from "@/lib/tasc-motion-timings";
 
 gsap.registerPlugin(ScrollTrigger, useGSAP);
 
 export type ReversibleScrollStoriesOptions = {
     rootRef: RefObject<HTMLElement | null>;
     dominoVideoRef: RefObject<HTMLVideoElement | null>;
+    dominoReverseVideoRef: RefObject<HTMLVideoElement | null>;
+    lenisRef: RefObject<Lenis | null>;
     transportKey?: string;
+    onForwardCompletedOnce?: () => void;
     enabled: boolean;
     story: "how" | "domino";
 };
 
-const clamp01 = gsap.utils.clamp(0, 1);
 const DOMINO_PLAYBACK_RATE = 1.25;
-/*
-  The Domino frame is held for a little over a viewport of scrolling. That is
-  long enough for the sequence to finish under the lock and still leave the
-  reader inside the pinned band when it lets go, so the release never reads as
-  a jump.
-*/
-const DOMINO_PIN_TRAVEL_PX = () => {
-    const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-    return Math.round(Math.min(1400, Math.max(620, viewportHeight * 1.15)));
-};
-/*
-  How we work stays pinned - the owner asked to keep the fixation - but the
-  three steps are now plain scrub. The band is a little over two viewports so
-  each step gets real reading distance instead of being stepped through by a
-  gesture threshold.
-*/
-const HOW_PIN_TRAVEL = (compact: boolean, lowPower: boolean) => {
-    const viewportHeight = Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-    return Math.round(viewportHeight * (lowPower ? 1.8 : compact ? 2.2 : 2.05));
+const DOMINO_DECODE_FAILURE_MS = 8000;
+
+const viewportHeight = () => Math.max(1, window.visualViewport?.height ?? window.innerHeight);
+
+const isEditableTarget = (target: EventTarget | null) =>
+    target instanceof Element &&
+    Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
+
+const entersRange = (
+    direction: MotionStoryDirection,
+    scrollY: number,
+    deltaY: number,
+    start: number,
+    end: number,
+    corridor: number,
+) => {
+    const predicted = scrollY + deltaY;
+    return direction > 0
+        ? scrollY <= start + corridor && predicted >= start - corridor
+        : scrollY >= end - corridor && predicted <= end + corridor;
 };
 
-export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportKey = "default", enabled, story, }: ReversibleScrollStoriesOptions) {
+const tweenPromise = (build: (resolve: () => void) => gsap.core.Timeline) =>
+    new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+            if (settled)
+                return;
+            settled = true;
+            resolve();
+        };
+        const timeline = build(finish);
+        timeline.eventCallback("onInterrupt", finish);
+    });
+
+export function useReversibleScrollStories({
+    rootRef,
+    dominoVideoRef,
+    dominoReverseVideoRef,
+    lenisRef,
+    transportKey = "default",
+    onForwardCompletedOnce,
+    enabled,
+    story,
+}: ReversibleScrollStoriesOptions) {
+    const onForwardCompletedRef = useRef(onForwardCompletedOnce);
+
+    useEffect(() => {
+        onForwardCompletedRef.current = onForwardCompletedOnce;
+    }, [onForwardCompletedOnce]);
+
     useGSAP(() => {
         const root = rootRef.current;
         if (!root || !enabled)
             return;
-        const compact = window.matchMedia("(max-width: 760px)").matches;
-        const lowPower = root.dataset.mobilePerformance === "true";
-        const getViewportHeight = () => Math.max(1, window.visualViewport?.height ?? window.innerHeight);
-        const cleanup: Array<() => void> = [];
+        const controller = getMotionStoryController(root, () => lenisRef.current);
 
-        const howSection = root.querySelector<HTMLElement>(".how-work-motion-section");
-        const howInner = howSection?.querySelector<HTMLElement>(".how-work-motion-inner");
-        const howNumbers = howSection
-            ? Array.from(howSection.querySelectorAll<HTMLElement>(".how-work-step-number"))
-            : [];
-        const howCopies = howSection
-            ? Array.from(howSection.querySelectorAll<HTMLElement>(".how-work-step-copy"))
-            : [];
-        const howCopyItems = howCopies.map((copy) => Array.from(copy.querySelectorAll<HTMLElement>("h3, p")));
-        if (story === "how" && howSection && howInner && howNumbers.length === 3 && howCopies.length === 3) {
-            const inactiveNumber = { scale: 0.67, autoAlpha: 0.62, color: "rgba(119, 177, 244, 0.7)" };
-            const activeNumber = { scale: 1, autoAlpha: 1, color: "#badaff" };
-            const howStops = [0.02, 0.4, 0.78] as const;
-            const howCopyTransition = revealTime(0.16);
-            const howItemTransition = revealTime(0.17);
-            const howItemStagger = revealTime(0.03);
-            const hiddenCopyPose = { x: -34, y: 0, autoAlpha: 0 };
-            const activeCopyPose = { x: 0, y: 0, autoAlpha: 1 };
-            const exitingCopyPose = { x: 30, y: -10, autoAlpha: 0 };
-            const enteringCopyPose = { x: -30, y: 10, autoAlpha: 0 };
-            gsap.set(howInner, { y: 54, autoAlpha: 0 });
-            gsap.set(howCopies, hiddenCopyPose);
-            gsap.set(howCopyItems.flat(), { x: -12, y: 0, autoAlpha: 1 });
-            gsap.set(howCopies[0], activeCopyPose);
-            gsap.set(howCopyItems[0], { x: 0, y: 0, autoAlpha: 1 });
-            gsap.set(howNumbers, inactiveNumber);
-            gsap.set(howNumbers[0], activeNumber);
+        if (story === "how") {
+            const section = root.querySelector<HTMLElement>(".how-work-motion-section");
+            const inner = section?.querySelector<HTMLElement>(".how-work-motion-inner");
+            const numbers = section
+                ? Array.from(section.querySelectorAll<HTMLElement>(".how-work-step-number"))
+                : [];
+            const copies = section
+                ? Array.from(section.querySelectorAll<HTMLElement>(".how-work-step-copy"))
+                : [];
+            if (!section || !inner || numbers.length !== 3 || copies.length !== 3)
+                return;
 
-            const howEntrance = gsap.fromTo(howInner, { y: 54, autoAlpha: 0 }, {
-                y: 0,
-                autoAlpha: 1,
-                ease: "none",
-                immediateRender: false,
-                scrollTrigger: {
-                    id: "how-work-entrance",
-                    trigger: howSection,
-                    start: "top 78%",
-                    end: "top 18%",
-                    scrub: lowPower ? 0.28 : 0.36,
-                    refreshPriority: 25,
-                    invalidateOnRefresh: true,
-                },
-            });
-            /*
-              No input owner, no step tween, no scroll writes. The reader moves
-              the page and the steps follow; the only thing the pin does is hold
-              the frame still while they read.
-            */
-            const howTimeline = gsap.timeline({
-                defaults: { ease: "none" },
-                scrollTrigger: {
-                    id: "how-work-reversible",
-                    trigger: howSection,
-                    start: "top top",
-                    end: () => `+=${HOW_PIN_TRAVEL(compact, lowPower)}`,
-                    pin: true,
-                    scrub: true,
-                    anticipatePin: 1,
-                    refreshPriority: 20,
-                    invalidateOnRefresh: true,
-                    onToggle: (self) => {
-                        if (self.isActive)
-                            root.dataset.howWorkPinned = "true";
-                        else
-                            delete root.dataset.howWorkPinned;
-                    },
-                    onUpdate: (self) => {
-                        root.dataset.howWorkProgress = self.progress.toFixed(3);
-                        const step = howStops.reduce((current, stop, index) => (self.progress >= stop ? index : current), 0);
-                        root.dataset.howWorkStep = String(step + 1);
-                    },
-                },
-            });
-            howTimeline
-                .to({}, { duration: 1 }, 0)
-                // Keep the copy handoffs almost sequential. The former 0.11-wide
-                // overlap put two headings and two paragraphs on the same pixels,
-                // which read as blurred ghost text at ordinary wheel stops.
-                .to(howCopies[0], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.075)
-                .to(howNumbers[0], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
-                .to(howNumbers[1], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
-                .fromTo(howCopies[1], enteringCopyPose, {
-                ...activeCopyPose,
-                duration: howCopyTransition,
-                ease: "sine.inOut",
-                immediateRender: false,
-            }, 0.225)
-                .fromTo(howCopyItems[1], { x: -12, y: 0 }, {
-                x: 0,
-                y: 0,
-                duration: howItemTransition,
-                stagger: howItemStagger,
-                ease: "sine.out",
-                immediateRender: false,
-            }, 0.23)
-                .to(howCopies[1], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.455)
-                .to(howNumbers[1], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
-                .to(howNumbers[2], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
-                .fromTo(howCopies[2], enteringCopyPose, {
-                ...activeCopyPose,
-                duration: howCopyTransition,
-                ease: "sine.inOut",
-                immediateRender: false,
-            }, 0.605)
-                .fromTo(howCopyItems[2], { x: -12, y: 0 }, {
-                x: 0,
-                y: 0,
-                duration: howItemTransition,
-                stagger: howItemStagger,
-                ease: "sine.out",
-                immediateRender: false,
-            }, 0.61)
-                .addLabel("step-01", howStops[0])
-                .addLabel("step-02", howStops[1])
-                .addLabel("step-03", howStops[2])
-                .addLabel("story-end", 1);
-            cleanup.push(() => {
-                howEntrance.scrollTrigger?.kill();
-                howEntrance.kill();
-                howTimeline.scrollTrigger?.kill();
-                howTimeline.kill();
-                delete root.dataset.howWorkProgress;
-                delete root.dataset.howWorkStep;
-                delete root.dataset.howWorkPinned;
-            });
-        }
-
-        const dominoSection = root.querySelector<HTMLElement>(".domino-cta-section");
-        const dominoScene = dominoSection?.querySelector<HTMLElement>(".domino-scene");
-        const dominoMedia = dominoSection?.querySelector<HTMLElement>(".domino-media");
-        const dominoTitle = dominoSection?.querySelector<HTMLElement>(".domino-video-title");
-        const dominoVideo = dominoVideoRef.current;
-        if (story === "domino" && dominoSection && dominoScene && dominoMedia && dominoVideo) {
-            const isCompactDomino = () => window.innerWidth <= 760;
-            const setScaleX = gsap.quickSetter(dominoMedia, "scaleX");
-            const setScaleY = gsap.quickSetter(dominoMedia, "scaleY");
-            const setTitleOpacity = dominoTitle ? gsap.quickSetter(dominoTitle, "opacity") : null;
-            const setTitleY = dominoTitle ? gsap.quickSetter(dominoTitle, "y", "px") : null;
+            const inactiveNumber = {
+                autoAlpha: 0.62,
+                color: "rgba(119, 177, 244, 0.7)",
+                scale: 0.67,
+            };
+            const activeNumber = { autoAlpha: 1, color: "#badaff", scale: 1 };
             let disposed = false;
-            let played = false;
-            let playing = false;
-            let monitorFrame = 0;
-            let lock: ScrollLockHandle | null = null;
-            let readinessTrigger: ScrollTrigger | null = null;
-            let pinTrigger: ScrollTrigger | null = null;
-            let forwardEntryRequested = false;
-            let removeReadinessListeners = () => { };
+            let currentStep = 0;
+            let stepTimeline: gsap.core.Timeline | null = null;
+            let trigger: ScrollTrigger | null = null;
+            let registration: MotionStoryRegistration | null = null;
 
-            const getDuration = () => {
-                const mediaDuration = dominoVideo.duration;
-                const duration = Number.isFinite(mediaDuration) && mediaDuration > 0
-                    ? Math.min(DOMINO_DURATION, mediaDuration)
-                    : DOMINO_DURATION;
-                return Math.max(0.1, duration - 0.035);
-            };
-            const syncVisualState = (time: number) => {
-                const progress = clamp01(time / getDuration());
-                const compactDomino = isCompactDomino();
-                const scale = compactDomino
-                    ? 1
-                    : progress < 0.35
-                        ? 1.08 - (0.08 * progress) / 0.35
-                        : 1 + 0.032 * ((progress - 0.35) / 0.65);
-                setScaleX(scale);
-                setScaleY(scale);
-                const titleOpacity = clamp01((progress - 0.22) / 0.08);
-                const titleTravel = compactDomino
-                    ? Math.min(getViewportHeight() * 0.42, dominoScene.getBoundingClientRect().height * 0.36)
-                    : Math.max(getViewportHeight() * 0.24, getViewportHeight() * 0.5 - Math.max(84, getViewportHeight() * 0.095));
-                setTitleOpacity?.(titleOpacity);
-                setTitleY?.(-titleTravel * clamp01((progress - 0.28) / 0.62));
-                root.dataset.dominoProgress = progress.toFixed(3);
-            };
-            const releaseLock = () => {
-                lock?.release();
-                lock = null;
-            };
-            /*
-              One exit from playback, whatever caused it: the frame monitor
-              reaching the end, the media erroring, the tab going away, or the
-              lock's own deadline expiring. The scroll always comes back.
-            */
-            const finishPlayback = (reason: string) => {
-                if (!playing)
-                    return;
-                playing = false;
-                played = true;
-                window.cancelAnimationFrame(monitorFrame);
-                monitorFrame = 0;
-                dominoVideo.pause();
-                dominoVideo.dataset.dominoActive = "true";
-                dominoVideo.dataset.segmentState = "ready";
-                releaseLock();
-                root.dataset.dominoPlayback = "complete";
-                root.dataset.dominoRelease = reason;
-                syncVisualState(getDuration());
-            };
-            const monitorPlayback = () => {
-                window.cancelAnimationFrame(monitorFrame);
-                const inspect = () => {
-                    if (disposed || !playing)
-                        return;
-                    if (!lock?.isHeld()) {
-                        // The safety deadline fired. Let the reader go and stop
-                        // pretending the sequence is still driving the page.
-                        finishPlayback("lock-expired");
-                        return;
-                    }
-                    if (dominoVideo.error) {
-                        root.dataset.dominoMediaFailure = "playback-error";
-                        finishPlayback("media-error");
-                        return;
-                    }
-                    const duration = getDuration();
-                    const time = Math.max(0, dominoVideo.currentTime);
-                    syncVisualState(time);
-                    if (dominoVideo.ended || time >= duration - 1 / 45) {
-                        finishPlayback("ended");
-                        return;
-                    }
-                    monitorFrame = window.requestAnimationFrame(inspect);
-                };
-                monitorFrame = window.requestAnimationFrame(inspect);
-            };
-            const startPlayback = () => {
-                if (disposed || played || playing)
-                    return;
-                if (dominoVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-                    // No decoded frame yet: leave the reader alone rather than
-                    // freezing them in front of a poster.
-                    root.dataset.dominoPlayback = "waiting-media";
-                    dominoVideo.dataset.dominoActive = "true";
-                    dominoVideo.dataset.segmentState = "ready";
-                    return;
-                }
-                playing = true;
-                lock = acquireScrollLock("domino");
-                root.dataset.dominoPlayback = "forward";
-                delete root.dataset.dominoRelease;
-                dominoVideo.dataset.dominoActive = "true";
-                dominoVideo.dataset.segmentState = "playing";
-                dominoVideo.playbackRate = DOMINO_PLAYBACK_RATE;
-                dominoVideo.defaultPlaybackRate = DOMINO_PLAYBACK_RATE;
-                try {
-                    if (Math.abs(dominoVideo.currentTime) > 1 / 60)
-                        dominoVideo.currentTime = 0;
-                }
-                catch {
-                    // Seeking before metadata settles throws on some builds; the
-                    // element is already at zero in that case.
-                }
-                syncVisualState(0);
-                void dominoVideo.play().catch(() => {
-                    root.dataset.dominoMediaFailure = "play-rejected";
-                    finishPlayback("play-rejected");
+            const renderStep = (step: number) => {
+                currentStep = Math.max(0, Math.min(2, step));
+                copies.forEach((copy, index) => {
+                    gsap.set(copy, index === currentStep
+                        ? { autoAlpha: 1, x: 0, pointerEvents: "auto" }
+                        : { autoAlpha: 0, x: -28, pointerEvents: "none" });
                 });
-                monitorPlayback();
+                numbers.forEach((number, index) => {
+                    gsap.set(number, index === currentStep ? activeNumber : inactiveNumber);
+                });
+                root.dataset.howWorkStep = String(currentStep + 1);
             };
-            const isAtDominoPinBoundary = () => {
-                if (!pinTrigger?.isActive)
-                    return false;
-                // ScrollTrigger's anticipatePin can report the band active a
-                // few pixels early. Do not spend the one-shot playback before
-                // the reader has actually crossed the authored top boundary.
-                if (window.scrollY + 1 < pinTrigger.start)
-                    return false;
-                const sceneTop = dominoScene.getBoundingClientRect().top;
-                const boundaryTolerance = Math.max(10, getViewportHeight() * 0.018);
-                return Math.abs(sceneTop) <= boundaryTolerance;
+
+            const animateStep = (nextStep: number, direction: MotionStoryDirection) => {
+                const target = Math.max(0, Math.min(2, nextStep));
+                if (target === currentStep)
+                    return Promise.resolve();
+                stepTimeline?.kill();
+                const outgoing = copies[currentStep];
+                const incoming = copies[target];
+                const outgoingNumber = numbers[currentStep];
+                const incomingNumber = numbers[target];
+                const travel = direction > 0 ? -26 : 26;
+                root.dataset.howWorkTransitioning = "true";
+                return tweenPromise((resolve) => {
+                    stepTimeline = gsap.timeline({
+                        defaults: { overwrite: "auto" },
+                        onComplete: () => {
+                            currentStep = target;
+                            root.dataset.howWorkStep = String(target + 1);
+                            delete root.dataset.howWorkTransitioning;
+                            stepTimeline = null;
+                            resolve();
+                        },
+                    });
+                    stepTimeline
+                        .to(outgoing, {
+                            autoAlpha: 0,
+                            duration: 0.32,
+                            ease: "sine.inOut",
+                            pointerEvents: "none",
+                            x: travel,
+                        }, 0)
+                        .to(outgoingNumber, { ...inactiveNumber, duration: 0.38, ease: "sine.inOut" }, 0.03)
+                        .set(incoming, { autoAlpha: 0, pointerEvents: "auto", x: -travel }, 0.12)
+                        .to(incoming, { autoAlpha: 1, duration: 0.5, ease: "power3.out", x: 0 }, 0.14)
+                        .to(incomingNumber, { ...activeNumber, duration: 0.44, ease: "sine.inOut" }, 0.14);
+                    return stepTimeline;
+                });
             };
-            const requestForwardPlayback = () => {
-                if (disposed || played || playing || !pinTrigger?.isActive ||
-                    pinTrigger.direction < 0 || !isAtDominoPinBoundary()) {
+
+            gsap.set(inner, { autoAlpha: 0, y: 40 });
+            renderStep(0);
+
+            registration = controller.register({
+                id: "how",
+                priority: 80,
+                stageCount: 3,
+                getLockY: () => {
+                    if (!trigger)
+                        return window.scrollY;
+                    return currentStep === 2 && window.scrollY > trigger.start
+                        ? Math.min(trigger.end - 1, window.scrollY)
+                        : trigger.start + 1;
+                },
+                canEnter: (gesture) => {
+                    if (!trigger || disposed || gesture.direction === 0 || isEditableTarget(gesture.event.target))
+                        return false;
+                    const corridor = Math.min(220, Math.max(72, gesture.viewportHeight * 0.2));
+                    if (!entersRange(
+                        gesture.direction,
+                        gesture.scrollY,
+                        gesture.deltaY,
+                        trigger.start,
+                        trigger.end,
+                        corridor,
+                    )) {
+                        return false;
+                    }
+                    return {
+                        direction: gesture.direction,
+                        lockY: gesture.direction > 0 ? trigger.start + 1 : trigger.end - 1,
+                        stage: gesture.direction > 0 ? 0 : 2,
+                    };
+                },
+                onEnter: async ({ stage }) => {
+                    currentStep = stage;
+                    renderStep(stage);
+                    root.dataset.howWorkPinned = "true";
+                    await tweenPromise((resolve) => gsap.timeline({ onComplete: resolve })
+                        .to(inner, { autoAlpha: 1, duration: 0.46, ease: "power3.out", y: 0 }));
+                },
+                onIntent: async ({ direction, stage }) => {
+                    const next = stage + direction;
+                    if (next < 0) {
+                        return {
+                            release: true,
+                            releaseTo: () => Math.max(0, (trigger?.start ?? window.scrollY) - 2),
+                            stage: 0,
+                        };
+                    }
+                    if (next > 2) {
+                        return {
+                            release: true,
+                            releaseTo: () => (trigger?.end ?? window.scrollY) + 2,
+                            stage: 2,
+                        };
+                    }
+                    await animateStep(next, direction);
+                    return { stage: next };
+                },
+                onRelease: () => {
+                    root.dataset.howWorkPinned = "false";
+                    delete root.dataset.howWorkTransitioning;
+                },
+            });
+
+            const enter = (direction: MotionStoryDirection, lockY: number) => {
+                if (controller.currentState !== "idle" || registration?.isActive())
                     return;
-                }
-                forwardEntryRequested = true;
-                startPlayback();
+                const entry: MotionStoryEntry = {
+                    direction,
+                    lockY,
+                    stage: direction > 0 ? 0 : 2,
+                };
+                void registration?.enter(entry);
             };
 
-            const warmDominoMedia = () => {
-                removeReadinessListeners();
-                root.dataset.dominoQuarterReady = "warming";
-                let settled = false;
-                let fallbackTimer: number | undefined;
-                const hasFrame = () => dominoVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-                const markReady = () => {
-                    if (settled || disposed || !hasFrame())
-                        return;
-                    settled = true;
-                    removeReadinessListeners();
-                    root.dataset.dominoQuarterReady = "true";
-                    // Readiness only warms media. Playback is allowed to begin
-                    // after a real forward pin entry requested it; otherwise a
-                    // tiny upward scroll from the footer can steal the reader.
-                    if (forwardEntryRequested)
-                        requestForwardPlayback();
-                };
-                const markFallback = () => {
-                    if (settled || disposed)
-                        return;
-                    if (hasFrame()) {
-                        markReady();
-                        return;
-                    }
-                    settled = true;
-                    removeReadinessListeners();
-                    root.dataset.dominoQuarterReady = "fallback";
-                };
-                const remove = () => {
-                    dominoVideo.removeEventListener("loadeddata", markReady);
-                    dominoVideo.removeEventListener("canplay", markReady);
-                    dominoVideo.removeEventListener("error", markFallback);
-                    if (fallbackTimer !== undefined) {
-                        window.clearTimeout(fallbackTimer);
-                        fallbackTimer = undefined;
-                    }
-                };
-                removeReadinessListeners = remove;
-                if (dominoVideo.dataset.armed === "true" &&
-                    dominoVideo.networkState === HTMLMediaElement.NETWORK_EMPTY) {
-                    dominoVideo.load();
-                }
-                if (hasFrame()) {
-                    markReady();
-                }
-                else {
-                    dominoVideo.addEventListener("loadeddata", markReady, { once: true });
-                    dominoVideo.addEventListener("canplay", markReady, { once: true });
-                    dominoVideo.addEventListener("error", markFallback, { once: true });
-                    fallbackTimer = window.setTimeout(markFallback, isCompactDomino() ? 3600 : 2600);
-                }
-            };
-
-            dominoVideo.pause();
-            dominoVideo.loop = false;
-            dominoVideo.playbackRate = DOMINO_PLAYBACK_RATE;
-            dominoVideo.defaultPlaybackRate = DOMINO_PLAYBACK_RATE;
-            // Keep a decoded first frame or the authored poster painted while
-            // media is only warming. Playback ownership is still gated by the
-            // real forward pin entry below.
-            dominoVideo.dataset.dominoActive = "true";
-            dominoVideo.dataset.segmentState = "ready";
-            gsap.set(dominoMedia, {
-                scaleX: isCompactDomino() ? 1 : 1.08,
-                scaleY: isCompactDomino() ? 1 : 1.08,
-                autoAlpha: 1,
-            });
-            if (dominoTitle)
-                gsap.set(dominoTitle, { y: 0, opacity: 0, visibility: "visible" });
-            syncVisualState(0);
-            root.dataset.dominoPlayback = "ready";
-
-            readinessTrigger = ScrollTrigger.create({
-                id: "domino-quarter-readiness",
-                trigger: dominoScene,
-                /*
-                  Phones reach this section far faster than the sequence
-                  downloads, which is what left a black frame under the copy.
-                  Warm the media a further viewport out on compact screens.
-                */
-                start: () => `top ${Math.round(getViewportHeight() * (isCompactDomino() ? 3.6 : 2.45))}px`,
-                end: "bottom top",
-                invalidateOnRefresh: true,
-                onEnter: warmDominoMedia,
-                onEnterBack: warmDominoMedia,
-            });
-            pinTrigger = ScrollTrigger.create({
-                id: "domino-reversible",
-                trigger: dominoScene,
+            trigger = ScrollTrigger.create({
+                id: "how-work-reversible",
+                trigger: section,
                 start: "top top",
-                end: () => `+=${DOMINO_PIN_TRAVEL_PX()}`,
+                end: () => `+=${Math.round(viewportHeight() * 0.9)}`,
                 pin: true,
                 pinSpacing: true,
                 anticipatePin: 1,
-                refreshPriority: 5,
+                refreshPriority: 20,
                 invalidateOnRefresh: true,
-                onToggle: (self) => {
-                    root.dataset.dominoPinned = String(self.isActive);
-                },
-                /*
-                  Forward entry is the only thing that starts the sequence, and
-                  only once. Coming back up leaves the settled last frame alone -
-                  a reader climbing out of the brief is not asking to watch the
-                  dominoes fall backwards.
-                */
-                onEnter: (self) => {
-                    if (self.direction > 0 && isAtDominoPinBoundary())
-                        requestForwardPlayback();
-                },
-                onEnterBack: () => {
-                    forwardEntryRequested = false;
-                    warmDominoMedia();
-                },
-                onLeave: () => {
-                    forwardEntryRequested = false;
-                },
-                onLeaveBack: () => {
-                    forwardEntryRequested = false;
-                    if (playing)
-                        finishPlayback("left-band");
+                onRefresh: (self) => {
+                    if (registration?.isActive())
+                        registration.updateLock(currentStep === 2 ? self.end - 1 : self.start + 1);
                 },
             });
 
-            const handleVisibility = () => {
-                if (!playing)
-                    return;
-                if (document.hidden) {
-                    finishPlayback("document-hidden");
-                    return;
-                }
+            root.dataset.howWorkProgress = "discrete";
+            const handlePositionApplied = () => {
+                if (root.dataset.programmaticAnchor === "#work" && trigger)
+                    enter(1, trigger.start + 1);
             };
-            document.addEventListener("visibilitychange", handleVisibility);
-            const handlePageHide = () => finishPlayback("page-hide");
-            window.addEventListener("pagehide", handlePageHide);
-            const cancelDomino = () => finishPlayback("external-release");
-            window.addEventListener("tasc:release-directional-domino", cancelDomino);
-
-            cleanup.push(() => {
+            window.addEventListener("tasc:scroll-position-applied", handlePositionApplied);
+            scheduleScrollTriggerRefresh(0);
+            return () => {
                 disposed = true;
-                window.cancelAnimationFrame(monitorFrame);
-                monitorFrame = 0;
-                releaseLock();
-                removeReadinessListeners();
-                readinessTrigger?.kill();
-                pinTrigger?.kill();
-                document.removeEventListener("visibilitychange", handleVisibility);
-                window.removeEventListener("pagehide", handlePageHide);
-                window.removeEventListener("tasc:release-directional-domino", cancelDomino);
-                dominoVideo.pause();
-                delete dominoVideo.dataset.dominoActive;
-                delete dominoVideo.dataset.segmentState;
-                delete root.dataset.dominoPlayback;
-                delete root.dataset.dominoProgress;
-                delete root.dataset.dominoQuarterReady;
-                delete root.dataset.dominoPinned;
-                delete root.dataset.dominoRelease;
-                delete root.dataset.dominoMediaFailure;
-            });
+                stepTimeline?.kill();
+                trigger?.kill();
+                registration?.unregister();
+                window.removeEventListener("tasc:scroll-position-applied", handlePositionApplied);
+                delete root.dataset.howWorkPinned;
+                delete root.dataset.howWorkProgress;
+                delete root.dataset.howWorkStep;
+                delete root.dataset.howWorkTransitioning;
+            };
         }
 
-        let viewportWidth = window.innerWidth;
-        let viewportPortrait = window.innerHeight >= window.innerWidth;
-        const refreshForRealViewportChange = () => {
-            const nextWidth = window.innerWidth;
-            const nextPortrait = window.innerHeight >= window.innerWidth;
-            const meaningfulChange = Math.abs(nextWidth - viewportWidth) > 24 || nextPortrait !== viewportPortrait;
-            if (!meaningfulChange)
-                return;
-            viewportWidth = nextWidth;
-            viewportPortrait = nextPortrait;
-            scheduleScrollTriggerRefresh();
+        const section = root.querySelector<HTMLElement>(".domino-cta-section");
+        const scene = section?.querySelector<HTMLElement>(".domino-scene");
+        const media = section?.querySelector<HTMLElement>(".domino-media");
+        const title = section?.querySelector<HTMLElement>(".domino-video-title");
+        const formStage = section?.querySelector<HTMLElement>(".domino-form-stage");
+        const formItems = formStage
+            ? Array.from(formStage.querySelectorAll<HTMLElement>(
+                ".domino-body, .domino-impulse-row, .domino-privacy-row, .lead-form-status",
+            ))
+            : [];
+        const forwardVideo = dominoVideoRef.current;
+        const reverseVideo = dominoReverseVideoRef.current;
+        if (!section || !scene || !media || !formStage || !forwardVideo || !reverseVideo)
+            return;
+
+        const videos = [forwardVideo, reverseVideo] as const;
+        let disposed = false;
+        let cancelDecodeWait: (() => void) | null = null;
+        let cancelPlaybackWait: (() => void) | null = null;
+        let operationToken = 0;
+        let playbackFrame = 0;
+        let playbackToken = 0;
+        let sceneTimeline: gsap.core.Timeline | null = null;
+        let sceneTimelineResolve: (() => void) | null = null;
+        let trigger: ScrollTrigger | null = null;
+        let readinessTrigger: ScrollTrigger | null = null;
+        let registration: MotionStoryRegistration | null = null;
+        let sceneState: "start" | "form" = "start";
+
+        const setSceneState = (state: "loading" | "video" | "title" | "form" | "error") => {
+            root.dataset.dominoSceneState = state;
+            section.dataset.dominoSceneState = state;
+            if (state === "loading")
+                root.dataset.dominoLoading = "true";
+            else
+                delete root.dataset.dominoLoading;
         };
-        window.addEventListener("orientationchange", refreshForRealViewportChange, { passive: true });
-        window.visualViewport?.addEventListener("resize", refreshForRealViewportChange, { passive: true });
+
+        const stopPlayback = () => {
+            playbackToken += 1;
+            window.cancelAnimationFrame(playbackFrame);
+            playbackFrame = 0;
+            videos.forEach((video) => video.pause());
+            setVideoActive(null);
+            const cancel = cancelPlaybackWait;
+            cancelPlaybackWait = null;
+            cancel?.();
+            const cancelDecode = cancelDecodeWait;
+            cancelDecodeWait = null;
+            cancelDecode?.();
+        };
+
+        const setVideoActive = (active: HTMLVideoElement | null) => {
+            videos.forEach((video) => {
+                const selected = video === active;
+                video.dataset.dominoActive = String(selected);
+                video.dataset.segmentState = selected ? "playing" : "idle";
+            });
+            root.dataset.activeVideoDecoder = active ? `domino-${active.dataset.dominoDirection}` : "none";
+            root.dataset.backgroundMotionPaused = active ? "true" : "false";
+        };
+
+        const waitForDecodedFrame = (video: HTMLVideoElement) => new Promise<boolean>((resolve) => {
+            if (video.error) {
+                resolve(false);
+                return;
+            }
+            if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                resolve(true);
+                return;
+            }
+            setSceneState("loading");
+            let settled = false;
+            const finish = (ready: boolean) => {
+                if (settled)
+                    return;
+                settled = true;
+                window.clearTimeout(failureTimer);
+                video.removeEventListener("loadeddata", readyHandler);
+                video.removeEventListener("canplay", readyHandler);
+                video.removeEventListener("error", errorHandler);
+                if (cancelDecodeWait === cancel)
+                    cancelDecodeWait = null;
+                resolve(ready && !disposed);
+            };
+            const cancel = () => finish(false);
+            const readyHandler = () => {
+                if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA)
+                    finish(true);
+            };
+            const errorHandler = () => finish(false);
+            const failureTimer = window.setTimeout(() => {
+                root.dataset.dominoMediaFailure = "decode-timeout";
+                finish(false);
+            }, DOMINO_DECODE_FAILURE_MS);
+            video.addEventListener("loadeddata", readyHandler);
+            video.addEventListener("canplay", readyHandler);
+            video.addEventListener("error", errorHandler);
+            cancelDecodeWait = cancel;
+            if (video.dataset.armed === "true" && video.networkState === HTMLMediaElement.NETWORK_EMPTY)
+                video.load();
+        });
+
+        const renderPlaybackFrame = (video: HTMLVideoElement, direction: MotionStoryDirection) => {
+            const duration = Number.isFinite(video.duration) && video.duration > 0
+                ? video.duration
+                : DOMINO_DURATION;
+            const progress = Math.max(0, Math.min(1, video.currentTime / Math.max(0.1, duration)));
+            const logicalProgress = direction > 0 ? progress : 1 - progress;
+            root.dataset.dominoProgress = logicalProgress.toFixed(3);
+            if (title) {
+                const titleProgress = Math.max(0, Math.min(1, (logicalProgress - 0.2) / 0.22));
+                gsap.set(title, {
+                    autoAlpha: titleProgress,
+                    y: -Math.round(viewportHeight() * 0.18 * Math.max(0, logicalProgress - 0.36)),
+                });
+            }
+            gsap.set(media, { scale: window.innerWidth <= 760 ? 1 : 1.06 - logicalProgress * 0.04 });
+        };
+
+        const playDirection = async (direction: MotionStoryDirection, operation: number) => {
+            const video = direction > 0 ? forwardVideo : reverseVideo;
+            stopPlayback();
+            const token = ++playbackToken;
+            const ready = await waitForDecodedFrame(video);
+            if (operation !== operationToken || token !== playbackToken || disposed)
+                return false;
+            if (!ready || video.error) {
+                root.dataset.dominoMediaFailure = video.error ? `media-${video.error.code}` : "decode-timeout";
+                setVideoActive(null);
+                return false;
+            }
+            setSceneState("video");
+            setVideoActive(video);
+            gsap.set(media, { autoAlpha: 1 });
+            if (title)
+                gsap.set(title, { autoAlpha: direction > 0 ? 0 : 1, y: direction > 0 ? 0 : -viewportHeight() * 0.18 });
+            if (video.currentTime > 0.045 || video.ended) {
+                try {
+                    video.currentTime = 0.001;
+                }
+                catch {
+                }
+            }
+            video.loop = false;
+            video.muted = true;
+            video.playsInline = true;
+            video.playbackRate = DOMINO_PLAYBACK_RATE;
+            try {
+                await video.play();
+            }
+            catch {
+                root.dataset.dominoMediaFailure = "play-error";
+                setVideoActive(null);
+                return false;
+            }
+            if (operation !== operationToken || token !== playbackToken || disposed) {
+                video.pause();
+                setVideoActive(null);
+                return false;
+            }
+            return new Promise<boolean>((resolve) => {
+                let settled = false;
+                let playbackTimeout = 0;
+                const duration = Number.isFinite(video.duration) && video.duration > 0
+                    ? video.duration
+                    : DOMINO_DURATION;
+                const finish = (success: boolean) => {
+                    if (settled)
+                        return;
+                    settled = true;
+                    window.cancelAnimationFrame(playbackFrame);
+                    window.clearTimeout(playbackTimeout);
+                    playbackFrame = 0;
+                    video.removeEventListener("ended", handleEnded);
+                    video.removeEventListener("error", handleError);
+                    video.pause();
+                    if (success) {
+                        // Keep the decoded terminal frame painted until the scene
+                        // transition has fully covered it. Decoder work is already
+                        // stopped, so telemetry/background motion can resume now.
+                        video.dataset.dominoActive = "true";
+                        video.dataset.segmentState = "ready";
+                        root.dataset.activeVideoDecoder = "none";
+                        root.dataset.backgroundMotionPaused = "false";
+                    }
+                    else {
+                        video.dataset.segmentState = "fallback";
+                        setVideoActive(null);
+                    }
+                    if (cancelPlaybackWait === cancel)
+                        cancelPlaybackWait = null;
+                    resolve(success && token === playbackToken && !disposed);
+                };
+                const cancel = () => finish(false);
+                const handleEnded = () => finish(true);
+                const handleError = () => {
+                    root.dataset.dominoMediaFailure = video.error
+                        ? `media-${video.error.code}`
+                        : "media-error";
+                    finish(false);
+                };
+                const inspect = () => {
+                    if (disposed || token !== playbackToken) {
+                        finish(false);
+                        return;
+                    }
+                    renderPlaybackFrame(video, direction);
+                    if (video.error) {
+                        root.dataset.dominoMediaFailure = `media-${video.error.code}`;
+                        finish(false);
+                        return;
+                    }
+                    if (video.ended || video.currentTime >= duration - 1 / 30) {
+                        finish(true);
+                        return;
+                    }
+                    playbackFrame = window.requestAnimationFrame(inspect);
+                };
+                cancelPlaybackWait = cancel;
+                video.addEventListener("ended", handleEnded, { once: true });
+                video.addEventListener("error", handleError, { once: true });
+                playbackTimeout = window.setTimeout(() => {
+                    root.dataset.dominoMediaFailure = "playback-timeout";
+                    finish(false);
+                }, Math.max(8000, duration / DOMINO_PLAYBACK_RATE * 1000 + 2500));
+                playbackFrame = window.requestAnimationFrame(inspect);
+            });
+        };
+
+        const stopSceneTransition = () => {
+            sceneTimeline?.kill();
+            sceneTimeline = null;
+            const resolve = sceneTimelineResolve;
+            sceneTimelineResolve = null;
+            resolve?.();
+        };
+
+        const runSceneTransition = (build: (complete: () => void) => gsap.core.Timeline) =>
+            new Promise<void>((resolve) => {
+                stopSceneTransition();
+                let settled = false;
+                const complete = () => {
+                    if (settled)
+                        return;
+                    settled = true;
+                    sceneTimeline = null;
+                    sceneTimelineResolve = null;
+                    resolve();
+                };
+                sceneTimelineResolve = complete;
+                sceneTimeline = build(complete);
+            });
+
+        const showForm = async (operation: number, failed = false) => {
+            const titleLift = viewportHeight() * 0.29;
+            sceneState = "form";
+            setSceneState(failed ? "error" : "title");
+            root.dataset.dominoPlayback = "complete";
+            gsap.set(formStage, { pointerEvents: "none" });
+            await runSceneTransition((resolve) => gsap.timeline({ onComplete: resolve })
+                .to(media, { autoAlpha: 0, duration: 0.34, ease: "power2.inOut" }, 0)
+                .to(title ?? [], { autoAlpha: 1, duration: 0.3, ease: "power2.out", y: -titleLift }, 0.04)
+                .to(formStage, { autoAlpha: 1, duration: 0.42, ease: "power3.out" }, 0.18)
+                .to(formItems, { autoAlpha: 1, duration: 0.42, ease: "power3.out", stagger: 0.055, y: 0 }, 0.22));
+            if (operation !== operationToken || disposed)
+                return false;
+            setVideoActive(null);
+            gsap.set(formStage, { pointerEvents: "auto" });
+            setSceneState(failed ? "error" : "form");
+            return true;
+        };
+
+        const hideForm = async (operation: number) => {
+            sceneState = "start";
+            gsap.set(formStage, { pointerEvents: "none" });
+            await runSceneTransition((resolve) => gsap.timeline({ onComplete: resolve })
+                .to(formItems, { autoAlpha: 0, duration: 0.2, ease: "power2.in", stagger: 0.02, y: 20 }, 0)
+                .to(formStage, { autoAlpha: 0, duration: 0.25, ease: "power2.inOut" }, 0.08)
+                .to(media, { autoAlpha: 1, duration: 0.24 }, 0.14));
+            return operation === operationToken && !disposed;
+        };
+
+        const playForward = async () => {
+            const operation = ++operationToken;
+            if (!await hideForm(operation))
+                return false;
+            root.dataset.dominoPlayback = "forward";
+            delete root.dataset.dominoMediaFailure;
+            const success = await playDirection(1, operation);
+            if (operation !== operationToken || disposed)
+                return false;
+            if (!success && !root.dataset.dominoMediaFailure)
+                return false;
+            if (!await showForm(operation, !success))
+                return false;
+            onForwardCompletedRef.current?.();
+            return true;
+        };
+
+        const playReverse = async () => {
+            const operation = ++operationToken;
+            if (!await hideForm(operation))
+                return false;
+            root.dataset.dominoPlayback = "reverse";
+            delete root.dataset.dominoMediaFailure;
+            const success = await playDirection(-1, operation);
+            if (operation !== operationToken || disposed)
+                return false;
+            if (!success) {
+                if (!root.dataset.dominoMediaFailure)
+                    return false;
+                await showForm(operation, true);
+                return false;
+            }
+            sceneState = "start";
+            root.dataset.dominoPlayback = "start";
+            setSceneState("video");
+            gsap.set(media, { autoAlpha: 1 });
+            if (title)
+                gsap.set(title, { autoAlpha: 0, y: 0 });
+            return true;
+        };
+
+        gsap.set(media, { autoAlpha: 1, scale: window.innerWidth <= 760 ? 1 : 1.06 });
+        gsap.set(title ?? [], { autoAlpha: 0, y: 0 });
+        gsap.set(formStage, { autoAlpha: 0, pointerEvents: "none" });
+        gsap.set(formItems, { autoAlpha: 0, y: 24 });
+        root.dataset.dominoPlayback = "ready";
+        setSceneState("video");
+        videos.forEach((video) => {
+            video.pause();
+            video.loop = false;
+            video.playbackRate = DOMINO_PLAYBACK_RATE;
+            video.dataset.dominoActive = "false";
+            video.dataset.segmentState = "idle";
+        });
+
+        registration = controller.register({
+            id: "domino",
+            priority: 70,
+            stageCount: 2,
+            getLockY: () => sceneState === "form"
+                ? (trigger?.start ?? window.scrollY) + 1
+                : window.scrollY,
+            canEnter: (gesture) => {
+                if (!trigger || disposed || gesture.direction === 0 || isEditableTarget(gesture.event.target))
+                    return false;
+                const corridor = Math.min(240, Math.max(90, gesture.viewportHeight * 0.24));
+                if (!entersRange(
+                    gesture.direction,
+                    gesture.scrollY,
+                    gesture.deltaY,
+                    trigger.start,
+                    trigger.end,
+                    corridor,
+                )) {
+                    return false;
+                }
+                return {
+                    direction: gesture.direction,
+                    lockY: gesture.direction > 0 ? trigger.start + 1 : trigger.end - 1,
+                    stage: gesture.direction > 0 ? 0 : 1,
+                };
+            },
+            onEnter: async ({ direction }) => {
+                if (direction > 0) {
+                    await playForward();
+                    return { stage: 1 };
+                }
+                const success = await playReverse();
+                return success
+                    ? {
+                        release: true,
+                        releaseTo: () => Math.max(0, (trigger?.start ?? window.scrollY) - 2),
+                        stage: 0,
+                    }
+                    : { stage: 1 };
+            },
+            onIntent: async ({ direction, stage }) => {
+                if (stage === 1 && direction < 0) {
+                    const success = await playReverse();
+                    return success
+                        ? {
+                            release: true,
+                            releaseTo: () => Math.max(0, (trigger?.start ?? window.scrollY) - 2),
+                            stage: 0,
+                        }
+                        : { stage: 1 };
+                }
+                if (stage === 1 && direction > 0) {
+                    return {
+                        release: true,
+                        releaseTo: () => (trigger?.end ?? window.scrollY) + 2,
+                        stage: 1,
+                    };
+                }
+                await playForward();
+                return { stage: 1 };
+            },
+            onRelease: (_context, reason) => {
+                if (reason !== "completed") {
+                    operationToken += 1;
+                    stopSceneTransition();
+                    stopPlayback();
+                    sceneState = "start";
+                    root.dataset.dominoPlayback = "ready";
+                    setSceneState("video");
+                }
+                else if (sceneState === "start") {
+                    window.requestAnimationFrame(() => {
+                        if (!disposed && !registration?.isActive())
+                            setVideoActive(null);
+                    });
+                }
+                delete root.dataset.dominoPinned;
+            },
+        });
+
+        const enter = (direction: MotionStoryDirection, lockY: number) => {
+            if (controller.currentState !== "idle" || registration?.isActive())
+                return;
+            void registration?.enter({
+                direction,
+                lockY,
+                stage: direction > 0 ? 0 : 1,
+            });
+        };
+
+        trigger = ScrollTrigger.create({
+            id: "domino-reversible",
+            trigger: scene,
+            start: "top top",
+            end: () => `+=${Math.round(Math.min(620, Math.max(320, viewportHeight() * 0.55)))}`,
+            pin: true,
+            pinSpacing: true,
+            anticipatePin: 1,
+            refreshPriority: 5,
+            invalidateOnRefresh: true,
+            onToggle: (self) => {
+                root.dataset.dominoPinned = String(self.isActive || registration?.isActive());
+            },
+            onRefresh: (self) => {
+                if (registration?.isActive())
+                    registration.updateLock(sceneState === "form" ? self.start + 1 : window.scrollY);
+            },
+        });
+
+        const warmMedia = () => {
+            videos.forEach((video) => {
+                if (video.dataset.armed === "true" &&
+                    video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA &&
+                    video.networkState === HTMLMediaElement.NETWORK_EMPTY) {
+                    video.load();
+                }
+            });
+        };
+        readinessTrigger = ScrollTrigger.create({
+            id: "domino-quarter-readiness",
+            trigger: scene,
+            start: () => `top ${Math.round(viewportHeight() * 2)}px`,
+            end: "bottom top",
+            invalidateOnRefresh: true,
+            onEnter: warmMedia,
+            onEnterBack: warmMedia,
+        });
+
+        const cancelForNavigation = () => {
+            if (registration?.isActive())
+                void registration.release("superseded");
+        };
+        const handlePositionApplied = () => {
+            if (root.dataset.programmaticAnchor === "#brief" && trigger)
+                enter(1, trigger.start + 1);
+        };
+        const handleVisibility = (event: Event) => {
+            if (event.type !== "pagehide" && !document.hidden)
+                return;
+            operationToken += 1;
+            stopSceneTransition();
+            stopPlayback();
+            if (registration?.isActive())
+                void registration.release("superseded");
+        };
+        window.addEventListener("tasc:release-directional-domino", cancelForNavigation);
+        window.addEventListener("tasc:scroll-position-applied", handlePositionApplied);
+        document.addEventListener("visibilitychange", handleVisibility);
+        window.addEventListener("pagehide", handleVisibility);
         scheduleScrollTriggerRefresh(0);
+
         return () => {
-            window.removeEventListener("orientationchange", refreshForRealViewportChange);
-            window.visualViewport?.removeEventListener("resize", refreshForRealViewportChange);
-            cleanup.reverse().forEach((dispose) => dispose());
+            disposed = true;
+            operationToken += 1;
+            stopSceneTransition();
+            stopPlayback();
+            trigger?.kill();
+            readinessTrigger?.kill();
+            registration?.unregister();
+            window.removeEventListener("tasc:release-directional-domino", cancelForNavigation);
+            window.removeEventListener("tasc:scroll-position-applied", handlePositionApplied);
+            document.removeEventListener("visibilitychange", handleVisibility);
+            window.removeEventListener("pagehide", handleVisibility);
+            videos.forEach((video) => {
+                delete video.dataset.dominoActive;
+                delete video.dataset.segmentState;
+            });
+            delete root.dataset.activeVideoDecoder;
+            delete root.dataset.backgroundMotionPaused;
+            delete root.dataset.dominoLoading;
+            delete root.dataset.dominoMediaFailure;
+            delete root.dataset.dominoPinned;
+            delete root.dataset.dominoPlayback;
+            delete root.dataset.dominoProgress;
+            delete root.dataset.dominoSceneState;
         };
     }, {
         scope: rootRef,

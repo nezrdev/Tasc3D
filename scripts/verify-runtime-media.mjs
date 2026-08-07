@@ -61,6 +61,53 @@ function runFfprobe(filePath, args) {
         throw new Error(`ffprobe returned invalid JSON: ${error.message}`);
     }
 }
+function probeAlphaPlane(filePath, sampleFrame) {
+    const result = spawnSync("ffmpeg", [
+        "-hide_banner",
+        "-loglevel",
+        "info",
+        "-c:v",
+        "libvpx-vp9",
+        "-i",
+        filePath,
+        "-vf",
+        `select='eq(n,${sampleFrame})',alphaextract,signalstats,metadata=print`,
+        "-frames:v",
+        "1",
+        "-f",
+        "null",
+        "-",
+    ], {
+        cwd: projectRoot,
+        encoding: "utf8",
+        maxBuffer: 64 * 1024 * 1024,
+        windowsHide: true,
+    });
+    if (result.error?.code === "ENOENT") {
+        throw new Error("ffmpeg was not found. Install FFmpeg and make ffmpeg available on PATH.");
+    }
+    if (result.error) {
+        throw result.error;
+    }
+    if (result.status !== 0) {
+        throw new Error(result.stderr.trim() || `ffmpeg exited with code ${result.status}`);
+    }
+    const output = `${result.stdout}\n${result.stderr}`;
+    const readMetric = (name) => {
+        const match = output.match(new RegExp(`lavfi\\.signalstats\\.${name}=([0-9.]+)`));
+        return match ? Number(match[1]) : Number.NaN;
+    };
+    const alpha = {
+        sampleFrame,
+        min: readMetric("YMIN"),
+        average: readMetric("YAVG"),
+        max: readMetric("YMAX"),
+    };
+    if (![alpha.min, alpha.average, alpha.max].every(Number.isFinite)) {
+        throw new Error(`could not inspect the decoded alpha plane at frame ${sampleFrame}`);
+    }
+    return alpha;
+}
 function probeSummary(filePath) {
     const json = runFfprobe(filePath, [
         "-v",
@@ -201,8 +248,8 @@ function createManifest(media) {
             label: "Services native alpha desktop",
             url: media.services.nativeAlpha.desktop,
             codec: "vp9",
-            width: media.services.webkitPacked.desktopOutput.width,
-            height: media.services.webkitPacked.desktopOutput.height,
+            width: media.services.nativeAlpha.desktopOutput.width,
+            height: media.services.nativeAlpha.desktopOutput.height,
             fps: media.services.fps,
             frameCount: media.services.frameCount,
             duration: serviceDuration,
@@ -213,8 +260,8 @@ function createManifest(media) {
             label: "Services native alpha mobile",
             url: media.services.nativeAlpha.mobile,
             codec: "vp9",
-            width: media.services.webkitPacked.mobileOutput.width,
-            height: media.services.webkitPacked.mobileOutput.height,
+            width: media.services.nativeAlpha.mobileOutput.width,
+            height: media.services.nativeAlpha.mobileOutput.height,
             fps: media.services.fps,
             frameCount: media.services.frameCount,
             duration: serviceDuration,
@@ -308,8 +355,22 @@ function verifyAsset(asset) {
     if (Math.abs(summary.duration - asset.duration) > DURATION_TOLERANCE_SECONDS) {
         failures.push(`duration: expected ${asset.duration.toFixed(6)}s +/- ${DURATION_TOLERANCE_SECONDS}s, received ${summary.duration.toFixed(6)}s`);
     }
-    if (asset.alphaMode !== undefined)
+    let alphaPlane;
+    if (asset.alphaMode !== undefined) {
         equal("alpha_mode tag", summary.alphaMode, asset.alphaMode);
+        try {
+            alphaPlane = probeAlphaPlane(filePath, Math.floor(asset.frameCount / 4));
+            if (alphaPlane.min >= alphaPlane.max) {
+                failures.push(`decoded alpha plane is flat at frame ${alphaPlane.sampleFrame}: ${alphaPlane.min}`);
+            }
+            if (alphaPlane.min > 0 || alphaPlane.max < 255) {
+                failures.push(`decoded alpha range: expected 0..255, received ${alphaPlane.min}..${alphaPlane.max}`);
+            }
+        }
+        catch (error) {
+            failures.push(error.message);
+        }
+    }
     if (asset.hasBFrames !== undefined)
         equal("has_b_frames", summary.hasBFrames, asset.hasBFrames);
     equal("audio stream count", summary.audioStreamCount, 0);
@@ -342,7 +403,7 @@ function verifyAsset(asset) {
             failures.push(error.message);
         }
     }
-    return { ...asset, failures, summary, frameDetails };
+    return { ...asset, failures, summary, frameDetails, alphaPlane };
 }
 function verifyStaticCompanions(media) {
     const urls = [
@@ -350,8 +411,39 @@ function verifyStaticCompanions(media) {
         media.services.poster,
         ...media.services.stopPosters,
         media.datum.poster,
+        media.domino.poster,
     ];
     return urls.filter((url) => !existsSync(publicUrlToFile(url)));
+}
+function verifyDominoPoster(media) {
+    const filePath = publicUrlToFile(media.domino.poster);
+    if (!existsSync(filePath)) {
+        return [`file does not exist: ${filePath}`];
+    }
+    try {
+        const json = runFfprobe(filePath, [
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=codec_name,width,height",
+            "-of",
+            "json",
+        ]);
+        const stream = json.streams?.[0];
+        const failures = [];
+        if (stream?.codec_name !== "webp")
+            failures.push(`codec: expected webp, received ${stream?.codec_name}`);
+        if (Number(stream?.width) !== media.domino.posterOutput.width)
+            failures.push(`width: expected ${media.domino.posterOutput.width}, received ${stream?.width}`);
+        if (Number(stream?.height) !== media.domino.posterOutput.height)
+            failures.push(`height: expected ${media.domino.posterOutput.height}, received ${stream?.height}`);
+        return failures;
+    }
+    catch (error) {
+        return [error.message];
+    }
 }
 function main() {
     let media;
@@ -381,7 +473,10 @@ function main() {
         const frameSuffix = result.frameDetails
             ? `, ${result.frameDetails.keyframeCount} keyframes, max GOP ${result.frameDetails.maxKeyframeInterval}`
             : "";
-        console.log(`[PASS] ${result.label}: ${result.summary.width}x${result.summary.height}, ${result.summary.fps}fps, ${result.summary.frameCount}f, ${result.summary.duration.toFixed(3)}s${frameSuffix}`);
+        const alphaSuffix = result.alphaPlane
+            ? `, alpha ${result.alphaPlane.min}..${result.alphaPlane.max}`
+            : "";
+        console.log(`[PASS] ${result.label}: ${result.summary.width}x${result.summary.height}, ${result.summary.fps}fps, ${result.summary.frameCount}f, ${result.summary.duration.toFixed(3)}s${frameSuffix}${alphaSuffix}`);
     }
     const missingStaticCompanions = verifyStaticCompanions(media);
     if (missingStaticCompanions.length === 0) {
@@ -390,6 +485,14 @@ function main() {
     else {
         console.log("[FAIL] Missing runtime poster files:");
         missingStaticCompanions.forEach((url) => console.log(`       - ${url}`));
+    }
+    const dominoPosterFailures = verifyDominoPoster(media);
+    if (dominoPosterFailures.length === 0) {
+        console.log(`[PASS] Domino poster: ${media.domino.posterOutput.width}x${media.domino.posterOutput.height} WebP.`);
+    }
+    else {
+        console.log(`[FAIL] Domino poster contract (${media.domino.poster}):`);
+        dominoPosterFailures.forEach((failure) => console.log(`       - ${failure}`));
     }
     if (unverifiedUrls.length > 0) {
         console.log("[FAIL] runtime-media.ts contains video paths absent from the verifier manifest:");
@@ -400,7 +503,7 @@ function main() {
         staleManifestUrls.forEach((url) => console.log(`       - ${url}`));
     }
     const failedAssets = results.filter((result) => result.failures.length > 0).length;
-    const contractFailures = missingStaticCompanions.length + unverifiedUrls.length + staleManifestUrls.length;
+    const contractFailures = missingStaticCompanions.length + dominoPosterFailures.length + unverifiedUrls.length + staleManifestUrls.length;
     console.log("");
     if (failedAssets === 0 && contractFailures === 0) {
         console.log(`[PASS] ${results.length}/${results.length} runtime videos match the replacement contract.`);

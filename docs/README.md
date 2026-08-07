@@ -11,3 +11,4 @@ This folder is working memory and verification evidence for the TASC 3D site. It
 - `t9-verification-2026-08-02.md` records the behavior-preserving landing decomposition.
 - `t10-verification-2026-08-02.md` records delivery cleanup, payload reduction, and the final T10 journey.
 - `t11-verification-2026-08-02.md` is the final software verification matrix, evidence index, and external Safari/deployment boundary.
+- `t14-verification-2026-08-07.md` records the discrete story controller, mobile media budget, and final Chromium/WebKit evidence.

@@ -39,6 +39,7 @@ New review items:
 - T9: section extraction, media reducer orchestration, Services story extraction, and visual media memoization are implemented and locally verified without behavior drift.
 - T10: dead-code/media cleanup, font subsetting, local map delivery, stable metadata, and final T10 journey are implemented and locally verified.
 - T11: final software gate, Services refresh/source-swap regression, Domino fail-open, first-visit consent/navigation, performance matrix, and handoff evidence are implemented and locally verified.
+- T14: one Lenis owner, discrete Services/How/Datum stories, repeatable bidirectional Domino, sequential media preparation, mobile decoder/WebGL budgets, header/Clients/Process regressions, and focused Chromium/WebKit QA are implemented and locally verified.
 - Client review pass two (2026-08-03): Hero/Vision pin travel cut again, Clients to
   Services backdrop handover moved onto the scrub timeline, mobile Services alpha
   source replaced, reverse Services entry frame fixed, mobile Services frame refit to
@@ -47,8 +48,8 @@ New review items:
 
 ## Remaining Goal Scope
 
-- No remaining local software implementation scope.
-- Review and merge the stacked draft PRs only after explicit approval.
+- No remaining T14 local software implementation scope after two independent frontend reviews.
+- Commit as `netherdef`, push to `main`, deploy production, and run one live smoke are authorized by this request.
 
 ## Carried Performance Findings
 
@@ -59,7 +60,7 @@ New review items:
 ## External Boundary
 
 - Do not mark production/Safari complete until real physical Safari acceptance evidence exists.
-- Do not deploy or merge without explicit approval.
+- T14 deployment approval was given on 2026-08-07; do not extend that approval to unrelated changes.
 - Validate the approved build on physical iPhone Safari/Chrome, Android Chrome, and macOS Safari using `t5-physical-safari-acceptance.md`.
 - After an approved deployment, verify that Nginx emits one immutable media cache policy and rerun the live range/header check.
 - Verify real PostgreSQL persistence only in an authorized staging/production environment.
