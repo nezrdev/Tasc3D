@@ -48,8 +48,8 @@ New review items:
 
 ## Remaining Goal Scope
 
-- No remaining T14 local software implementation scope after two independent frontend reviews.
-- T14 application commits `ad83f15` and `5df474e` are on `main`; production release `20260807-064628` and its live smoke are complete.
+- The T15 client-directed motion hotfix is implemented and independently reviewed locally: sub-3-second curtain, symmetric Clients reveals, continuously animated Galaxy on mobile/desktop, atomic gap-free story handoffs in both directions, upgraded Android Hero/Services transports, stable Process entrance, and poster-free Domino/form/footer flow.
+- Production rollout and the user-owned physical Nothing Phone (3a) acceptance are the remaining gates for T15.
 
 ## Carried Performance Findings
 

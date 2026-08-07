@@ -63,8 +63,8 @@ const inEntryCorridor = (
     const corridor = Math.min(220, Math.max(72, viewportHeight * 0.2));
     const predicted = scrollY + deltaY;
     if (direction > 0)
-        return scrollY <= range.start + corridor && predicted >= range.start - corridor;
-    return scrollY >= range.end - corridor && predicted <= range.end + corridor;
+        return scrollY >= range.start - corridor && scrollY <= range.start + corridor && predicted >= range.start - corridor;
+    return scrollY >= range.end - corridor && scrollY <= range.end + corridor && predicted <= range.end + corridor;
 };
 
 /**

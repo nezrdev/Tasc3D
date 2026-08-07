@@ -28,13 +28,13 @@
 @media (max-width: 760px) {
   .site-shell .services-story-section .services-story-video-wrap {
     /* frame width as a multiple of the section width */
-    --svc-frame: 1.58;
+    --svc-frame: 1.38;
     /* per-stop scale, relative to --svc-frame */
-    --svc-scale: 0.8684;
+    --svc-scale: 1;
     /* per-stop horizontal shift, share of the frame width */
-    --svc-shift: -12.59%;
+    --svc-shift: 0%;
     /* the frame bottom sits flush with the section bottom, never above it */
-    --svc-drop: -1vw;
+    --svc-drop: 0px;
 
     position: absolute !important;
     inset: auto auto var(--svc-drop) 50% !important;
@@ -45,11 +45,7 @@
 
     transform: translateX(calc(-50% + var(--svc-shift))) scale(var(--svc-scale)) !important;
     transform-origin: 50% 100% !important;
-    transition:
-      transform 560ms cubic-bezier(0.33, 0, 0.2, 1),
-      bottom 560ms cubic-bezier(0.33, 0, 0.2, 1),
-      opacity 320ms ease,
-      visibility 320ms ease !important;
+    transition: opacity 240ms ease, visibility 240ms ease !important;
 
     /* nothing here may paint a rectangle behind the alpha video */
     background: none !important;
@@ -62,19 +58,19 @@
   }
 
   .site-shell[data-services-active="1"] .services-story-section .services-story-video-wrap {
-    --svc-scale: 0.8684;
-    --svc-shift: -12.59%;
+    --svc-scale: 1;
+    --svc-shift: 0%;
   }
 
   .site-shell[data-services-active="2"] .services-story-section .services-story-video-wrap {
-    --svc-scale: 0.8063;
-    --svc-shift: 8.63%;
+    --svc-scale: 1;
+    --svc-shift: 0%;
   }
 
   .site-shell[data-services-active="3"] .services-story-section .services-story-video-wrap {
-    --svc-scale: 0.9494;
-    --svc-shift: -18.23%;
-    --svc-drop: -3.5vw;
+    --svc-scale: 1;
+    --svc-shift: 0%;
+    --svc-drop: 0px;
   }
 
   /* the frame maps 1:1 onto the wrap — never crop, never blend */

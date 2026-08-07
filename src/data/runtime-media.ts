@@ -9,28 +9,28 @@ export const RUNTIME_MEDIA = {
         // smaller download.
         nativeAlpha: {
             desktop: "/media/hero-earth-alpha-720-60fps-t2-20260804.webm",
-            mobile: "/media/hero-earth-alpha-480-30fps-mobile-20260722.webm",
+            mobile: "/media/hero-earth-alpha-640-60fps-t1-20260731.webm",
             desktopOutput: { width: 720, height: 720 },
-            mobileOutput: { width: 480, height: 480 },
+            mobileOutput: { width: 640, height: 640 },
         },
         webkitPacked: {
             desktop: "/media/hero-earth-safari-packed-720-60fps-t2-20260804.mp4",
-            mobile: "/media/hero-earth-safari-packed-480-30fps-mobile-20260722.mp4",
+            mobile: "/media/hero-earth-safari-packed-640-60fps-t1-20260731.mp4",
             desktopOutput: { width: 720, height: 720 },
-            mobileOutput: { width: 480, height: 480 },
+            mobileOutput: { width: 640, height: 640 },
         },
         poster: "/media/hero-earth-poster-1080-20260715.webp",
-        fps: { desktop: 60, mobile: 30 },
-        frameCount: { desktop: 1200, mobile: 600 },
+        fps: { desktop: 60, mobile: 60 },
+        frameCount: { desktop: 1200, mobile: 1200 },
         duration: 20,
         keyframeContract: {
             nativeAlpha: {
                 desktop: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 0 },
-                mobile: { keyframeCount: 20, maxGopFrames: 30, hasBFrames: 0 },
+                mobile: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 0 },
             },
             webkitPacked: {
                 desktop: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 2 },
-                mobile: { keyframeCount: 20, maxGopFrames: 30, hasBFrames: 2 },
+                mobile: { keyframeCount: 10, maxGopFrames: 120, hasBFrames: 2 },
             },
         },
     },
@@ -42,16 +42,16 @@ export const RUNTIME_MEDIA = {
             // Services frame on an opaque black rectangle instead of the starfield.
             // Re-derived from the desktop alpha master with the libvpx decoder
             // forced so that FFmpeg preserves the real alpha plane.
-            mobile: "/media/services-keyframes-mobile-alpha-640-gop15-20260807.webm",
+            mobile: "/media/services-keyframes-mobile-alpha-960-20260803.webm",
             desktopOutput: { width: 1280, height: 720 },
-            mobileOutput: { width: 640, height: 360 },
+            mobileOutput: { width: 960, height: 540 },
         },
         webkitPacked: {
             desktop: "/media/services-keyframes-packed-1280-gop15-t4-20260801.mp4",
-            mobile: "/media/services-keyframes-packed-1280x360-gop15-20260807.mp4",
+            mobile: "/media/services-keyframes-packed-960-gop15-t4-20260801.mp4",
             desktopOutput: { width: 1280, height: 720 },
-            // The transport is 1280x360: 640px colour + 640px alpha mask.
-            mobileOutput: { width: 640, height: 360 },
+            // The transport is 1920x540: 960px colour + 960px alpha mask.
+            mobileOutput: { width: 960, height: 540 },
         },
         poster: "/media/services-frame-0-poster-final-20260718.webp",
         stopPosters: [

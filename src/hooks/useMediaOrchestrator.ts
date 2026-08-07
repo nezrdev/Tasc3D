@@ -178,17 +178,19 @@ const mediaReducer = (
           });
     case "hero/configured": {
       if (action.mode === "video") {
+        const sameMode = state.heroVideoEligible && !state.heroFallbackAnimationEligible;
         return patchState(state, {
           heroFallbackAnimationEligible: false,
           heroFallbackAnimationReady: false,
           heroVideoEligible: true,
-          heroVideoState: "pending",
+          heroVideoState: sameMode ? state.heroVideoState : "pending",
         });
       }
       if (action.mode === "animated-fallback") {
+        const sameMode = state.heroFallbackAnimationEligible && !state.heroVideoEligible;
         return patchState(state, {
           heroFallbackAnimationEligible: true,
-          heroFallbackAnimationReady: false,
+          heroFallbackAnimationReady: sameMode ? state.heroFallbackAnimationReady : false,
           heroVideoEligible: false,
           heroVideoState: "fallback",
         });

@@ -46,8 +46,8 @@ const entersRange = (
 ) => {
     const predicted = scrollY + deltaY;
     return direction > 0
-        ? scrollY <= start + corridor && predicted >= start - corridor
-        : scrollY >= end - corridor && predicted <= end + corridor;
+        ? scrollY >= start - corridor && scrollY <= start + corridor && predicted >= start - corridor
+        : scrollY >= end - corridor && scrollY <= end + corridor && predicted <= end + corridor;
 };
 
 const tweenPromise = (build: (resolve: () => void) => gsap.core.Timeline) =>
@@ -197,6 +197,8 @@ export function useReversibleScrollStories({
                 onEnter: async ({ stage }) => {
                     currentStep = stage;
                     renderStep(stage);
+                    root.dataset.servicesBypassed = "true";
+                    delete root.dataset.howWorkBypassed;
                     root.dataset.howWorkPinned = "true";
                     await tweenPromise((resolve) => gsap.timeline({ onComplete: resolve })
                         .to(inner, { autoAlpha: 1, duration: 0.46, ease: "power3.out", y: 0 }));
@@ -241,9 +243,9 @@ export function useReversibleScrollStories({
                 id: "how-work-reversible",
                 trigger: section,
                 start: "top top",
-                end: () => `+=${Math.round(viewportHeight() * 0.9)}`,
+                end: () => `+=${Math.round(viewportHeight())}`,
                 pin: true,
-                pinSpacing: true,
+                pinSpacing: false,
                 anticipatePin: 1,
                 refreshPriority: 20,
                 invalidateOnRefresh: true,
@@ -258,7 +260,22 @@ export function useReversibleScrollStories({
                 if (root.dataset.programmaticAnchor === "#work" && trigger)
                     enter(1, trigger.start + 1);
             };
+            const handleStoryHandoff = (event: Event) => {
+                if (!trigger)
+                    return;
+                const detail = (event as CustomEvent<{
+                    direction?: MotionStoryDirection;
+                    from?: string;
+                }>).detail;
+                if (detail?.from === "services" && detail.direction === 1) {
+                    enter(1, trigger.start + 1);
+                }
+                else if (detail?.from === "datum" && detail.direction === -1) {
+                    enter(-1, trigger.end - 1);
+                }
+            };
             window.addEventListener("tasc:scroll-position-applied", handlePositionApplied);
+            window.addEventListener("tasc:motion-story-handoff", handleStoryHandoff);
             scheduleScrollTriggerRefresh(0);
             return () => {
                 disposed = true;
@@ -266,6 +283,7 @@ export function useReversibleScrollStories({
                 trigger?.kill();
                 registration?.unregister();
                 window.removeEventListener("tasc:scroll-position-applied", handlePositionApplied);
+                window.removeEventListener("tasc:motion-story-handoff", handleStoryHandoff);
                 delete root.dataset.howWorkPinned;
                 delete root.dataset.howWorkProgress;
                 delete root.dataset.howWorkStep;
@@ -301,6 +319,7 @@ export function useReversibleScrollStories({
         let readinessTrigger: ScrollTrigger | null = null;
         let registration: MotionStoryRegistration | null = null;
         let sceneState: "start" | "form" = "start";
+        let passThroughDirection: MotionStoryDirection | 0 = 0;
 
         const setSceneState = (state: "loading" | "video" | "title" | "form" | "error") => {
             root.dataset.dominoSceneState = state;
@@ -332,7 +351,6 @@ export function useReversibleScrollStories({
                 video.dataset.segmentState = selected ? "playing" : "idle";
             });
             root.dataset.activeVideoDecoder = active ? `domino-${active.dataset.dominoDirection}` : "none";
-            root.dataset.backgroundMotionPaused = active ? "true" : "false";
         };
 
         const waitForDecodedFrame = (video: HTMLVideoElement) => new Promise<boolean>((resolve) => {
@@ -457,7 +475,6 @@ export function useReversibleScrollStories({
                         video.dataset.dominoActive = "true";
                         video.dataset.segmentState = "ready";
                         root.dataset.activeVideoDecoder = "none";
-                        root.dataset.backgroundMotionPaused = "false";
                     }
                     else {
                         video.dataset.segmentState = "fallback";
@@ -534,13 +551,11 @@ export function useReversibleScrollStories({
             root.dataset.dominoPlayback = "complete";
             gsap.set(formStage, { pointerEvents: "none" });
             await runSceneTransition((resolve) => gsap.timeline({ onComplete: resolve })
-                .to(media, { autoAlpha: 0, duration: 0.34, ease: "power2.inOut" }, 0)
                 .to(title ?? [], { autoAlpha: 1, duration: 0.3, ease: "power2.out", y: -titleLift }, 0.04)
                 .to(formStage, { autoAlpha: 1, duration: 0.42, ease: "power3.out" }, 0.18)
                 .to(formItems, { autoAlpha: 1, duration: 0.42, ease: "power3.out", stagger: 0.055, y: 0 }, 0.22));
             if (operation !== operationToken || disposed)
                 return false;
-            setVideoActive(null);
             gsap.set(formStage, { pointerEvents: "auto" });
             setSceneState(failed ? "error" : "form");
             return true;
@@ -551,8 +566,7 @@ export function useReversibleScrollStories({
             gsap.set(formStage, { pointerEvents: "none" });
             await runSceneTransition((resolve) => gsap.timeline({ onComplete: resolve })
                 .to(formItems, { autoAlpha: 0, duration: 0.2, ease: "power2.in", stagger: 0.02, y: 20 }, 0)
-                .to(formStage, { autoAlpha: 0, duration: 0.25, ease: "power2.inOut" }, 0.08)
-                .to(media, { autoAlpha: 1, duration: 0.24 }, 0.14));
+                .to(formStage, { autoAlpha: 0, duration: 0.25, ease: "power2.inOut" }, 0.08));
             return operation === operationToken && !disposed;
         };
 
@@ -597,7 +611,7 @@ export function useReversibleScrollStories({
             return true;
         };
 
-        gsap.set(media, { autoAlpha: 1, scale: window.innerWidth <= 760 ? 1 : 1.06 });
+        gsap.set(media, { autoAlpha: 1, scale: 1 });
         gsap.set(title ?? [], { autoAlpha: 0, y: 0 });
         gsap.set(formStage, { autoAlpha: 0, pointerEvents: "none" });
         gsap.set(formItems, { autoAlpha: 0, y: 24 });
@@ -621,8 +635,16 @@ export function useReversibleScrollStories({
             canEnter: (gesture) => {
                 if (!trigger || disposed || gesture.direction === 0 || isEditableTarget(gesture.event.target))
                     return false;
+                if (passThroughDirection === gesture.direction)
+                    return false;
+                if (passThroughDirection !== 0 && passThroughDirection !== gesture.direction)
+                    passThroughDirection = 0;
                 const corridor = Math.min(240, Math.max(90, gesture.viewportHeight * 0.24));
-                if (!entersRange(
+                const returningFromForm = gesture.direction < 0 &&
+                    sceneState === "form" &&
+                    gesture.scrollY >= trigger.start - corridor &&
+                    gesture.scrollY <= trigger.end + corridor;
+                if (!returningFromForm && !entersRange(
                     gesture.direction,
                     gesture.scrollY,
                     gesture.deltaY,
@@ -634,20 +656,24 @@ export function useReversibleScrollStories({
                 }
                 return {
                     direction: gesture.direction,
-                    lockY: gesture.direction > 0 ? trigger.start + 1 : trigger.end - 1,
+                    lockY: gesture.direction > 0
+                        ? trigger.start + 1
+                        : trigger.start + 1,
                     stage: gesture.direction > 0 ? 0 : 1,
                 };
             },
             onEnter: async ({ direction }) => {
+                passThroughDirection = 0;
                 if (direction > 0) {
                     await playForward();
                     return { stage: 1 };
                 }
                 const success = await playReverse();
+                if (success)
+                    passThroughDirection = -1;
                 return success
                     ? {
                         release: true,
-                        releaseTo: () => Math.max(0, (trigger?.start ?? window.scrollY) - 2),
                         stage: 0,
                     }
                     : { stage: 1 };
@@ -655,18 +681,19 @@ export function useReversibleScrollStories({
             onIntent: async ({ direction, stage }) => {
                 if (stage === 1 && direction < 0) {
                     const success = await playReverse();
+                    if (success)
+                        passThroughDirection = -1;
                     return success
                         ? {
                             release: true,
-                            releaseTo: () => Math.max(0, (trigger?.start ?? window.scrollY) - 2),
                             stage: 0,
                         }
                         : { stage: 1 };
                 }
                 if (stage === 1 && direction > 0) {
+                    passThroughDirection = 1;
                     return {
                         release: true,
-                        releaseTo: () => (trigger?.end ?? window.scrollY) + 2,
                         stage: 1,
                     };
                 }
@@ -679,6 +706,7 @@ export function useReversibleScrollStories({
                     stopSceneTransition();
                     stopPlayback();
                     sceneState = "start";
+                    passThroughDirection = 0;
                     root.dataset.dominoPlayback = "ready";
                     setSceneState("video");
                 }
@@ -706,14 +734,22 @@ export function useReversibleScrollStories({
             id: "domino-reversible",
             trigger: scene,
             start: "top top",
-            end: () => `+=${Math.round(Math.min(620, Math.max(320, viewportHeight() * 0.55)))}`,
+            end: () => `+=${Math.round(viewportHeight())}`,
             pin: true,
-            pinSpacing: true,
+            pinSpacing: false,
             anticipatePin: 1,
             refreshPriority: 5,
             invalidateOnRefresh: true,
             onToggle: (self) => {
                 root.dataset.dominoPinned = String(self.isActive || registration?.isActive());
+            },
+            onLeave: () => {
+                if (passThroughDirection > 0)
+                    passThroughDirection = 0;
+            },
+            onLeaveBack: () => {
+                if (passThroughDirection < 0)
+                    passThroughDirection = 0;
             },
             onRefresh: (self) => {
                 if (registration?.isActive())
@@ -780,7 +816,6 @@ export function useReversibleScrollStories({
                 delete video.dataset.segmentState;
             });
             delete root.dataset.activeVideoDecoder;
-            delete root.dataset.backgroundMotionPaused;
             delete root.dataset.dominoLoading;
             delete root.dataset.dominoMediaFailure;
             delete root.dataset.dominoPinned;

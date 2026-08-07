@@ -38,6 +38,7 @@ export class MediaPriorityQueue {
     private activeVideos: HTMLVideoElement[] = [];
     private disposed = false;
     private jobs: QueuedMediaPreparationJob[] = [];
+    private loopObserver: IntersectionObserver | null = null;
     private nextOrder = 0;
     private preparationRunning = false;
     private suspendedVideos: HTMLVideoElement[] = [];
@@ -56,6 +57,19 @@ export class MediaPriorityQueue {
             .filter((video) => !video.paused && !video.ended);
         this.activeVideos = playingVideos.slice(-this.maxActiveDecoders);
         playingVideos.slice(0, -this.maxActiveDecoders).forEach((video) => video.pause());
+        if ("IntersectionObserver" in window) {
+            this.loopObserver = new IntersectionObserver((entries) => {
+                entries.forEach((entry) => {
+                    const video = entry.target;
+                    if (!(video instanceof HTMLVideoElement) || !entry.isIntersecting || !video.loop || !video.paused)
+                        return;
+                    if (this.activeVideos.filter((candidate) => !candidate.paused).length >= this.maxActiveDecoders)
+                        return;
+                    void video.play().catch(() => undefined);
+                });
+            }, { threshold: 0.08 });
+            root.querySelectorAll<HTMLVideoElement>("video[loop]").forEach((video) => this.loopObserver?.observe(video));
+        }
         this.writeDecoderState();
     }
 
@@ -95,9 +109,10 @@ export class MediaPriorityQueue {
         this.root.removeEventListener("play", this.handlePlay, true);
         this.root.removeEventListener("pause", this.handlePause, true);
         this.root.removeEventListener("ended", this.handlePause, true);
+        this.loopObserver?.disconnect();
+        this.loopObserver = null;
         delete this.root.dataset.activeDecoderCount;
         delete this.root.dataset.activeVideoDecoders;
-        delete this.root.dataset.backgroundMotionPaused;
         delete this.root.dataset.maxActiveDecoders;
         delete this.root.dataset.mediaQueue;
         delete this.root.dataset.mediaQueueActiveJob;
@@ -160,7 +175,9 @@ export class MediaPriorityQueue {
         this.root.dataset.activeVideoDecoders = active.length
             ? active.map(decoderLabel).join(",")
             : "none";
-        this.root.dataset.backgroundMotionPaused = active.length ? "true" : "false";
+        // Video decoder pressure and ambient motion are independent budgets.
+        // Stars must not freeze merely because a story video is playing.
+        delete this.root.dataset.backgroundMotionPaused;
     }
 
     private resumeVisibleLoop() {

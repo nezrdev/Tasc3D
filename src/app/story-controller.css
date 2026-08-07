@@ -1,12 +1,13 @@
 /* T14: final cascade for discrete pinned stories and mobile runtime safety. */
 
 .site-header {
+  --header-safe-top: min(env(safe-area-inset-top, 0px), 10px);
   top: 0;
   right: 0;
   left: 0;
   width: 100%;
-  height: calc(var(--header-h) + env(safe-area-inset-top));
-  padding-top: env(safe-area-inset-top);
+  height: var(--header-h);
+  padding-top: 0;
   box-sizing: border-box;
   overflow: visible;
 }
@@ -14,18 +15,18 @@
 .site-header > .site-header-glass.glass-surface {
   top: 0 !important;
   width: 100% !important;
-  height: calc(var(--header-h) + env(safe-area-inset-top)) !important;
-  padding-top: env(safe-area-inset-top);
+  height: var(--header-h) !important;
+  padding-top: var(--header-safe-top);
   box-sizing: border-box;
 }
 
 .site-header .site-header-inner {
-  height: var(--header-h);
+  height: calc(var(--header-h) - var(--header-safe-top));
 }
 
 .site-header .mobile-menu-panel {
-  top: calc(var(--header-h) + env(safe-area-inset-top));
-  max-height: calc(100dvh - var(--header-h) - env(safe-area-inset-top));
+  top: var(--header-h);
+  max-height: calc(100dvh - var(--header-h));
 }
 
 body:has(.site-shell[data-clients-inrange="true"]) .site-header::before {
@@ -42,12 +43,17 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
 
 .site-shell[data-background-motion-paused="true"] .static-starfield-fallback,
 .site-shell[data-background-motion-paused="true"] .static-starfield-services {
-  animation-play-state: paused !important;
-  will-change: auto !important;
+  animation-play-state: running !important;
 }
 
 /* A header jump can cross the Services pin without running its release gesture. */
 .site-shell[data-services-bypassed="true"] .services-story-copy-layer {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+.site-shell[data-how-work-bypassed="true"] .how-work-motion-inner {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -58,11 +64,21 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
   height: 100dvh !important;
 }
 
-.site-shell[data-mobile-performance="true"] .static-starfield-fallback,
-.site-shell[data-mobile-performance="true"] .static-starfield-services {
-  display: block !important;
-  visibility: visible !important;
-}
+  .site-shell[data-mobile-performance="true"] .static-starfield-fallback,
+  .site-shell[data-mobile-performance="true"] .static-starfield-services {
+    display: block !important;
+    visibility: visible !important;
+  }
+
+  .site-shell[data-mobile-performance="true"] .services-galaxy-stage {
+    background: transparent !important;
+  }
+
+  .site-shell[data-mobile-performance="true"]:not([data-services-galaxy-status="ready"])
+    .services-galaxy-stage .static-starfield-services {
+    opacity: 0.76 !important;
+    animation-play-state: running !important;
+  }
 
 .domino-cta-section {
   position: relative;
@@ -85,18 +101,6 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
   width: 100% !important;
   height: 100% !important;
   overflow: hidden !important;
-}
-
-.domino-cta-section .domino-poster {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  display: block;
-  background-color: #000;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: cover;
-  opacity: 1;
 }
 
 .domino-cta-section .domino-sequence {
@@ -157,6 +161,15 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
   background: transparent !important;
 }
 
+.domino-cta-section .domino-form-stage::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background: radial-gradient(circle at 50% 54%, rgba(0, 0, 0, 0.64), rgba(0, 0, 0, 0.18) 52%, transparent 78%);
+  pointer-events: none;
+}
+
 .domino-cta-section .domino-form-stage .domino-copy,
 .site-shell:has(.cookie-consent.is-compact) .domino-form-stage .domino-copy {
   position: relative !important;
@@ -171,6 +184,10 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
   margin-top: 0 !important;
 }
 
+.datum-motion-video[data-first-frame="waiting"][poster] {
+  opacity: 1 !important;
+}
+
 /* Glass stays optically static; only its authored inner content moves. */
 :is(
   .datum-glass-card,
@@ -183,34 +200,43 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
 }
 
 @media (max-width: 900px), (pointer: coarse) {
+  :root {
+    --header-h: 64px;
+  }
+
   .site-header .site-header-inner {
     width: 100% !important;
     min-width: 0;
     padding-right: max(16px, env(safe-area-inset-right));
     padding-left: max(16px, env(safe-area-inset-left));
     box-sizing: border-box;
-    grid-template-columns: minmax(98px, 122px) 1fr 44px;
-    gap: 12px;
+    grid-template-columns: minmax(96px, 110px) 1fr 40px;
+    gap: 10px;
+  }
+
+  .site-header .site-nav,
+  .site-header .header-actions {
+    display: none !important;
   }
 
   .site-header .brand-mark,
   .site-header .brand-logo {
-    width: min(116px, 30vw) !important;
+    width: min(108px, 28vw) !important;
     min-width: 0 !important;
-    max-width: 116px;
+    max-width: 108px;
   }
 
   .site-header .brand-mark {
-    min-height: 44px;
+    min-height: 40px;
     overflow: visible;
   }
 
   .site-header .mobile-menu-toggle {
     display: grid;
     grid-column: 3;
-    width: 44px !important;
-    min-width: 44px;
-    height: 44px !important;
+    width: 40px !important;
+    min-width: 40px;
+    height: 40px !important;
     margin: 0;
     place-self: center end;
     overflow: visible;
@@ -270,7 +296,12 @@ body:has(.site-shell[data-process-inrange="true"]) :is(.brand-logo, .site-nav a)
 @media (max-width: 900px) and (orientation: landscape) {
   .site-header,
   .site-header > .site-header-glass.glass-surface {
-    min-height: calc(var(--header-h) + env(safe-area-inset-top));
+    min-height: var(--header-h);
+  }
+
+  .site-header .site-nav,
+  .site-header .header-actions {
+    display: none !important;
   }
 
   .site-header .site-header-inner {

@@ -274,7 +274,8 @@ export function TascLanding() {
     const servicesLightweightMediaMode = mobilePerformanceMode || explicitConstrainedConnection;
     const servicesPackedTransportMode =
         packedH264Supported &&
-            (forcePackedTransport ||
+            (mobilePerformanceMode ||
+                forcePackedTransport ||
                 webkitCompatibilityMode ||
                 edgeAlphaCompatibilityMode ||
                 !nativeAlphaWebMSupported);
@@ -328,18 +329,16 @@ export function TascLanding() {
         const root = rootRef.current;
         if (!root)
             return;
-        root.dataset.heroStarfield = mobilePerformanceMode ? "css-starfield" : "react-bits-galaxy";
+        root.dataset.heroStarfield = "react-bits-galaxy";
         if (mobilePerformanceMode)
             root.dataset.mobilePerformance = "true";
         else
             delete root.dataset.mobilePerformance;
-        root.dataset.starfieldMode = mobilePerformanceMode
-            ? "static"
-            : !performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
-                ? "pending"
-                : motionAllowed && galaxyStatus === "ready"
-                    ? "galaxy"
-                    : "static";
+        root.dataset.starfieldMode = !performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+            ? "pending"
+            : motionAllowed && galaxyStatus === "ready"
+                ? "galaxy"
+                : "static";
     }, [galaxyStatus, mobilePerformanceMode, motionAllowed, performanceModeResolved]);
     const activateServicesMediaFallback = useCallback(() => {
         const root = rootRef.current;
@@ -418,18 +417,8 @@ export function TascLanding() {
             return;
         const queue = new MediaPriorityQueue(root, mobilePerformanceMode ? 1 : 2);
         mediaQueueRef.current = queue;
-        const syncBackgroundMotion = () => {
-            const paused = root.dataset.backgroundMotionPaused === "true";
-            primaryGalaxyRef.current?.setActive(!paused && !mobilePerformanceMode);
-        };
-        const observer = new MutationObserver(syncBackgroundMotion);
-        observer.observe(root, {
-            attributeFilter: ["data-background-motion-paused"],
-            attributes: true,
-        });
-        syncBackgroundMotion();
+        primaryGalaxyRef.current?.setActive(true);
         return () => {
-            observer.disconnect();
             queue.dispose();
             if (mediaQueueRef.current === queue)
                 mediaQueueRef.current = null;
@@ -780,7 +769,7 @@ export function TascLanding() {
         const isAppleWebView = /AppleWebKit/i.test(userAgent) &&
             !/(Safari|Chrome|Chromium|CriOS|FxiOS|Edg|OPR|Android)/i.test(userAgent);
         const isEdge = /\bEdg(?:A|iOS)?\//i.test(userAgent);
-        const needsAnimatedFallback = isSafari || isIOS || isAppleWebView || isEdge || !nativeAlphaWebMSupported;
+        const needsAnimatedFallback = mobilePerformanceMode || isSafari || isIOS || isAppleWebView || isEdge || !nativeAlphaWebMSupported;
         const useStaticHero = new URLSearchParams(window.location.search).get("staticHero") === "1";
         root?.setAttribute("data-hero-video-composite", "alpha");
         root?.setAttribute("data-hero-video-format", useStaticHero ? "static-poster" : needsAnimatedFallback ? "h264-mask-webgl" : "alpha-webm");
@@ -811,7 +800,7 @@ export function TascLanding() {
             }
         });
         return () => window.cancelAnimationFrame(stateFrame);
-    }, [constrainedConnection, mediaActions, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
+    }, [mediaActions, mobilePerformanceMode, motionAllowed, motionPreferenceResolved, nativeAlphaWebMSupported]);
     useEffect(() => {
         if (!preloaderComplete ||
             !motionAllowed ||
@@ -917,6 +906,7 @@ export function TascLanding() {
             delete root?.dataset.servicesFirstSegmentWarm;
             delete root?.dataset.servicesCompleteStoryWarm;
             delete root?.dataset.servicesStartFrameDecoded;
+            delete root?.dataset.servicesWarmupOwner;
             mediaActions.invalidateServicesPrepared();
             video.load();
         }
@@ -947,7 +937,10 @@ export function TascLanding() {
         let disposed = false;
         let firstSegmentSettled = shell.dataset.servicesFirstSegmentWarm === "true";
         let completeStorySettled = shell.dataset.servicesCompleteStoryWarm === "true";
-        let interactiveClaimed = false;
+        // This effect can re-run when media preparation state settles. Keep
+        // interactive ownership durable so a late buffer-complete callback can
+        // never seek an actively playing Services segment back to frame zero.
+        let interactiveClaimed = shell.dataset.servicesWarmupOwner === "interactive";
         let playPending = false;
         const cleanup = () => {
             media.removeEventListener("loadeddata", markDecodedStart);
@@ -3001,7 +2994,12 @@ export function TascLanding() {
             setServicesPhase("waiting");
             flushServicesPendingIntent();
         };
-        const finishServicesRelease = (target: number, previewAfter = false, previewRevealed = false) => {
+        const finishServicesRelease = (
+            target: number,
+            previewAfter = false,
+            previewRevealed = false,
+            preserveFinalStage = false,
+        ) => {
             resetServicesMediaRetry();
             servicesReleaseToken += 1;
             clientsServicesHandoff?.scrollTrigger?.enable();
@@ -3023,9 +3021,12 @@ export function TascLanding() {
             servicesPhase = "idle";
             root.dataset.servicesPhase = "idle";
             delete root.dataset.servicesPinned;
-            delete root.dataset.servicesActive;
+            if (!preserveFinalStage)
+                delete root.dataset.servicesActive;
+            else
+                root.dataset.servicesActive = String(SERVICES_KEYFRAME_STOPS.length);
             delete root.dataset.servicesSequence;
-            if (!previewAfter) {
+            if (!previewAfter && !preserveFinalStage) {
                 setServicesStaticStop(null);
                 resetServicesPanels();
             }
@@ -3033,85 +3034,26 @@ export function TascLanding() {
             if (previewAfter)
                 showServicesIdlePreview(previewRevealed);
         };
-        const releaseServicesForward = async () => {
+        const releaseServicesForward = () => {
             if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
                 return;
-            const token = ++servicesRunToken;
-            beginServicesMediaAttempt("forward:exit");
+            servicesRunToken += 1;
+            resetServicesMediaRetry();
+            if (servicesVideo)
+                mediaRunCancels.get(servicesVideo)?.();
+            stopServicesTextTimeline();
             setServicesPhase("releasing");
             resetServicesGestureTotal();
-            const exitMediaReady = root.dataset.servicesMediaFallback === "true"
-                ? false
-                : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
-            if (token !== servicesRunToken || !servicesActive || disposed)
-                return;
-            if (!exitMediaReady && root.dataset.servicesMediaFallback !== "true") {
-                if (shouldFailOpenServicesMedia(servicesVideo)) {
-                    if (servicesVideo?.error) {
-                        activateServicesMediaFallback();
-                    }
-                    else {
-                        root.dataset.servicesTransportFailure = "exit-timeout";
-                        finishServicesRelease(servicesTrigger.end + 1);
-                        return;
-                    }
-                }
-                else {
-                    if (servicesVideo)
-                        servicesVideo.dataset.segmentState = "buffering";
-                    setServicesPhase("waiting");
-                    servicesMediaRetryTimer = window.setTimeout(() => {
-                        servicesMediaRetryTimer = 0;
-                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
-                            void releaseServicesForward();
-                        }
-                    }, 180);
-                    return;
-                }
+            setServicesPanel(SERVICES_KEYFRAME_STOPS.length - 1);
+            setServicesStaticStop(null);
+            root.dataset.servicesMediaDecoded = "true";
+            if (servicesVideo) {
+                servicesVideo.pause();
+                servicesVideo.dataset.segmentState = "ready";
             }
-            const outgoingItems = servicePanelItems[Math.max(0, servicesStage)] ?? [];
-            const outgoingPanel = servicePanels[Math.max(0, servicesStage)];
-            stopServicesTextTimeline();
-            const textExit = new Promise<void>((resolve) => {
-                servicesTextResolve = resolve;
-                servicesTextTimeline = gsap.timeline({
-                    onComplete: () => {
-                        window.clearTimeout(servicesTextWatchdog);
-                        servicesTextWatchdog = 0;
-                        servicesTextTimeline = null;
-                        servicesTextResolve = null;
-                        resolve();
-                    },
-                });
-                servicesTextTimeline
-                    .to(outgoingItems, {
-                    y: -44,
-                    autoAlpha: 0,
-                    duration: revealTime(0.58),
-                    stagger: revealTime(0.06),
-                    ease: "power3.inOut",
-                })
-                    .set(outgoingPanel, { autoAlpha: 0, pointerEvents: "none" });
-                armServicesTextWatchdog(servicesTextTimeline, resolve, 1200);
-            });
-            const [mediaCompleted] = await Promise.all([
-                exitMediaReady
-                    ? playMediaSegment(servicesVideo, SERVICES_KEYFRAME_STOPS[2], SERVICES_EXIT_STOP, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive)
-                    : Promise.resolve(true),
-                textExit,
-            ]);
-            if (token !== servicesRunToken || !servicesActive || disposed)
-                return;
-            if (!mediaCompleted) {
-                setServicesPanel(Math.max(0, servicesStage));
-                setServicesStaticStop(Math.max(0, servicesStage));
-                if (servicesVideo)
-                    servicesVideo.dataset.segmentState = "buffering";
-                setServicesPhase("waiting");
-                return;
-            }
-            resetServicesMediaRetry();
-            finishServicesRelease(servicesTrigger.end + 1);
+            // The last authored frame remains on screen while the pin hands off
+            // directly to How We Work; there is no transparent exit segment.
+            finishServicesRelease(servicesTrigger.end + 1, false, false, true);
         };
         const releaseServicesBackward = () => {
             if (!servicesActive || !servicesTrigger)
@@ -3353,6 +3295,13 @@ export function TascLanding() {
             const token = servicesEntryToken;
             const entryVideo = servicesVideo;
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
+            // Paint the last authored state immediately. Decode/seek may finish
+            // behind it, but reverse entry must never expose an empty Services panel.
+            delete root.dataset.servicesBypassed;
+            root.dataset.servicesInrange = "true";
+            setServicesStopPostersArmed(true);
+            setServicesPanel(lastStage);
+            setServicesStaticStop(lastStage);
             /*
               The exit frame and the first reverse frame sit on either side of a hard
               cut: everything up to the exit is fully transparent, the reverse segment
@@ -3415,7 +3364,7 @@ export function TascLanding() {
             };
             if (!entryVideo || root.dataset.servicesMediaFallback === "true") {
                 root.dataset.servicesEntrySkipped = "reverse-media-unavailable";
-                finishPreparation();
+                commitServicesReverseEntry(lockY, entrySource);
                 return;
             }
             void (async () => {
@@ -3430,7 +3379,13 @@ export function TascLanding() {
                 if (!entryFrameReady || !remainsRelevant()) {
                     if (entryVideo.error)
                         activateServicesMediaFallback();
-                    finishPreparation();
+                    if (remainsRelevant()) {
+                        root.dataset.servicesEntrySkipped = "reverse-frame-static";
+                        commitServicesReverseEntry(lockY, entrySource);
+                    }
+                    else {
+                        finishPreparation();
+                    }
                     return;
                 }
                 let segmentReady = false;
@@ -3444,13 +3399,25 @@ export function TascLanding() {
                 if (!segmentReady || !remainsRelevant()) {
                     if (entryVideo.error)
                         activateServicesMediaFallback();
-                    finishPreparation();
+                    if (remainsRelevant()) {
+                        root.dataset.servicesEntrySkipped = "reverse-range-static";
+                        commitServicesReverseEntry(lockY, entrySource);
+                    }
+                    else {
+                        finishPreparation();
+                    }
                     return;
                 }
                 root.dataset.servicesReverseEntrySegmentWarm = "true";
                 const restoredEntryFrame = await seekServicesFrame(entryVideo, entryFrame, remainsRelevant, SERVICES_SEAM_SEEK_TOLERANCE);
                 if (!restoredEntryFrame || !remainsRelevant()) {
-                    finishPreparation();
+                    if (remainsRelevant()) {
+                        root.dataset.servicesEntrySkipped = "reverse-restore-static";
+                        commitServicesReverseEntry(lockY, entrySource);
+                    }
+                    else {
+                        finishPreparation();
+                    }
                     return;
                 }
                 root.dataset.servicesReverseEntryFrameDecoded = "true";
@@ -3869,21 +3836,16 @@ export function TascLanding() {
                     trigger: clientsInner ?? clientsSection,
                     start: "top 96%",
                     end: "top -10%",
-                    scrub: isMobileRuntime() ? false : isMacRuntime() ? 0.08 : 0.24,
-                    toggleActions: isMobileRuntime() ? "play none none reverse" : undefined,
+                    scrub: false,
+                    toggleActions: "play none none reverse",
                     invalidateOnRefresh: true,
-                    onUpdate: (self) => setClientsEntranceMoving(self.progress > 0 && self.progress < 1),
-                    onScrubComplete: () => setClientsEntranceMoving(false),
                     onLeave: () => {
-                        clientsSection.setAttribute("data-client-cards-visible", "true");
                         setClientsEntranceMoving(false);
                     },
                     onEnterBack: () => {
-                        clientsSection.removeAttribute("data-client-cards-visible");
                         setClientsEntranceMoving(true);
                     },
                     onLeaveBack: () => {
-                        clientsSection.removeAttribute("data-client-cards-visible");
                         setClientsEntranceMoving(false);
                     },
                 },
@@ -3892,37 +3854,54 @@ export function TascLanding() {
                 clientsEntrance.to(clientsHeadingItems, { y: 0, autoAlpha: 1, duration: 0.78, stagger: 0.14 }, 0);
             }
             if (clientsCardStage && clientsCardItems.length) {
+                const clientCardTimelines: gsap.core.Timeline[] = [];
+                const clientCardTriggers: ScrollTrigger[] = [];
                 clientsCardItems.forEach((card, cardIndex) => {
-                    // Each case gets its own authored portion. In particular the
-                    // second card must not be fully visible while the first case is
-                    // still being introduced.
-                    const cardBase = 0.62 + cardIndex * 0.72;
-                    const detailBase = cardBase;
                     const group = clientsCardRevealGroups[cardIndex];
-                    clientsEntrance.to(card, { y: 0, autoAlpha: 1, duration: 0.58 }, cardBase);
                     if (!group)
                         return;
+                    const desktopDelay = isMobileRuntime() ? 0 : cardIndex * 0.18;
+                    const cardTimeline = gsap.timeline({
+                        paused: true,
+                        defaults: { ease: "power2.out" },
+                    });
+                    clientCardTimelines.push(cardTimeline);
+                    cardTimeline.to(card, { y: 0, autoAlpha: 1, duration: 0.58 }, desktopDelay);
+                    const detailBase = desktopDelay;
                     if (group.title) {
-                        clientsEntrance.to(group.title, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.18);
+                        cardTimeline.to(group.title, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.18);
                     }
                     if (group.titleDivider) {
-                        clientsEntrance.to(group.titleDivider, { scaleX: 1, autoAlpha: 1, duration: 0.34 }, detailBase + 0.24);
+                        cardTimeline.to(group.titleDivider, { scaleX: 1, autoAlpha: 1, duration: 0.34 }, detailBase + 0.24);
                     }
                     if (group.keyLabel) {
-                        clientsEntrance.to(group.keyLabel, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.3);
+                        cardTimeline.to(group.keyLabel, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.3);
                     }
                     if (group.keyParagraphs.length) {
-                        clientsEntrance.to(group.keyParagraphs, { y: 0, autoAlpha: 1, duration: 0.58, stagger: 0.1 }, detailBase + 0.36);
+                        cardTimeline.to(group.keyParagraphs, { y: 0, autoAlpha: 1, duration: 0.58, stagger: 0.1 }, detailBase + 0.36);
                     }
                     if (group.middleDivider) {
-                        clientsEntrance.to(group.middleDivider, { scaleX: 1, autoAlpha: 1, duration: 0.36 }, detailBase + 0.52);
+                        cardTimeline.to(group.middleDivider, { scaleX: 1, autoAlpha: 1, duration: 0.36 }, detailBase + 0.52);
                     }
                     if (group.momentLabel) {
-                        clientsEntrance.to(group.momentLabel, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.58);
+                        cardTimeline.to(group.momentLabel, { y: 0, autoAlpha: 1, duration: 0.42 }, detailBase + 0.58);
                     }
                     if (group.moments.length) {
-                        clientsEntrance.to(group.moments, { y: 0, autoAlpha: 1, duration: 0.68, stagger: 0.12 }, detailBase + 0.64);
+                        cardTimeline.to(group.moments, { y: 0, autoAlpha: 1, duration: 0.68, stagger: 0.12 }, detailBase + 0.64);
                     }
+                    clientCardTriggers.push(ScrollTrigger.create({
+                        id: `client-card-${cardIndex + 1}-reveal`,
+                        trigger: isMobileRuntime() ? card : clientsCardStage,
+                        start: isMobileRuntime() ? "top 82%" : "top 84%",
+                        end: "bottom top",
+                        animation: cardTimeline,
+                        toggleActions: "play none none reverse",
+                        invalidateOnRefresh: true,
+                    }));
+                });
+                cleanupCallbacks.push(() => {
+                    clientCardTriggers.forEach((trigger) => trigger.kill());
+                    clientCardTimelines.forEach((timeline) => timeline.kill());
                 });
             }
             if (clientsNoteItems.length) {
@@ -4100,9 +4079,7 @@ export function TascLanding() {
                 });
             }
             const syncServicesApproach = (active: boolean) => {
-                primaryGalaxyRef.current?.setActive(
-                    !mobilePerformanceMode && root.dataset.backgroundMotionPaused !== "true",
-                );
+                primaryGalaxyRef.current?.setActive(true);
                 primaryGalaxyRef.current?.setMotion(active
                     ? {
                         density: isMobileRuntime() || isWebKitRuntime() ? 1.05 : 1,
@@ -4148,7 +4125,7 @@ export function TascLanding() {
                 start: "top top",
                 end: () => `+=${syncServicesPinCompensation()}`,
                 pin: useLegacyServicesFlow,
-                pinSpacing: true,
+                pinSpacing: false,
                 anticipatePin: 1,
                 refreshPriority: 30,
                 invalidateOnRefresh: true,
@@ -4214,6 +4191,14 @@ export function TascLanding() {
                 }
             };
             window.addEventListener("tasc:scroll-position-applied", handleServicesPositionApplied);
+            const handleServicesStoryHandoff = (event: Event) => {
+                if (!servicesTrigger)
+                    return;
+                const detail = (event as CustomEvent<{ direction?: 1 | -1; from?: string }>).detail;
+                if (detail?.from === "how" && detail.direction === -1)
+                    startServicesAtLastStage(servicesTrigger.end - 1, "story-handoff");
+            };
+            window.addEventListener("tasc:motion-story-handoff", handleServicesStoryHandoff);
             const settleServicesWhenHidden = (event: Event) => {
                 if (event.type !== "pagehide" && document.visibilityState !== "hidden")
                     return;
@@ -4237,6 +4222,7 @@ export function TascLanding() {
             window.addEventListener("pagehide", settleServicesWhenHidden);
             cleanupCallbacks.push(() => {
                 window.removeEventListener("tasc:scroll-position-applied", handleServicesPositionApplied);
+                window.removeEventListener("tasc:motion-story-handoff", handleServicesStoryHandoff);
                 document.removeEventListener("visibilitychange", settleServicesWhenHidden);
                 window.removeEventListener("pagehide", settleServicesWhenHidden);
             });
@@ -4257,6 +4243,7 @@ export function TascLanding() {
                 let activeDatumTimeline: gsap.core.Timeline | null = null;
                 let datumTrigger: ScrollTrigger | null = null;
                 let datumEntryDirection: 1 | -1 = 1;
+                let datumPassThroughDirection: 1 | -1 | 0 = 0;
                 let datumDisposed = false;
 
                 const runDatumTimeline = (build: (finish: () => void) => gsap.core.Timeline) =>
@@ -4322,25 +4309,25 @@ export function TascLanding() {
                             .set(datumCardsState, { autoAlpha: 1, pointerEvents: "none" }, revealAt)
                             .to(datumHeadingItems, {
                                 autoAlpha: 1,
-                                duration: entry ? revealTime(0.78) : 0.42,
+                                duration: entry ? 0.46 : 0.42,
                                 ease: "power3.out",
-                                stagger: entry ? revealTime(0.12) : 0.045,
+                                stagger: entry ? 0.07 : 0.045,
                                 y: 0,
                             }, revealAt)
                             .to(datumCardsRevealItems, {
                                 autoAlpha: 1,
-                                duration: entry ? revealTime(1.08) : 0.54,
+                                duration: entry ? 0.62 : 0.54,
                                 ease: "power4.out",
-                                stagger: entry ? revealTime(0.17) : 0.07,
+                                stagger: entry ? 0.1 : 0.07,
                                 y: 0,
-                            }, revealAt + (entry ? 0.1 + CONTENT_REVEAL_LAG : 0.06))
+                            }, revealAt + (entry ? 0.06 : 0.06))
                             .to(datumCardDetails, {
                                 autoAlpha: 1,
-                                duration: entry ? revealTime(0.74) : 0.42,
+                                duration: entry ? 0.44 : 0.42,
                                 ease: "power3.out",
-                                stagger: entry ? revealTime(0.055) : 0.025,
+                                stagger: entry ? 0.035 : 0.025,
                                 y: 0,
-                            }, revealAt + (entry ? 0.3 + CONTENT_REVEAL_LAG : 0.16));
+                            }, revealAt + (entry ? 0.18 : 0.16));
                         return timeline;
                     });
                     if (!datumDisposed)
@@ -4382,11 +4369,19 @@ export function TascLanding() {
                     canEnter: (gesture) => {
                         if (!datumTrigger || datumDisposed || gesture.direction === 0)
                             return false;
+                        if (datumPassThroughDirection === gesture.direction)
+                            return false;
+                        if (datumPassThroughDirection !== 0 && datumPassThroughDirection !== gesture.direction)
+                            datumPassThroughDirection = 0;
                         const corridor = Math.min(220, Math.max(78, gesture.viewportHeight * 0.22));
                         const predicted = gesture.scrollY + gesture.deltaY;
                         const enters = gesture.direction > 0
-                            ? gesture.scrollY <= datumTrigger.start + corridor && predicted >= datumTrigger.start - corridor
-                            : gesture.scrollY >= datumTrigger.end - corridor && predicted <= datumTrigger.end + corridor;
+                            ? gesture.scrollY >= datumTrigger.start - corridor &&
+                                gesture.scrollY <= datumTrigger.start + corridor &&
+                                predicted >= datumTrigger.start - corridor
+                            : gesture.scrollY >= datumTrigger.end - corridor &&
+                                gesture.scrollY <= datumTrigger.end + corridor &&
+                                predicted <= datumTrigger.end + corridor;
                         if (!enters)
                             return false;
                         return {
@@ -4397,6 +4392,7 @@ export function TascLanding() {
                     },
                     onEnter: async ({ direction }) => {
                         datumEntryDirection = direction;
+                        root.dataset.howWorkBypassed = "true";
                         root.dataset.datumPinned = "true";
                         if (direction > 0) {
                             await showCards(true);
@@ -4414,6 +4410,7 @@ export function TascLanding() {
                             await showCards();
                             return { stage: 0 };
                         }
+                        datumPassThroughDirection = direction;
                         return direction > 0
                             ? {
                                 release: true,
@@ -4446,9 +4443,9 @@ export function TascLanding() {
                     id: "datum-reversible",
                     trigger: datumSection,
                     start: "top top",
-                    end: () => `+=${Math.round(Math.min(760, Math.max(520, getRuntimeViewport().height * 0.82)))}`,
+                    end: () => `+=${Math.round(getRuntimeViewport().height)}`,
                     pin: true,
-                    pinSpacing: true,
+                    pinSpacing: false,
                     anticipatePin: 1,
                     refreshPriority: 10,
                     invalidateOnRefresh: true,
@@ -4457,13 +4454,29 @@ export function TascLanding() {
                             datumRegistration.updateLock(datumEntryDirection > 0 ? self.start + 1 : self.end - 1);
                         }
                     },
+                    onLeave: () => {
+                        if (datumPassThroughDirection > 0)
+                            datumPassThroughDirection = 0;
+                    },
+                    onLeaveBack: () => {
+                        if (datumPassThroughDirection < 0)
+                            datumPassThroughDirection = 0;
+                    },
                 });
 
                 const handleDatumPositionApplied = () => {
                     if (root.dataset.programmaticAnchor === "#datum" && datumTrigger)
                         enterDatum(1, datumTrigger.start + 1);
                 };
+                const handleDatumStoryHandoff = (event: Event) => {
+                    if (!datumTrigger)
+                        return;
+                    const detail = (event as CustomEvent<{ direction?: 1 | -1; from?: string }>).detail;
+                    if (detail?.from === "how" && detail.direction === 1)
+                        enterDatum(1, datumTrigger.start + 1);
+                };
                 window.addEventListener("tasc:scroll-position-applied", handleDatumPositionApplied);
+                window.addEventListener("tasc:motion-story-handoff", handleDatumStoryHandoff);
 
                 cleanupCallbacks.push(() => {
                     datumDisposed = true;
@@ -4471,8 +4484,10 @@ export function TascLanding() {
                     datumTrigger?.kill();
                     datumRegistration.unregister();
                     window.removeEventListener("tasc:scroll-position-applied", handleDatumPositionApplied);
+                    window.removeEventListener("tasc:motion-story-handoff", handleDatumStoryHandoff);
                     delete root.dataset.datumPinned;
                     delete root.dataset.datumProgress;
+                    delete root.dataset.howWorkBypassed;
                     delete datumCardsState.dataset.datumCardsMoving;
                 });
             }
@@ -4494,27 +4509,27 @@ export function TascLanding() {
                 onToggle: (self) => setProcessHeaderTone(self.isActive),
                 onRefresh: (self) => setProcessHeaderTone(self.isActive),
             });
-            gsap.fromTo(processContactBg, { y: 42, autoAlpha: 0 }, {
+            gsap.fromTo(processContactBg, { y: 24, autoAlpha: 0 }, {
                 y: 0,
                 autoAlpha: 1,
-                ease: "none",
+                duration: 0.52,
+                ease: "power3.out",
                 scrollTrigger: {
                     trigger: processContactSection,
-                    start: "top 90%",
-                    end: "top 38%",
-                    scrub: true,
+                    start: "top 86%",
+                    toggleActions: "play none none reverse",
                     invalidateOnRefresh: true,
                 },
             });
             gsap.fromTo(processContactBg, { "--process-domino-tone": 0 }, {
                 "--process-domino-tone": 1,
-                ease: "none",
+                duration: 0.45,
+                ease: "power2.out",
                 scrollTrigger: {
                     id: "process-domino-tone",
                     trigger: processContactSection,
                     start: "bottom 140%",
-                    end: "bottom 75%",
-                    scrub: true,
+                    toggleActions: "play none none reverse",
                     invalidateOnRefresh: true,
                 },
             });
@@ -4622,7 +4637,7 @@ export function TascLanding() {
         if (processRows.length > 0) {
             const processRowParts = new Map(processRows.map((row) => [
                 row,
-                Array.from(row.querySelectorAll<HTMLElement>(".process-contact-row-title > span, .process-contact-row-title > h3, :scope > p")),
+                Array.from(row.querySelectorAll<HTMLElement>(".process-contact-row-title > h3, :scope > p")),
             ]));
             const processParts = Array.from(processRowParts.values()).flat();
             registerManagedRevealElements([...processRows, ...processParts]);
@@ -5002,9 +5017,7 @@ export function TascLanding() {
     }, [preloaderComplete]);
     return (<>
       <TascHeader onNavigate={handleAnchorNavigate}/>
-      <main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield={mobilePerformanceMode ? "css-starfield" : "react-bits-galaxy"} data-starfield-mode={mobilePerformanceMode
-            ? "static"
-            : !performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
+      <main ref={rootRef} suppressHydrationWarning className={`site-shell ${preloaderComplete ? "site-preloader-complete" : ""} ${heroIntroReady ? "hero-intro-ready" : ""}`} data-js-runtime={motionPreferenceResolved ? "true" : undefined} data-hero-starfield="react-bits-galaxy" data-starfield-mode={!performanceModeResolved || (motionAllowed && galaxyStatus === "pending")
             ? "pending"
             : motionAllowed && galaxyStatus === "ready"
                 ? "galaxy"
@@ -5029,16 +5042,14 @@ export function TascLanding() {
       {preloaderComplete ? <CookieConsent /> : null}
       <div className="first-four-galaxy-stage" aria-hidden="true">
         <span className="static-starfield-fallback"/>
-        {heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed && !mobilePerformanceMode ? (<>
-            <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode || webkitCompatibilityMode ? 1.05 : 1.3} starSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode || webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode || webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode || webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={webkitCompatibilityMode
-                ? mobilePerformanceMode
-                    ? 0.9
-                    : 0.86
-                : macPerformanceMode
-                    ? 0.82
-                    : mobilePerformanceMode
-                        ? 1
-                        : 1} maxFps={mobilePerformanceMode || webkitCompatibilityMode || macPerformanceMode ? 30 : 60}/>
+        {heroIntroReady && motionPreferenceResolved && performanceModeResolved && motionAllowed ? (<>
+            <Galaxy {...GALAXY_SHARED_PROPS} ref={primaryGalaxyRef} className="first-four-galaxy first-four-galaxy-primary" data-galaxy-layer="primary" density={mobilePerformanceMode ? 0.82 : webkitCompatibilityMode ? 1.05 : 1.3} starSpeed={mobilePerformanceMode ? 0.62 : webkitCompatibilityMode ? 0.86 : 1.08} speed={mobilePerformanceMode ? 0.78 : webkitCompatibilityMode ? 1.08 : 1.44} rotationSpeed={mobilePerformanceMode ? 0.07 : webkitCompatibilityMode ? 0.1 : 0.15} autoCenterRepulsion={mobilePerformanceMode ? 8 : webkitCompatibilityMode ? 12 : 20} mouseInteraction={false} visibilityTargetSelector={PRIMARY_GALAXY_VISIBILITY_TARGETS} onStatusChange={setGalaxyStatus} maxDevicePixelRatio={mobilePerformanceMode
+                ? 0.58
+                : webkitCompatibilityMode
+                    ? 0.86
+                    : macPerformanceMode
+                        ? 0.82
+                        : 1} maxFps={mobilePerformanceMode ? 20 : webkitCompatibilityMode || macPerformanceMode ? 30 : 60}/>
           </>) : null}
       </div>
       <div className="vision-clients-flare-stage" aria-hidden="true">

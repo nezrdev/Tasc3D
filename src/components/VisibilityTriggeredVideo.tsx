@@ -84,7 +84,7 @@ const VisibilityTriggeredVideo = forwardRef<HTMLVideoElement, VisibilityTriggere
         forwardedRef,
     ) {
         const videoRef = useRef<HTMLVideoElement | null>(null);
-        const [activePoster, setActivePoster] = useState<string | undefined>();
+        const [activePoster, setActivePoster] = useState<string | undefined>(poster);
         const [firstFrameState, setFirstFrameState] = useState<"waiting" | "decoded" | "fallback">("waiting");
 
         useImperativeHandle(forwardedRef, () => videoRef.current as HTMLVideoElement, []);
@@ -136,6 +136,7 @@ const VisibilityTriggeredVideo = forwardRef<HTMLVideoElement, VisibilityTriggere
                     return;
                 }
                 decoded = true;
+                setActivePoster(undefined);
                 setFirstFrameState("decoded");
                 host?.setAttribute("data-visibility-video-frame", "decoded");
             };
@@ -380,7 +381,7 @@ const VisibilityTriggeredVideo = forwardRef<HTMLVideoElement, VisibilityTriggere
                 }
             };
 
-            setActivePoster(undefined);
+            setActivePoster(poster);
             setFirstFrameState("waiting");
             host?.setAttribute("data-visibility-video-frame", "waiting");
             setState("waiting");

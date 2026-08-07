@@ -107,7 +107,7 @@ export function ServicesSection({
                                 outputHeight={lightweightMediaMode
                                     ? RUNTIME_MEDIA.services.webkitPacked.mobileOutput.height
                                     : RUNTIME_MEDIA.services.webkitPacked.desktopOutput.height}
-                                maxFps={RUNTIME_MEDIA.services.fps}
+                                maxFps={60}
                                 preload={servicesMediaArmed ? "auto" : "none"}
                                 tabIndex={-1}
                                 onLoadedMetadata={onPackedLoadedMetadata}

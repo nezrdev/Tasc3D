@@ -53,7 +53,7 @@ export function DatumSection({
                         enabled={datumMediaArmed}
                         hostStateAttribute="data-datum-playback"
                         sources={datumMediaArmed ? [
-                            ...(webkitCompatibilityMode || lightweightMediaMode
+                            ...(webkitCompatibilityMode
                                 ? [{ src: datumVideoSource, type: "video/mp4" }]
                                 : []),
                             {
@@ -64,9 +64,9 @@ export function DatumSection({
                         data-armed={datumMediaArmed ? "true" : "false"}
                         poster={datumMediaArmed ? DATUM_VIDEO_POSTER : undefined}
                         preload={datumMediaArmed ? "auto" : "metadata"}
-                        threshold={RUNTIME_MEDIA.datum.visibilityRatio}
+                        threshold={0.02}
                         armDelayMs={0}
-                        playbackRate={0.85}
+                        playbackRate={1}
                         onLoadedData={() => {
                             onMediaPreparedChange(true);
                             onMediaFallbackChange(false);

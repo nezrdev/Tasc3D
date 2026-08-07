@@ -294,6 +294,16 @@ export class MotionStoryController {
         if (typeof resolvedRelease === "number" && Number.isFinite(resolvedRelease))
             this.applyScrollPosition(resolvedRelease);
         this.getLenis()?.start();
+        if (reason === "completed" && typeof resolvedRelease === "number" && Number.isFinite(resolvedRelease)) {
+            window.dispatchEvent(new CustomEvent("tasc:motion-story-handoff", {
+                detail: {
+                    direction: active.direction,
+                    from: id,
+                    releaseTo: Math.max(0, Math.round(resolvedRelease)),
+                    stage: active.stage,
+                },
+            }));
+        }
     }
 
     dispose() {

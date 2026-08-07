@@ -240,8 +240,8 @@ for (const profile of profiles) {
     // The deadline is relative to browser navigation, not host process startup,
     // response latency, or React's later removal of an already inert node.
     const curtainMs = await page.evaluate(() => Math.round(performance.now()));
-    check("curtain opens no earlier than 3.5s", curtainMs >= 3400, curtainMs);
-    check("curtain fail-opens by hard deadline", curtainMs <= 5200, curtainMs);
+    check("curtain does not flash before the intro settles", curtainMs >= 1500, curtainMs);
+    check("curtain opens within the 3s client deadline", curtainMs <= 3000, curtainMs);
     await page.waitForFunction(() => document.querySelector(".site-shell")?.dataset.motionReady === "true", null, { timeout: 20_000 });
     await page.evaluate(() => {
       window.__t14DecoderSamples = [];
@@ -273,7 +273,7 @@ for (const profile of profiles) {
       starfieldMode: document.querySelector(".site-shell")?.dataset.starfieldMode,
     }));
     check("decoder limit contract", runtime.maxDecoders === (profile.isMobile ? 1 : 2), runtime);
-    check("Galaxy context budget", profile.isMobile ? runtime.canvases === 0 : runtime.canvases <= 1, runtime);
+    check("single animated Galaxy context budget", runtime.canvases === 1, runtime);
 
     if (profile.fullMotion) {
       await navigate(page, "#work", ".how-work-motion-section");
@@ -299,7 +299,7 @@ for (const profile of profiles) {
         stageOpacity: stage ? Number.parseFloat(getComputedStyle(stage).opacity || "1") : 0,
       };
     });
-    check("Clients shared star stage remains visible", starState.stageOpacity > 0.05 && (!profile.isMobile || starState.fallbackVisible), starState);
+    check("Clients shared star stage remains visible", starState.stageOpacity > 0.05, starState);
     const clientShot = path.resolve(outputRoot, `${profile.name}-clients.png`);
     await page.screenshot({ path: clientShot });
     screenshots.push(clientShot);
