@@ -97,6 +97,7 @@ const SERVICES_REVERSE_STOP_FRAME_SIGNATURE = SERVICES_REVERSE_STOP_FRAMES.join(
 const SERVICES_REVERSE_STOP_TIME_LABELS = SERVICES_REVERSE_STOP_FRAMES.map((frame) => `${frame}/${RUNTIME_MEDIA.services.fps}`);
 const SERVICES_REVERSE_STOP_TIME_SIGNATURE = SERVICES_REVERSE_STOP_TIME_LABELS.join(",");
 const SERVICES_HAS_CONTINUOUS_REVERSE = SERVICES_REVERSE_KEYFRAME_STOPS.length === SERVICES_KEYFRAME_STOPS.length;
+const SERVICES_FORWARD_HOLD_STOP = SERVICES_REVERSE_KEYFRAME_STOPS[SERVICES_REVERSE_KEYFRAME_STOPS.length - 1];
 // Half a frame. Enough to land on the intended side of a cut, short enough that the
 // rendered frame is still the authored stop.
 const SERVICES_SEAM_FRAME_NUDGE = 1 / (RUNTIME_MEDIA.services.fps * 2);
@@ -105,8 +106,9 @@ const SERVICES_SEAM_SEEK_TOLERANCE = 1 / (RUNTIME_MEDIA.services.fps * 2);
 /*
   Services is pinned across this many viewports of real document. The three
   stops sit at the progress marks below, so the reader gets close to a viewport
-  of ordinary scrolling between one segment and the next, and the exit segment
-  fires once they have scrolled past the last stop.
+  of ordinary scrolling between one segment and the next. Past the last stop we
+  settle on the visually identical first reverse frame; the transparent frame at
+  the old exit seam must never become the pinned resting surface.
 */
 const SERVICES_PIN_VIEWPORTS = 2.4;
 const SERVICES_STOP_PROGRESS = [0, 0.34, 0.63] as const;
@@ -894,15 +896,10 @@ export function TascLanding() {
         let firstSegmentSettled = shell.dataset.servicesFirstSegmentWarm === "true";
         let completeStorySettled = shell.dataset.servicesCompleteStoryWarm === "true";
         let interactiveClaimed = false;
-        let playPending = false;
         const cleanup = () => {
             media.removeEventListener("loadeddata", markDecodedStart);
             media.removeEventListener("canplay", inspectWarmState);
-            media.removeEventListener("canplay", startWarmPlayback);
-            media.removeEventListener("playing", markDecodedStart);
             media.removeEventListener("progress", inspectWarmState);
-            media.removeEventListener("timeupdate", inspectWarmState);
-            media.removeEventListener("waiting", startWarmPlayback);
         };
         const completeStoryWarmup = () => {
             if (completeStorySettled || disposed)
@@ -914,7 +911,8 @@ export function TascLanding() {
                 media.playbackRate = 1;
                 if (media.readyState >= HTMLMediaElement.HAVE_METADATA) {
                     try {
-                        media.currentTime = 0;
+                        if (Math.abs(media.currentTime) > 1 / 60)
+                            media.currentTime = 0;
                     }
                     catch {
                     }
@@ -931,7 +929,8 @@ export function TascLanding() {
                 media.pause();
                 media.playbackRate = 1;
                 try {
-                    media.currentTime = 0.001;
+                    if (Math.abs(media.currentTime - 0.001) > 1 / 60)
+                        media.currentTime = 0.001;
                 }
                 catch {
                 }
@@ -969,51 +968,13 @@ export function TascLanding() {
             shell.dataset.servicesStartFrameDecoded = "true";
             inspectWarmState();
         }
-        async function startWarmPlayback() {
-            if (!webkitCompatibilityMode ||
-                disposed ||
-                completeStorySettled ||
-                firstSegmentSettled ||
-                interactiveClaimed ||
-                playPending ||
-                document.hidden ||
-                media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-                return;
-            }
-            playPending = true;
-            media.muted = true;
-            media.playsInline = true;
-            try {
-                await media.play();
-                if (!disposed && !completeStorySettled && !interactiveClaimed) {
-                    delete shell.dataset.servicesWarmupBlocked;
-                    markDecodedStart();
-                }
-            }
-            catch {
-                if (!disposed && !completeStorySettled && !interactiveClaimed) {
-                    shell.dataset.servicesWarmupBlocked = "true";
-                }
-            }
-            finally {
-                playPending = false;
-            }
-        }
         media.addEventListener("loadeddata", markDecodedStart);
         media.addEventListener("canplay", inspectWarmState);
-        media.addEventListener("playing", markDecodedStart);
         media.addEventListener("progress", inspectWarmState);
-        media.addEventListener("timeupdate", inspectWarmState);
-        if (webkitCompatibilityMode) {
-            media.addEventListener("canplay", startWarmPlayback);
-            media.addEventListener("waiting", startWarmPlayback);
-        }
         const claimInteractiveOwnership = () => {
             if (disposed || interactiveClaimed)
                 return;
             interactiveClaimed = true;
-            media.removeEventListener("canplay", startWarmPlayback);
-            media.removeEventListener("waiting", startWarmPlayback);
             media.pause();
             delete shell.dataset.servicesWarmupBlocked;
             shell.dataset.servicesWarmupOwner = "interactive";
@@ -1022,8 +983,6 @@ export function TascLanding() {
         if (media.networkState === HTMLMediaElement.NETWORK_EMPTY)
             media.load();
         inspectWarmState();
-        if (webkitCompatibilityMode)
-            void startWarmPlayback();
         return () => {
             disposed = true;
             cleanup();
@@ -1109,34 +1068,32 @@ export function TascLanding() {
                 mediaActions.armDomino();
         };
         armFromHash();
-        const targets = new Map<Element, () => void>();
-        const register = (selector: string, arm: () => void) => {
+        const targets = new Map<Element, { arm: () => void; marginViewports: number }>();
+        const register = (selector: string, arm: () => void, marginViewports: number) => {
             const target = root.querySelector(selector);
             if (target)
-                targets.set(target, arm);
+                targets.set(target, { arm, marginViewports });
         };
         register(".services-story-section", () => {
             mediaActions.armServices();
-        });
-        register(".figma-clients-section", mediaActions.armClientsFlare);
-        register(".datum-motion-section", mediaActions.armDatum);
-        register(".domino-cta-section", mediaActions.armDomino);
-        const getArmMargin = () => {
+        }, mobilePerformanceMode || constrainedConnection ? 1.75 : 2);
+        register(".figma-clients-section", mediaActions.armClientsFlare, 1);
+        register(".datum-motion-section", mediaActions.armDatum, 1.4);
+        register(".domino-cta-section", mediaActions.armDomino, mobilePerformanceMode || constrainedConnection ? 3.6 : 2.45);
+        const getArmMargin = (target: Element) => {
             const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-            return mobilePerformanceMode || constrainedConnection
-                ? Math.round(viewportHeight * 0.75)
-                : Math.max(600, Math.round(viewportHeight));
+            const marginViewports = targets.get(target)?.marginViewports ?? 1;
+            return Math.max(600, Math.round(viewportHeight * marginViewports));
         };
-        const armMargin = getArmMargin();
         const armedTargets = new Set<Element>();
-        let observer: IntersectionObserver | null = null;
+        const observers = new Map<Element, IntersectionObserver>();
         let proximityFrame = 0;
         let proximityListenersAttached = false;
         let unregisterProximityInputObserver = () => { };
         let nearbyReevaluationTimer = 0;
         function stopProximityTracking() {
-            observer?.disconnect();
-            observer = null;
+            observers.forEach((observer) => observer.disconnect());
+            observers.clear();
             if (proximityListenersAttached) {
                 unregisterProximityInputObserver();
                 unregisterProximityInputObserver = () => { };
@@ -1154,8 +1111,9 @@ export function TascLanding() {
             if (armedTargets.has(target))
                 return;
             armedTargets.add(target);
-            targets.get(target)?.();
-            observer?.unobserve(target);
+            targets.get(target)?.arm();
+            observers.get(target)?.disconnect();
+            observers.delete(target);
             if (armedTargets.size === targets.size)
                 stopProximityTracking();
         }
@@ -1166,7 +1124,7 @@ export function TascLanding() {
                     return;
                 const rect = target.getBoundingClientRect();
                 const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-                const currentMargin = getArmMargin();
+                const currentMargin = getArmMargin(target);
                 if (rect.top <= viewportHeight + currentMargin && rect.bottom >= -currentMargin) {
                     armTarget(target);
                 }
@@ -1190,13 +1148,14 @@ export function TascLanding() {
         };
         if ("IntersectionObserver" in window) {
             try {
-                observer = new IntersectionObserver((entries) => {
-                    entries.forEach((entry) => {
-                        if (entry.isIntersecting)
-                            armTarget(entry.target);
-                    });
-                }, { rootMargin: `${armMargin}px 0px`, threshold: 0 });
-                targets.forEach((_, target) => observer?.observe(target));
+                targets.forEach((_, target) => {
+                    const observer = new IntersectionObserver((entries) => {
+                        if (entries.some((entry) => entry.isIntersecting))
+                            armTarget(target);
+                    }, { rootMargin: `${getArmMargin(target)}px 0px`, threshold: 0 });
+                    observers.set(target, observer);
+                    observer.observe(target);
+                });
             }
             catch {
                 startProximityFallback();
@@ -1802,6 +1761,8 @@ export function TascLanding() {
         let servicesRunToken = 0;
         let servicesActive = false;
         let servicesReleasing = false;
+        let servicesForwardComplete = false;
+        let servicesSessionDirection: 1 | -1 | 0 = 0;
         const lockClientsServicesHandoffAtServices = () => {
             const handoff = clientsServicesHandoff;
             const trigger = handoff?.scrollTrigger;
@@ -2231,10 +2192,16 @@ export function TascLanding() {
                 if (seekHandler)
                     video.removeEventListener("seeked", seekHandler);
                 video.pause();
-                if (snapToEnd && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
-                    pauseAndSeek(video, to, 0.12);
-                }
                 mediaRunCancels.delete(video);
+                if (completed && snapToEnd && video.readyState >= HTMLMediaElement.HAVE_METADATA) {
+                    // Playback monitoring intentionally has a small end guard so a
+                    // decoder cannot run past a stop. Do not let that guard become
+                    // the resting frame: wait for the authored frame to be decoded
+                    // before text/catch-up logic is allowed to continue.
+                    void seekServicesFrame(video, to, isCurrent, SERVICES_SEAM_SEEK_TOLERANCE / 2)
+                        .then((settledAtTarget) => resolve(settledAtTarget));
+                    return;
+                }
                 resolve(completed);
             };
             const monitor = () => {
@@ -2612,7 +2579,7 @@ export function TascLanding() {
             delete root.dataset.servicesLocked;
         };
         const setMotionInputState = () => {
-            if (servicesActive || servicesReleasing) {
+            if (servicesScrollLock?.isHeld()) {
                 root.dataset.motionInputLocked = "true";
             }
             else {
@@ -2620,17 +2587,17 @@ export function TascLanding() {
             }
         };
         /*
-          The phase is the single source of truth for whether the reader is being
-          held: anything that is decoding, playing or exiting holds the lock,
-          anything settled hands it straight back.
+          Loading and seeking happen while native scrolling remains available.
+          Only a concrete playing/releasing segment owns the temporary lock.
         */
         const setServicesPhase = (phase: typeof servicesPhase) => {
             servicesPhase = phase;
             root.dataset.servicesPhase = phase;
-            if (phase === "preparing" || phase === "playing" || phase === "releasing" || phase === "reverse")
+            if (phase === "playing" || phase === "releasing" || phase === "reverse")
                 holdServicesScroll();
             else
                 releaseServicesScroll();
+            setMotionInputState();
         };
         const cancelServicesEntryPreparation = (reason = "cancelled") => {
             if (servicesEntryPreparing !== 0)
@@ -2753,6 +2720,15 @@ export function TascLanding() {
                 .to({}, { duration: 0.01 }, segmentDuration);
             armServicesTextWatchdog(servicesTextTimeline, resolve, Math.max(1300, (segmentDuration + 0.55) * 1000));
         });
+        const scheduleServicesProgressCatchUp = (direction: 1 | -1, token: number) => {
+            window.clearTimeout(servicesReleaseTimer);
+            servicesReleaseTimer = window.setTimeout(() => {
+                servicesReleaseTimer = 0;
+                if (disposed || token !== servicesRunToken || !servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
+                    return;
+                advanceServicesFromProgress(servicesTrigger.progress, direction);
+            }, SERVICES_POST_STAGE_GATE_MS + 24);
+        };
         const runServicesStage = async (nextStage: number, revealPanel = true) => {
             if (!servicesActive || servicesPhase === "playing")
                 return;
@@ -2889,6 +2865,7 @@ export function TascLanding() {
             resetServicesMediaRetry();
             servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
             setServicesPhase("waiting");
+            scheduleServicesProgressCatchUp(1, token);
         };
         /*
           Finishing the story does not move the page. The reader is standing
@@ -2905,11 +2882,16 @@ export function TascLanding() {
             clientsServicesHandoff?.scrollTrigger?.update();
             servicesActive = false;
             servicesReleasing = false;
+            servicesForwardComplete = false;
+            servicesSessionDirection = 0;
             servicesTransitionDirection = 0;
             releaseServicesScroll();
             delete root.dataset.servicesPinned;
             delete root.dataset.servicesActive;
             delete root.dataset.servicesSequence;
+            delete root.dataset.servicesSequenceComplete;
+            delete root.dataset.servicesVideoDirection;
+            delete root.dataset.servicesTarget;
             if (!previewAfter)
                 setServicesStaticStop(null);
             setServicesPhase("idle");
@@ -2918,90 +2900,59 @@ export function TascLanding() {
                 showServicesIdlePreview(previewRevealed);
         };
         const releaseServicesForward = async () => {
-            if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger)
+            if (!servicesActive || servicesPhase !== "waiting" || !servicesTrigger || servicesForwardComplete)
                 return;
             const token = ++servicesRunToken;
-            beginServicesMediaAttempt("forward:exit");
-            setServicesPhase("releasing");
-            holdServicesScroll();
-            const exitMediaReady = root.dataset.servicesMediaFallback === "true"
+            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
+            beginServicesMediaAttempt("forward:hold");
+            setServicesPanel(lastStage);
+            // Frame 339 is deliberately transparent. Keep the authored stop poster
+            // over the decoder while it crosses that cut and lands on frame 340,
+            // which is visually identical to stop three and also primes reversal.
+            setServicesStaticStop(lastStage);
+            setServicesPhase("preparing");
+            const finalFrameBuffered = root.dataset.servicesMediaFallback === "true"
                 ? false
-                : await ensureServicesPlayable(servicesVideo, SERVICES_EXIT_STOP, () => token === servicesRunToken && servicesActive);
+                : await ensureServicesPlayable(servicesVideo, SERVICES_FORWARD_HOLD_STOP, () => token === servicesRunToken && servicesActive, SERVICES_KEYFRAME_STOPS[lastStage]);
             if (token !== servicesRunToken || !servicesActive || disposed)
                 return;
-            if (!exitMediaReady && root.dataset.servicesMediaFallback !== "true") {
-                if (shouldFailOpenServicesMedia(servicesVideo)) {
-                    if (servicesVideo?.error) {
-                        activateServicesMediaFallback();
-                    }
-                    else {
-                        root.dataset.servicesTransportFailure = "exit-timeout";
-                        finishServicesRelease();
-                        return;
-                    }
-                }
-                else {
-                    if (servicesVideo)
-                        servicesVideo.dataset.segmentState = "buffering";
-                    setServicesPhase("waiting");
-                    servicesMediaRetryTimer = window.setTimeout(() => {
-                        servicesMediaRetryTimer = 0;
-                        if (token === servicesRunToken && servicesActive && !disposed && servicesPhase === "waiting") {
-                            void releaseServicesForward();
-                        }
-                    }, 180);
-                    return;
-                }
+            const finalFrameReady = finalFrameBuffered
+                ? await seekServicesFrame(servicesVideo, SERVICES_FORWARD_HOLD_STOP, () => token === servicesRunToken && servicesActive, SERVICES_SEAM_SEEK_TOLERANCE / 2)
+                : false;
+            if (token !== servicesRunToken || !servicesActive || disposed)
+                return;
+            if (finalFrameReady) {
+                setServicesStaticStop(null);
+                root.dataset.servicesMediaDecoded = "true";
+                if (servicesVideo)
+                    servicesVideo.dataset.segmentState = "ready";
             }
-            const outgoingItems = servicePanelItems[Math.max(0, servicesStage)] ?? [];
-            const outgoingPanel = servicePanels[Math.max(0, servicesStage)];
-            stopServicesTextTimeline();
-            const textExit = new Promise<void>((resolve) => {
-                servicesTextResolve = resolve;
-                servicesTextTimeline = gsap.timeline({
-                    onComplete: () => {
-                        window.clearTimeout(servicesTextWatchdog);
-                        servicesTextWatchdog = 0;
-                        servicesTextTimeline = null;
-                        servicesTextResolve = null;
-                        resolve();
-                    },
-                });
-                servicesTextTimeline
-                    .to(outgoingItems, {
-                    y: -44,
-                    autoAlpha: 0,
-                    duration: revealTime(0.58),
-                    stagger: revealTime(0.06),
-                    ease: "power3.inOut",
-                })
-                    .set(outgoingPanel, { autoAlpha: 0, pointerEvents: "none" });
-                armServicesTextWatchdog(servicesTextTimeline, resolve, 1200);
-            });
-            const [mediaCompleted] = await Promise.all([
-                exitMediaReady
-                    ? playMediaSegment(servicesVideo, SERVICES_KEYFRAME_STOPS[2], SERVICES_EXIT_STOP, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive)
-                    : Promise.resolve(true),
-                textExit,
-            ]);
-            if (token !== servicesRunToken || !servicesActive || disposed)
-                return;
-            if (!mediaCompleted) {
-                setServicesPanel(Math.max(0, servicesStage));
-                setServicesStaticStop(Math.max(0, servicesStage));
+            else if (servicesVideo?.error) {
+                activateServicesMediaFallback();
+            }
+            else {
+                // A slow seek is not a decode failure. The stop poster stays as a
+                // temporary continuity surface, but the transport remains eligible
+                // for a live reverse-entry retry.
+                root.dataset.servicesTransportFailure = "final-frame-timeout";
                 if (servicesVideo)
                     servicesVideo.dataset.segmentState = "buffering";
-                setServicesPhase("waiting");
-                return;
             }
             resetServicesMediaRetry();
-            finishServicesRelease();
+            servicesForwardComplete = true;
+            root.dataset.servicesSequenceComplete = "true";
+            root.dataset.servicesVideoDirection = "forward-complete";
+            setServicesPanel(lastStage);
+            setServicesPhase("waiting");
+            // Keep the final authored copy painted until the actual end of the
+            // pin; otherwise the remaining band is an empty starfield corridor.
+            if (!servicesTrigger.isActive)
+                finishServicesRelease();
         };
         /*
-          Scrolling back up past the first stop rewinds the visual to the opening
-          frame and hands the input straight back. The story never replays and
-          never locks on the way up - a reader climbing out of Services is
-          leaving, not asking to watch it backwards.
+          After the authored reverse path has reached stop one, scrolling back
+          past the pin rewinds the visual to its opening and hands native input
+          straight back. No fourth/cyclic reverse segment is started.
         */
         const rewindServicesToStart = () => {
             servicesRunToken += 1;
@@ -3033,6 +2984,8 @@ export function TascLanding() {
             stopServicesTextTimeline();
             servicesActive = false;
             servicesReleasing = false;
+            servicesForwardComplete = false;
+            servicesSessionDirection = 0;
             servicesTransitionDirection = 0;
             servicesGateUntil = 0;
             setServicesPhase("idle");
@@ -3042,6 +2995,9 @@ export function TascLanding() {
             pauseAndSeek(servicesVideo, 0);
             delete root.dataset.servicesPinned;
             delete root.dataset.servicesInrange;
+            delete root.dataset.servicesSequenceComplete;
+            delete root.dataset.servicesVideoDirection;
+            delete root.dataset.servicesTarget;
             releaseServicesScroll();
             setMotionInputState();
         };
@@ -3064,6 +3020,8 @@ export function TascLanding() {
             const preservePreview = root.dataset.servicesPreview === "1";
             servicesActive = true;
             servicesReleasing = false;
+            servicesForwardComplete = false;
+            servicesSessionDirection = 1;
             root.dataset.servicesEntryDirection = "forward";
             root.dataset.servicesEntrySource = entrySource;
             servicesGateUntil = performance.now() + SERVICES_ENTRY_GATE_MS;
@@ -3166,6 +3124,119 @@ export function TascLanding() {
                 commitServicesForwardEntry(entrySource);
             })();
         };
+        const startServicesReverseEntry = (entrySource = "trigger-on-enter-back") => {
+            if (servicesActive || servicesReleasing || disposed)
+                return;
+            cancelServicesEntryPreparation("new-reverse-entry");
+            resetServicesMediaRetry();
+            const token = ++servicesRunToken;
+            const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
+            const reverseEntryTime = SERVICES_REVERSE_KEYFRAME_STOPS[lastStage] + SERVICES_SEAM_FRAME_NUDGE;
+            servicesActive = true;
+            servicesReleasing = false;
+            servicesForwardComplete = false;
+            servicesSessionDirection = -1;
+            servicesTransitionDirection = -1;
+            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+            root.dataset.servicesEntryDirection = "reverse";
+            root.dataset.servicesEntrySource = entrySource;
+            root.dataset.servicesPinned = "true";
+            root.dataset.servicesInrange = "true";
+            root.dataset.servicesSequence = "reverse";
+            delete root.dataset.servicesSequenceComplete;
+            delete root.dataset.servicesTransportFailure;
+            lockClientsServicesHandoffAtServices();
+            setServicesStopPostersArmed(true);
+            setServicesEntryPoster(false);
+            setServicesPanel(lastStage);
+            setServicesStaticStop(lastStage);
+            if (servicesVideo)
+                servicesVideo.dataset.segmentState = "preparing";
+            setServicesPhase("waiting");
+            scheduleServicesProgressCatchUp(-1, token);
+
+            if (!servicesVideo || root.dataset.servicesMediaFallback === "true")
+                return;
+            void seekServicesFrame(servicesVideo, reverseEntryTime, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, SERVICES_SEAM_SEEK_TOLERANCE).then((ready) => {
+                if (!ready || token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
+                    return;
+                setServicesStaticStop(null);
+                root.dataset.servicesMediaDecoded = "true";
+                root.dataset.servicesReverseEntryFrameDecoded = "true";
+                if (servicesVideo)
+                    servicesVideo.dataset.segmentState = "ready";
+            });
+        };
+        const runServicesReverseStage = async (nextStage: number) => {
+            if (!servicesActive || servicesSessionDirection !== -1 || servicesPhase !== "waiting" || nextStage < 0 || nextStage !== servicesStage - 1)
+                return;
+            const token = ++servicesRunToken;
+            const currentStage = servicesStage;
+            const reverseFrom = SERVICES_REVERSE_KEYFRAME_STOPS[currentStage] +
+                (currentStage === SERVICES_KEYFRAME_STOPS.length - 1 ? SERVICES_SEAM_FRAME_NUDGE : 0);
+            const reverseTo = SERVICES_REVERSE_KEYFRAME_STOPS[nextStage];
+            const segmentDuration = (reverseTo - reverseFrom) / SERVICES_PLAYBACK_RATE;
+            beginServicesMediaAttempt(`reverse:${currentStage}:${nextStage}`);
+            servicesTransitionDirection = -1;
+            root.dataset.servicesTarget = String(nextStage + 1);
+            setServicesStaticStop(currentStage);
+            setServicesPhase("preparing");
+
+            const reverseStartReady = root.dataset.servicesMediaFallback === "true"
+                ? false
+                : await seekServicesFrame(servicesVideo, reverseFrom, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, currentStage === SERVICES_KEYFRAME_STOPS.length - 1
+                    ? SERVICES_SEAM_SEEK_TOLERANCE
+                    : undefined);
+            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
+                return;
+            const reverseMediaReady = reverseStartReady && root.dataset.servicesMediaFallback !== "true"
+                ? await ensureServicesPlayable(servicesVideo, reverseTo, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, reverseFrom)
+                : false;
+            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
+                return;
+
+            if (!reverseMediaReady) {
+                if (servicesVideo?.error)
+                    activateServicesMediaFallback();
+                root.dataset.servicesTransportFailure = servicesVideo?.error ? "reverse-media-error" : "reverse-decode-timeout";
+                setServicesPanel(nextStage);
+                setServicesStaticStop(nextStage);
+                delete root.dataset.servicesTarget;
+                resetServicesMediaRetry();
+                servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+                setServicesPhase("waiting");
+                scheduleServicesProgressCatchUp(-1, token);
+                return;
+            }
+
+            servicesWarmupClaimRef.current?.();
+            root.dataset.servicesVideoDirection = "reverse-playback";
+            setServicesPhase("reverse");
+            const [mediaCompleted] = await Promise.all([
+                playMediaSegment(servicesVideo, reverseFrom, reverseTo, SERVICES_PLAYBACK_RATE, () => token === servicesRunToken && servicesActive && servicesSessionDirection === -1, true, true, true, isMobileRuntime() ? 2200 : MEDIA_SEGMENT_GRACE_MS),
+                animateServicesReversePanel(nextStage, segmentDuration),
+            ]);
+            if (token !== servicesRunToken || !servicesActive || servicesSessionDirection !== -1 || disposed)
+                return;
+            delete root.dataset.servicesTarget;
+            delete root.dataset.servicesVideoDirection;
+            if (!mediaCompleted) {
+                root.dataset.servicesTransportFailure = servicesVideo?.error ? "reverse-playback-error" : "reverse-playback-stall";
+                setServicesPanel(nextStage);
+                setServicesStaticStop(nextStage);
+            }
+            else {
+                setServicesStaticStop(null);
+                root.dataset.servicesMediaDecoded = "true";
+                if (servicesVideo)
+                    servicesVideo.dataset.segmentState = "ready";
+                setServicesPanel(nextStage);
+            }
+            resetServicesMediaRetry();
+            servicesGateUntil = performance.now() + SERVICES_POST_STAGE_GATE_MS;
+            setServicesPhase("waiting");
+            scheduleServicesProgressCatchUp(-1, token);
+        };
         servicesControllerRef.current = {
             releaseForNavigation: releaseServicesForNavigation,
         };
@@ -3173,26 +3244,30 @@ export function TascLanding() {
           Which stop is due is read from where the reader has scrolled inside the
           pinned band, not from accumulated gesture deltas. Each stop owns a slice
           of the band: scrolling into it locks the input, plays that one segment
-          and hands the input straight back. Scrolling back up never locks and
-          never replays - a reader climbing out of Services is leaving.
+          and hands the input straight back. Reverse entry uses the authored
+          palindrome branch and advances monotonically 3 -> 2 -> 1.
         */
         const advanceServicesFromProgress = (progress: number, direction: number) => {
             if (!servicesActive || servicesReleasing || disposed)
                 return;
-            // Only a downward gesture is allowed to open the next stop. Scrolling
-            // back up through a stop must never re-lock the reader in a segment
-            // they have already watched.
-            if (direction < 0)
-                return;
             if (servicesPhase !== "waiting" || performance.now() < servicesGateUntil)
+                return;
+            const dueStage = SERVICES_STOP_PROGRESS.reduce<number>((stage, threshold, index) => (progress >= threshold ? index : stage), 0);
+            if (servicesSessionDirection === -1) {
+                if (direction >= 0)
+                    return;
+                if (dueStage < servicesStage)
+                    void runServicesReverseStage(servicesStage - 1);
+                return;
+            }
+            if (servicesSessionDirection !== 1 || direction < 0)
                 return;
             const lastStage = SERVICES_KEYFRAME_STOPS.length - 1;
             if (servicesStage >= lastStage) {
-                if (progress >= SERVICES_EXIT_PROGRESS)
+                if (!servicesForwardComplete && progress >= SERVICES_EXIT_PROGRESS)
                     void releaseServicesForward();
                 return;
             }
-            const dueStage = SERVICES_STOP_PROGRESS.reduce<number>((stage, threshold, index) => (progress >= threshold ? index : stage), 0);
             if (dueStage > servicesStage)
                 void runServicesStage(servicesStage + 1);
         };
@@ -3509,15 +3584,15 @@ export function TascLanding() {
                     clientsBackdropLayers.forEach(({ element, restingOpacity }) => {
                         gsap.set(element, { opacity: restingOpacity * fadeOut });
                     });
+                    // Cross-fade the two star surfaces on one shared progress curve.
+                    // Their combined opacity stays at one, so neither direction can
+                    // expose a black frame after the Clients flare has disappeared.
+                    const starHandoff = gsap.utils.clamp(0, 1, (clamped - 0.08) / 0.5);
                     if (clientsStarStage) {
-                        const fadeToBlack = 1 - gsap.utils.clamp(0, 1, (clamped - 0.02) / 0.3);
-                        const returnFromBlack = gsap.utils.clamp(0, 1, (clamped - 0.32) / 0.4);
-                        gsap.set(clientsStarStage, { opacity: Math.max(0, fadeToBlack, returnFromBlack) });
+                        gsap.set(clientsStarStage, { opacity: 1 - starHandoff });
                     }
                     if (servicesStarReveal) {
-                        gsap.set(servicesStarReveal, {
-                            opacity: gsap.utils.clamp(0, 1, (clamped - 0.3) / 0.42),
-                        });
+                        gsap.set(servicesStarReveal, { opacity: starHandoff });
                     }
                 };
                 const syncFirstServicesHandoffY = (progress: number, direction: 1 | -1) => {
@@ -3671,9 +3746,23 @@ export function TascLanding() {
                         return;
                     startServicesForward("trigger-on-enter");
                 },
+                onEnterBack: (self) => {
+                    if (shouldBypassServicesMotion() || !canStartServicesMotion(self))
+                        return;
+                    startServicesReverseEntry("trigger-on-enter-back");
+                },
                 onUpdate: (self) => {
                     if (servicesActive) {
                         advanceServicesFromProgress(self.progress, self.direction);
+                        return;
+                    }
+                    if (self.isActive &&
+                        self.direction < 0 &&
+                        !servicesReleasing &&
+                        servicesPhase === "idle" &&
+                        !shouldBypassServicesMotion() &&
+                        canStartServicesMotion(self)) {
+                        startServicesReverseEntry("trigger-on-update-back");
                         return;
                     }
                     if (!self.isActive ||
@@ -3688,6 +3777,18 @@ export function TascLanding() {
                     startServicesForward("trigger-on-update");
                 },
                 onLeave: () => {
+                    // A very large native gesture can leave the pin while the
+                    // final-frame seek is still preparing. Leaving the real band
+                    // always wins; invalidate that seek instead of retaining an
+                    // offscreen Services session.
+                    if (servicesActive && servicesSessionDirection === 1) {
+                        finishServicesRelease();
+                        return;
+                    }
+                    if (servicesActive && servicesSessionDirection === -1) {
+                        finishServicesRelease();
+                        return;
+                    }
                     if (!servicesActive && !servicesReleasing) {
                         delete root.dataset.servicesPinned;
                         delete root.dataset.servicesInrange;
@@ -3714,14 +3815,18 @@ export function TascLanding() {
                 if (event.type !== "pagehide" && document.visibilityState !== "hidden")
                     return;
                 cancelServicesEntryPreparation("document-hidden");
-                if (!servicesActive || servicesPhase !== "playing")
+                if (!servicesActive || !["playing", "reverse", "releasing"].includes(servicesPhase))
                     return;
                 const targetStage = Math.min(SERVICES_KEYFRAME_STOPS.length - 1, Math.max(0, Number(root.dataset.servicesActive ?? 1) - 1));
                 servicesRunToken += 1;
                 if (servicesVideo)
                     mediaRunCancels.get(servicesVideo)?.();
                 stopServicesTextTimeline();
-                pauseAndSeek(servicesVideo, SERVICES_KEYFRAME_STOPS[targetStage]);
+                const targetTime = servicesSessionDirection === -1
+                    ? SERVICES_REVERSE_KEYFRAME_STOPS[targetStage]
+                    : SERVICES_KEYFRAME_STOPS[targetStage];
+                pauseAndSeek(servicesVideo, targetTime, SERVICES_SEAM_SEEK_TOLERANCE / 2);
+                setServicesStaticStop(targetStage);
                 setServicesPanel(targetStage);
                 servicesGateUntil = 0;
                 setServicesPhase("waiting");
@@ -3777,6 +3882,7 @@ export function TascLanding() {
                 setRegionInteractive(datumWaitlistState, false);
                 let datumCardsRevealMoving = false;
                 let datumCardsScrubMoving = false;
+                let datumResetTimer = 0;
                 const syncDatumCardsMoving = () => {
                     if (datumCardsRevealMoving || datumCardsScrubMoving)
                         datumCardsState.dataset.datumCardsMoving = "true";
@@ -3848,6 +3954,23 @@ export function TascLanding() {
                     setRegionInteractive(datumCardsState, false);
                     setRegionInteractive(datumWaitlistState, false);
                 };
+                const cancelDatumReset = () => {
+                    window.clearTimeout(datumResetTimer);
+                    datumResetTimer = 0;
+                };
+                const settleDatumResetAfterScrub = () => {
+                    cancelDatumReset();
+                    resetDatumContent();
+                    // A scrubbed timeline can render its captured start values
+                    // after onLeaveBack. Re-assert reset once that short scrub has
+                    // settled, unless the reader has already entered again.
+                    datumResetTimer = window.setTimeout(() => {
+                        datumResetTimer = 0;
+                        const trigger = datumTimeline?.scrollTrigger;
+                        if (!trigger?.isActive && (trigger?.progress ?? 0) <= 0.001)
+                            resetDatumContent();
+                    }, 340);
+                };
                 const showDatumCards = () => {
                     if (datumContentState === "cards")
                         return;
@@ -3876,42 +3999,38 @@ export function TascLanding() {
                     gsap.set(datumWaitlistState, { pointerEvents: waitlistInteractive ? "auto" : "none" });
                 };
                 resetDatumContent();
-                const datumVisibilityGuard = ScrollTrigger.create({
-                    id: "datum-content-visibility",
-                    trigger: datumSection,
-                    start: () => `top ${Math.round(getVisualViewportHeight() * (1 - RUNTIME_MEDIA.datum.visibilityRatio))}px`,
-                    end: "bottom top",
-                    invalidateOnRefresh: true,
-                    onEnter: () => {
-                        if (datumContentState === null)
-                            showDatumCards();
-                    },
-                    onEnterBack: () => {
-                        if (datumContentState === null)
-                            showDatumCards();
-                    },
-                });
-                const datumVisibilityResetGuard = ScrollTrigger.create({
-                    id: "datum-content-reset",
-                    trigger: datumSection,
-                    start: () => `top ${Math.round(getVisualViewportHeight() * 2)}px`,
-                    end: "bottom top",
-                    invalidateOnRefresh: true,
-                    onLeaveBack: () => resetDatumContent(),
-                });
-                const datumNavigationTrigger = ScrollTrigger.create({
-                    id: "datum-reversible",
-                    trigger: datumSection,
-                    start: "top top",
-                    end: "bottom top",
-                    refreshPriority: 10,
-                    invalidateOnRefresh: true,
-                });
+                // Visibility only arms the card reveal; the pinned transition below
+                // is the sole ScrollTrigger owner for Datum state and reversal.
+                let datumVisibilityObserver: IntersectionObserver | null = null;
+                let datumPinHasActivated = false;
+                if (typeof IntersectionObserver !== "undefined") {
+                    datumVisibilityObserver = new IntersectionObserver((entries) => {
+                        entries.forEach((entry) => {
+                            if (entry.isIntersecting) {
+                                // IntersectionObserver is only the cold-entry arm.
+                                // Once the pin has owned Datum, ScrollTrigger owns
+                                // every replay/reset; otherwise a leave-back geometry
+                                // update can immediately re-fire this observer and
+                                // undo the reset with a second reveal.
+                                if (!datumPinHasActivated && datumContentState === null)
+                                    showDatumCards();
+                                return;
+                            }
+                            const rootBottom = entry.rootBounds?.bottom ?? getVisualViewportHeight();
+                            if (entry.boundingClientRect.top >= rootBottom)
+                                resetDatumContent();
+                        });
+                    }, {
+                        rootMargin: "0px 0px -25% 0px",
+                        threshold: 0.01,
+                    });
+                    datumVisibilityObserver.observe(datumSection);
+                }
                 root.dataset.datumPinned = "false";
                 datumTimeline = gsap.timeline({
                     defaults: { ease: "none" },
                     scrollTrigger: {
-                        id: "datum-content-transition",
+                        id: "datum-reversible",
                         trigger: datumSection,
                         start: "top top",
                         end: () => `+=${getStableDatumPinDistance()}`,
@@ -3925,21 +4044,30 @@ export function TascLanding() {
                             root.dataset.datumPinned = String(self.isActive);
                         },
                         onEnter: (self) => {
+                            cancelDatumReset();
+                            datumPinHasActivated = true;
                             if (datumContentState === null)
                                 showDatumCards();
                             if (cardsRevealTimeline.progress() < 1) {
-                                cardsRevealTimeline.timeScale(2.25).play();
+                                cardsRevealTimeline.timeScale(1).play();
                             }
                             syncDatumContent(self.progress);
                         },
                         onEnterBack: (self) => {
+                            cancelDatumReset();
+                            datumPinHasActivated = true;
                             syncDatumContent(self.progress);
                         },
                         onUpdate: (self) => {
                             setDatumCardsScrubMoving(self.progress > 0 && self.progress < 1);
                             syncDatumContent(self.progress);
                         },
-                        onScrubComplete: () => setDatumCardsScrubMoving(false),
+                        onScrubComplete: () => {
+                            setDatumCardsScrubMoving(false);
+                            const trigger = datumTimeline?.scrollTrigger;
+                            if (!trigger?.isActive && (trigger?.progress ?? 0) <= 0.001)
+                                resetDatumContent();
+                        },
                         onRefresh: (self) => {
                             if (self.isActive) {
                                 syncDatumContent(self.progress);
@@ -3951,7 +4079,7 @@ export function TascLanding() {
                         },
                         onLeaveBack: () => {
                             setDatumCardsScrubMoving(false);
-                            syncDatumContent(0);
+                            settleDatumResetAfterScrub();
                         },
                     },
                 });
@@ -3959,30 +4087,32 @@ export function TascLanding() {
                     .addLabel("cards", 0)
                     .to({}, { duration: 0.4 })
                     .to(datumCardsExitItems, {
-                    y: -36,
+                    y: -30,
                     autoAlpha: 0,
-                    duration: 0.18,
-                    stagger: 0.02,
-                    ease: "power3.in",
+                    duration: 0.28,
+                    stagger: 0.018,
+                    ease: "power2.inOut",
                     overwrite: "auto",
                 }, 0.4)
-                    .set(datumCardsState, { autoAlpha: 0, pointerEvents: "none" }, 0.64)
-                    .set(datumWaitlistState, { autoAlpha: 1, pointerEvents: "none" }, 0.72)
-                    .addLabel("waitlist", 0.72)
+                    // Bring the next state up while the last cards are still
+                    // readable. The old 0.64 -> 0.72 gap made both states hidden
+                    // for a real wheel frame and presented as an empty black page.
+                    .set(datumWaitlistState, { autoAlpha: 1, pointerEvents: "none" }, 0.46)
+                    .addLabel("waitlist", 0.46)
                     .fromTo(datumWaitlistSegments, { y: 34, autoAlpha: 0 }, {
                     y: 0,
                     autoAlpha: 1,
-                    duration: 0.28,
-                    stagger: 0.018,
+                    duration: 0.36,
+                    stagger: 0.03,
                     ease: "power3.out",
                     immediateRender: false,
                     overwrite: "auto",
-                }, 0.74)
-                    .to({}, { duration: 0.28 });
+                }, 0.47)
+                    .set(datumCardsState, { autoAlpha: 0, pointerEvents: "none" }, 0.72)
+                    .to({}, { duration: 0.18 });
                 cleanupCallbacks.push(() => {
-                    datumVisibilityGuard.kill();
-                    datumVisibilityResetGuard.kill();
-                    datumNavigationTrigger.kill();
+                    datumVisibilityObserver?.disconnect();
+                    cancelDatumReset();
                     cardsRevealTimeline.kill();
                     delete root.dataset.datumPinned;
                     delete root.dataset.datumProgress;
@@ -4143,50 +4273,52 @@ export function TascLanding() {
             const processRevealTargets = [...processRows, ...processParts];
             registerManagedRevealElements(processRevealTargets);
             registerManagedRevealTrigger(processContactSection);
-            gsap.set(processRevealTargets, { y: 30, autoAlpha: 0, overwrite: true });
-            let processRevealTimeline: gsap.core.Timeline | null = null;
-            let processRevealed = false;
-            const revealProcess = (fromY: number, trigger?: ScrollTrigger) => {
-                if (processRevealed)
-                    return;
-                processRevealed = true;
-                trigger?.kill(false);
-                processRevealTimeline?.kill();
-                gsap.set(processRevealTargets, { y: fromY, autoAlpha: 0, overwrite: true });
-                processRevealTimeline = gsap.timeline({
-                    onComplete: () => completeManagedReveal(processRevealTargets),
-                });
-                processRows.forEach((row, rowIndex) => {
-                    const parts = processRowParts.get(row) ?? [];
-                    const rowStart = cardRevealTime(rowIndex * 0.19);
-                    processRevealTimeline?.to(row, {
+            gsap.set(processRevealTargets, { y: 30, autoAlpha: 0 });
+            const resetProcessRevealState = (fromY = 30) => {
+                processRevealTargets.forEach((target) => delete target.dataset.revealComplete);
+                gsap.set(processRevealTargets, { y: fromY, autoAlpha: 0 });
+            };
+            const processRevealTimeline = gsap.timeline({
+                paused: true,
+                onComplete: () => completeManagedReveal(processRevealTargets),
+                onReverseComplete: () => resetProcessRevealState(-30),
+            });
+            processRows.forEach((row, rowIndex) => {
+                const parts = processRowParts.get(row) ?? [];
+                const rowStart = cardRevealTime(rowIndex * 0.19);
+                processRevealTimeline.to(row, {
+                    y: 0,
+                    autoAlpha: 1,
+                    duration: cardRevealTime(0.92),
+                    ease: "power4.out",
+                }, rowStart);
+                if (parts.length) {
+                    processRevealTimeline.to(parts, {
                         y: 0,
                         autoAlpha: 1,
-                        duration: cardRevealTime(0.92),
-                        ease: "power4.out",
-                    }, rowStart);
-                    if (parts.length) {
-                        processRevealTimeline?.to(parts, {
-                            y: 0,
-                            autoAlpha: 1,
-                            duration: cardRevealTime(0.64),
-                            stagger: cardRevealTime(0.08),
-                            ease: "power3.out",
-                        }, rowStart + cardRevealTime(0.12));
-                    }
-                });
+                        duration: cardRevealTime(0.64),
+                        stagger: cardRevealTime(0.08),
+                        ease: "power3.out",
+                    }, rowStart + cardRevealTime(0.12));
+                }
+            });
+            const revealProcess = (fromY: number) => {
+                if (processRevealTimeline.progress() <= 0.001)
+                    resetProcessRevealState(fromY);
+                processRevealTimeline.timeScale(1).play();
             };
             const processRevealTrigger = ScrollTrigger.create({
                 id: "process-sequential-reveal",
                 trigger: processContactSection,
                 start: "top 82%",
-                onEnter: (trigger) => revealProcess(30, trigger),
-                onEnterBack: (trigger) => revealProcess(-30, trigger),
+                end: "bottom 18%",
+                onEnter: () => revealProcess(30),
+                onEnterBack: () => revealProcess(-30),
+                onLeaveBack: () => processRevealTimeline.timeScale(1.15).reverse(),
             });
             cleanupCallbacks.push(() => {
                 processRevealTrigger.kill(false);
-                processRevealTimeline?.kill();
-                processRevealTimeline = null;
+                processRevealTimeline.kill();
             });
         }
         gsap.utils.toArray<HTMLElement>(".motion-divider").forEach((element) => {

@@ -7,6 +7,16 @@
 - Current branch in this worktree: `main`.
 - Production deployment is approved for the current scroll-repair task after local QA.
 
+## Scroll Repair Release (2026-08-07)
+
+- Release candidate `20260807-042641` keeps document scrolling native at `1.0`; only an actively playing Services or Domino media segment owns the bounded scroll lock.
+- Services settles every authored stop on a decoded frame (`90/187/307`) and holds the visually complete frame `340` through the real pin exit. Reverse traversal is monotonic `3 -> 2 -> 1`; the transparent frame `339` is never a resting surface.
+- Clients flare/gradient and the two star layers use one direction-independent handoff with a combined star-opacity floor of `1.0`, so Services cannot open on a black intermediate frame.
+- Datum has one pinned ScrollTrigger owner. Cards reveal in order, cards/waitlist overlap during the handoff, and post-scrub leave-back reasserts the hidden reset instead of allowing the timeline start frame to overwrite it.
+- How copy transitions are nearly sequential and spatially separated, removing doubled ghost text. Process keeps one sequential `01 -> 05` reveal owner. Domino may prewarm offscreen but starts only after a real forward crossing of its top boundary.
+- Local production build `Md-Pecx963W7tGl_DiEWH` passed exact Services stop checks in desktop Chromium, touch Chromium and mobile WebKit. Datum's 17-point transition floor is at least `0.78` in the final WebKit run, with reverse cards visible and leave-back opacity `0`; console errors are `0`.
+- Physical iPhone Safari and Android hardware remain an external acceptance gate; Windows Playwright WebKit is regression evidence, not physical Safari acceptance.
+
 ## Runtime Decisions
 
 - ScrollTrigger global `sort()` and `refresh()` calls are centralized through `src/lib/scroll-trigger-refresh.ts`.
@@ -16,7 +26,7 @@
 - Services is pinned across `SERVICES_PIN_VIEWPORTS` (2.4) of real document and its three stops are read off trigger progress (`SERVICES_STOP_PROGRESS`, exit at `SERVICES_EXIT_PROGRESS`). The old one-viewport pin plus `--services-pin-flow-compensation` is gone; the band has to be real document for progress-driven stops to work.
 - Refresh priority order is intentional: hero `40`, Services `30`, How entrance `25`, How reversible `20`, Datum `10`, Domino `5`.
 - `src/lib/scroll-lock.ts` is the only thing that holds the reader still: it swallows wheel/touchmove/keydown, never moves the page, and releases itself after `SCROLL_LOCK_SAFETY_MS` (6000). Only Services stops and the Domino sequence take it.
-- A story that has already played never re-locks. Services only advances on a downward gesture; Domino plays forward once per page load and leaves its final frame alone on the way back up.
+- A settled story never keeps the scroll lock. Services advances forward and traverses its authored palindrome backward `3 -> 2 -> 1`; Domino plays forward once per page load and leaves its final frame alone on the way back up.
 - `src/lib/motion-input-bus.ts` is now an observer-only tap on the input stream (all listeners passive, no ownership). Anchor settling and the reveal watchdog are its only consumers.
 - How we work and Datum keep their pins by the owner's decision (2026-08-04) but carry no input capture - the steps run on `scrub` while the frame is held.
 - Initial connection classification only accepts `saveData`, `slow-2g`, and `2g`. A low `downlink` value alone cannot select mobile assets; measured first-media throughput can constrain later assets.

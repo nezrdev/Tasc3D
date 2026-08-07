@@ -48,7 +48,7 @@ export const processSteps = [
     },
     {
         title: "Execution, Placement & Integration",
-        body: "Launching the campaigns, platform job, content deployment, and real-time optimization. If the project requires a landing page, an MVP app, or a digital tool, we build it directly within the same workflow",
+        body: "Campaign launches, platform builds, content deployment, and real-time optimization. If the project requires a landing page, an MVP app, or a digital tool, we build it directly within the same workflow.",
     },
     {
         title: "Measurement & Reporting",

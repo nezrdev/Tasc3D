@@ -66,6 +66,7 @@ New review items:
 
 ## Scroll Repair Execution (2026-08-06)
 
-- Completed the approved main-branch repair for Domino footer capture, sequential Process reveals, Clients-to-Services backdrop/star handoff, and packed Services frame cadence.
-- Local acceptance is green through `pnpm check`, `qa:t8:static`, `qa:t12`, and manual Chromium/WebKit journeys. Physical Safari and Android hardware remain external acceptance surfaces.
+- Completed the approved main-branch repair for native `1.0` scrolling, exact Services frame ownership and reverse `3 -> 2 -> 1`, Domino footer gating, sequential Process reveals, Clients-to-Services backdrop/star handoff, Datum reveal/crossfade/reset, and How copy ghosting.
+- Candidate release: `20260807-042641`; local Next build: `Md-Pecx963W7tGl_DiEWH`.
+- Local acceptance is green through production build, lint, typecheck, `qa:t8:static`, `qa:t12`, exact desktop/touch/WebKit Services journeys, and 17-point Datum crossfade/reverse/reset checks. Physical Safari and Android hardware remain external acceptance surfaces.
 - Before future releases, refresh the stale T6/T7/T12 browser scripts so their contracts describe the current main-branch runtime instead of the removed preflight, mobile-portioned-scroll, and one-viewport Services implementations.

@@ -22,6 +22,7 @@
     "qa:t10": "node scripts/t10-cleanup-qa.mjs",
     "qa:t12": "node scripts/verify-t12-pin-seams.mjs",
     "qa:t12:browser": "node scripts/t12-browser-seam-qa.mjs",
+    "qa:scroll-motion": "node scripts/qa-current-scroll-motion.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test:leads && pnpm media:verify && pnpm build",
     "db:migrate": "node scripts/migrate.mjs"
   },

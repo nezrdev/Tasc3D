@@ -64,13 +64,13 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
             const inactiveNumber = { scale: 0.67, autoAlpha: 0.62, color: "rgba(119, 177, 244, 0.7)" };
             const activeNumber = { scale: 1, autoAlpha: 1, color: "#badaff" };
             const howStops = [0.02, 0.4, 0.78] as const;
-            const howCopyTransition = revealTime(0.2);
+            const howCopyTransition = revealTime(0.16);
             const howItemTransition = revealTime(0.17);
             const howItemStagger = revealTime(0.03);
             const hiddenCopyPose = { x: -34, y: 0, autoAlpha: 0 };
             const activeCopyPose = { x: 0, y: 0, autoAlpha: 1 };
-            const exitingCopyPose = { x: -36, y: 0, autoAlpha: 0 };
-            const enteringCopyPose = { x: -36, y: 0, autoAlpha: 0 };
+            const exitingCopyPose = { x: 30, y: -10, autoAlpha: 0 };
+            const enteringCopyPose = { x: -30, y: 10, autoAlpha: 0 };
             gsap.set(howInner, { y: 54, autoAlpha: 0 });
             gsap.set(howCopies, hiddenCopyPose);
             gsap.set(howCopyItems.flat(), { x: -12, y: 0, autoAlpha: 1 });
@@ -126,7 +126,10 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
             });
             howTimeline
                 .to({}, { duration: 1 }, 0)
-                .to(howCopies[0], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.055)
+                // Keep the copy handoffs almost sequential. The former 0.11-wide
+                // overlap put two headings and two paragraphs on the same pixels,
+                // which read as blurred ghost text at ordinary wheel stops.
+                .to(howCopies[0], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.075)
                 .to(howNumbers[0], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
                 .to(howNumbers[1], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.15)
                 .fromTo(howCopies[1], enteringCopyPose, {
@@ -134,7 +137,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 duration: howCopyTransition,
                 ease: "sine.inOut",
                 immediateRender: false,
-            }, 0.145)
+            }, 0.225)
                 .fromTo(howCopyItems[1], { x: -12, y: 0 }, {
                 x: 0,
                 y: 0,
@@ -142,8 +145,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 stagger: howItemStagger,
                 ease: "sine.out",
                 immediateRender: false,
-            }, 0.15)
-                .to(howCopies[1], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.435)
+            }, 0.23)
+                .to(howCopies[1], { ...exitingCopyPose, duration: howCopyTransition, ease: "sine.inOut" }, 0.455)
                 .to(howNumbers[1], { ...inactiveNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
                 .to(howNumbers[2], { ...activeNumber, duration: howCopyTransition, ease: "sine.inOut" }, 0.525)
                 .fromTo(howCopies[2], enteringCopyPose, {
@@ -151,7 +154,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 duration: howCopyTransition,
                 ease: "sine.inOut",
                 immediateRender: false,
-            }, 0.52)
+            }, 0.605)
                 .fromTo(howCopyItems[2], { x: -12, y: 0 }, {
                 x: 0,
                 y: 0,
@@ -159,7 +162,7 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 stagger: howItemStagger,
                 ease: "sine.out",
                 immediateRender: false,
-            }, 0.525)
+            }, 0.61)
                 .addLabel("step-01", howStops[0])
                 .addLabel("step-02", howStops[1])
                 .addLabel("step-03", howStops[2])
@@ -238,6 +241,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 window.cancelAnimationFrame(monitorFrame);
                 monitorFrame = 0;
                 dominoVideo.pause();
+                dominoVideo.dataset.dominoActive = "true";
+                dominoVideo.dataset.segmentState = "ready";
                 releaseLock();
                 root.dataset.dominoPlayback = "complete";
                 root.dataset.dominoRelease = reason;
@@ -277,16 +282,21 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                     // No decoded frame yet: leave the reader alone rather than
                     // freezing them in front of a poster.
                     root.dataset.dominoPlayback = "waiting-media";
+                    dominoVideo.dataset.dominoActive = "true";
+                    dominoVideo.dataset.segmentState = "ready";
                     return;
                 }
                 playing = true;
                 lock = acquireScrollLock("domino");
                 root.dataset.dominoPlayback = "forward";
                 delete root.dataset.dominoRelease;
+                dominoVideo.dataset.dominoActive = "true";
+                dominoVideo.dataset.segmentState = "playing";
                 dominoVideo.playbackRate = DOMINO_PLAYBACK_RATE;
                 dominoVideo.defaultPlaybackRate = DOMINO_PLAYBACK_RATE;
                 try {
-                    dominoVideo.currentTime = 0;
+                    if (Math.abs(dominoVideo.currentTime) > 1 / 60)
+                        dominoVideo.currentTime = 0;
                 }
                 catch {
                     // Seeking before metadata settles throws on some builds; the
@@ -301,6 +311,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
             };
             const isAtDominoPinBoundary = () => {
                 if (!pinTrigger?.isActive)
+                    return false;
+                // ScrollTrigger's anticipatePin can report the band active a
+                // few pixels early. Do not spend the one-shot playback before
+                // the reader has actually crossed the authored top boundary.
+                if (window.scrollY + 1 < pinTrigger.start)
                     return false;
                 const sceneTop = dominoScene.getBoundingClientRect().top;
                 const boundaryTolerance = Math.max(10, getViewportHeight() * 0.018);
@@ -330,8 +345,8 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                     // Readiness only warms media. Playback is allowed to begin
                     // after a real forward pin entry requested it; otherwise a
                     // tiny upward scroll from the footer can steal the reader.
-                    if (forwardEntryRequested && pinTrigger?.direction === 1)
-                        startPlayback();
+                    if (forwardEntryRequested)
+                        requestForwardPlayback();
                 };
                 const markFallback = () => {
                     if (settled || disposed)
@@ -373,8 +388,11 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
             dominoVideo.loop = false;
             dominoVideo.playbackRate = DOMINO_PLAYBACK_RATE;
             dominoVideo.defaultPlaybackRate = DOMINO_PLAYBACK_RATE;
-            dominoVideo.dataset.dominoActive = "false";
-            dominoVideo.dataset.segmentState = "idle";
+            // Keep a decoded first frame or the authored poster painted while
+            // media is only warming. Playback ownership is still gated by the
+            // real forward pin entry below.
+            dominoVideo.dataset.dominoActive = "true";
+            dominoVideo.dataset.segmentState = "ready";
             gsap.set(dominoMedia, {
                 scaleX: isCompactDomino() ? 1 : 1.08,
                 scaleY: isCompactDomino() ? 1 : 1.08,
@@ -425,6 +443,9 @@ export function useReversibleScrollStories({ rootRef, dominoVideoRef, transportK
                 onEnterBack: () => {
                     forwardEntryRequested = false;
                     warmDominoMedia();
+                },
+                onLeave: () => {
+                    forwardEntryRequested = false;
                 },
                 onLeaveBack: () => {
                     forwardEntryRequested = false;
