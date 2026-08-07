@@ -24,3 +24,10 @@
 ## External gate
 
 - Browser emulation is regression evidence, not physical Nothing Phone (3a) acceptance. The user owns the final hardware check.
+
+## Production
+
+- Application commit `9526c03` was authored by `netherdef`, pushed to `main`, and deployed as `/var/www/tascagency/releases/20260807-075023`.
+- PM2 is online; internal and public health checks are healthy; root and redirected `www` return HTTP 200.
+- The upgraded mobile Services asset returns HTTP 206 with immutable caching.
+- Live Pixel 5 smoke opened the curtain in 1875 ms, selected the packed 960 Services source, kept the 64 px header, rendered changing Galaxy frames, and produced zero console/page errors.

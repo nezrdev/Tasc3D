@@ -49,7 +49,8 @@ New review items:
 ## Remaining Goal Scope
 
 - The T15 client-directed motion hotfix is implemented and independently reviewed locally: sub-3-second curtain, symmetric Clients reveals, continuously animated Galaxy on mobile/desktop, atomic gap-free story handoffs in both directions, upgraded Android Hero/Services transports, stable Process entrance, and poster-free Domino/form/footer flow.
-- Production rollout and the user-owned physical Nothing Phone (3a) acceptance are the remaining gates for T15.
+- T15 application commit `9526c03` is on `main`; production release `20260807-075023` and its live smoke are complete.
+- The user-owned physical Nothing Phone (3a) acceptance is the only remaining T15 gate.
 
 ## Carried Performance Findings
 
